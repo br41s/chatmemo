@@ -277,7 +277,7 @@ export const SidebarDataList: FC<SidebarDataListProps> = ({
                     return (
                       sortedData.length > 0 && (
                         <div key={dateCategory} className="pb-2">
-                          <div className="text-muted-foreground mb-1 text-sm font-bold">
+                          <div className="mb-1 text-sm font-bold text-muted-foreground">
                             {dateCategory}
                           </div>
 

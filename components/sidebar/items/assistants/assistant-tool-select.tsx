@@ -54,7 +54,7 @@ export const AssistantToolSelect: FC<AssistantToolSelectProps> = ({
       }}
     >
       <DropdownMenuTrigger
-        className="bg-background w-full justify-start border-2 px-3 py-5"
+        className="w-full justify-start border-2 bg-background px-3 py-5"
         asChild
       >
         <Button

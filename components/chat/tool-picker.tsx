@@ -72,7 +72,7 @@ export const ToolPicker: FC<ToolPickerProps> = ({}) => {
   return (
     <>
       {isToolPickerOpen && (
-        <div className="bg-background flex flex-col space-y-1 rounded-xl border-2 p-2 text-sm">
+        <div className="flex flex-col space-y-1 rounded-xl border-2 bg-background p-2 text-sm">
           {filteredTools.length === 0 ? (
             <div className="text-md flex h-14 cursor-pointer items-center justify-center italic hover:opacity-50">
               No matching tools.
@@ -86,7 +86,7 @@ export const ToolPicker: FC<ToolPickerProps> = ({}) => {
                     itemsRef.current[index] = ref
                   }}
                   tabIndex={0}
-                  className="hover:bg-accent focus:bg-accent flex cursor-pointer items-center rounded p-2 focus:outline-none"
+                  className="flex cursor-pointer items-center rounded p-2 hover:bg-accent focus:bg-accent focus:outline-none"
                   onClick={() => callSelectTool(item as Tables<"tools">)}
                   onKeyDown={getKeyDownHandler(index)}
                 >

@@ -205,7 +205,7 @@ export const Message: FC<MessageProps> = ({
           {message.role === "system" ? (
             <div className="flex items-center space-x-4">
               <IconPencil
-                className="border-primary bg-primary text-secondary rounded border-DEFAULT p-1"
+                className="rounded border-DEFAULT border-primary bg-primary p-1 text-secondary"
                 size={ICON_SIZE}
               />
 
@@ -248,7 +248,7 @@ export const Message: FC<MessageProps> = ({
                 />
               ) : (
                 <IconMoodSmile
-                  className="bg-primary text-secondary border-primary rounded border-DEFAULT p-1"
+                  className="rounded border-DEFAULT border-primary bg-primary p-1 text-secondary"
                   size={ICON_SIZE}
                 />
               )}
@@ -262,7 +262,7 @@ export const Message: FC<MessageProps> = ({
                     : selectedAssistant
                       ? selectedAssistant?.name
                       : MODEL_DATA?.modelName
-                  : profile?.display_name ?? profile?.username}
+                  : (profile?.display_name ?? profile?.username)}
               </div>
             </div>
           )}
@@ -310,7 +310,7 @@ export const Message: FC<MessageProps> = ({
         </div>
 
         {fileItems.length > 0 && (
-          <div className="border-primary mt-6 border-t pt-4 font-bold">
+          <div className="mt-6 border-t border-primary pt-4 font-bold">
             {!viewSources ? (
               <div
                 className="flex cursor-pointer items-center text-lg hover:opacity-50"
