@@ -380,6 +380,19 @@ export const useChatHandler = () => {
         selectedAssistant
       )
 
+      // Fire-and-forget: write memory summary after messages are persisted.
+      // chatMessages.length >= 2 ensures there were already ≥1 full turn before
+      // this one, making ≥4 total messages — enough for a useful summary.
+      if (currentChat?.id && chatMessages.length >= 2) {
+        fetch("/api/memory/summarize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chatId: currentChat.id })
+        }).catch(() => {
+          // Non-critical — silent failure
+        })
+      }
+
       setIsGenerating(false)
       setFirstTokenReceived(false)
     } catch (error) {

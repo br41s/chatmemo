@@ -96,9 +96,9 @@ export const fetchOpenRouterModels = async () => {
         context_length: number
       }): OpenRouterLLM => ({
         modelId: model.id as LLMID,
-        modelName: model.id,
+        modelName: model.name || model.id,
         provider: "openrouter",
-        hostedId: model.name,
+        hostedId: model.id,
         platformLink: "https://openrouter.dev",
         imageInput: false,
         maxContext: model.context_length

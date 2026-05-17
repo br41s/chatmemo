@@ -35,7 +35,15 @@ export const ModelSelect: FC<ModelSelectProps> = ({
 
   const [isOpen, setIsOpen] = useState(false)
   const [search, setSearch] = useState("")
-  const [tab, setTab] = useState<"hosted" | "local">("hosted")
+  const [tab, setTab] = useState<"hosted" | "local" | "openrouter">("hosted")
+
+  // Auto-switch to the openrouter tab when it is the only available group
+  useEffect(() => {
+    const hasHosted = availableHostedModels.length > 0 || models.length > 0
+    if (!hasHosted && availableOpenRouterModels.length > 0) {
+      setTab("openrouter")
+    }
+  }, [availableHostedModels, availableOpenRouterModels, models])
 
   useEffect(() => {
     if (isOpen) {
@@ -133,13 +141,28 @@ export const ModelSelect: FC<ModelSelectProps> = ({
         align="start"
       >
         <Tabs value={tab} onValueChange={(value: any) => setTab(value)}>
-          {availableLocalModels.length > 0 && (
-            <TabsList defaultValue="hosted" className="grid grid-cols-2">
-              <TabsTrigger value="hosted">Hosted</TabsTrigger>
-
-              <TabsTrigger value="local">Local</TabsTrigger>
-            </TabsList>
-          )}
+          {(() => {
+            const hasHosted =
+              availableHostedModels.length > 0 || models.length > 0
+            const hasLocal = availableLocalModels.length > 0
+            const hasOpenRouter = availableOpenRouterModels.length > 0
+            const tabDefs = [
+              hasHosted && { value: "hosted", label: "Hosted" },
+              hasLocal && { value: "local", label: "Local" },
+              hasOpenRouter && { value: "openrouter", label: "OpenRouter" }
+            ].filter(Boolean) as { value: string; label: string }[]
+            if (tabDefs.length < 2) return null
+            const colsCls = tabDefs.length === 2 ? "grid-cols-2" : "grid-cols-3"
+            return (
+              <TabsList className={`grid ${colsCls}`}>
+                {tabDefs.map(t => (
+                  <TabsTrigger key={t.value} value={t.value}>
+                    {t.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            )
+          })()}
         </Tabs>
 
         <Input
@@ -154,7 +177,11 @@ export const ModelSelect: FC<ModelSelectProps> = ({
           {Object.entries(groupedModels).map(([provider, models]) => {
             const filteredModels = models
               .filter(model => {
-                if (tab === "hosted") return model.provider !== "ollama"
+                if (tab === "hosted")
+                  return (
+                    model.provider !== "ollama" &&
+                    model.provider !== "openrouter"
+                  )
                 if (tab === "local") return model.provider === "ollama"
                 if (tab === "openrouter") return model.provider === "openrouter"
               })
