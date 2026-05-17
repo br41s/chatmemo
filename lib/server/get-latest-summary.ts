@@ -1,9 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
+import { Tables } from "@/supabase/types"
 import { cookies } from "next/headers"
-
-// TODO: replace with Tables<"summaries"> once migration is applied and
-//       `npm run db-types` has been run.
-type SummaryRow = { content: string }
 
 export async function getLatestSummaryForUser(
   userId: string
@@ -23,5 +20,5 @@ export async function getLatestSummaryForUser(
     return null
   }
 
-  return (data as SummaryRow | null)?.content ?? null
+  return (data as Pick<Tables<"summaries">, "content"> | null)?.content ?? null
 }
