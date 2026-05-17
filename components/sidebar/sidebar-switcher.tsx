@@ -12,6 +12,7 @@ import {
 import { FC } from "react"
 import { TabsList } from "../ui/tabs"
 import { WithTooltip } from "../ui/with-tooltip"
+import { MemoryHistorySheet } from "../memory/memory-history-sheet"
 import { ProfileSettings } from "../utility/profile-settings"
 import { SidebarSwitchItem } from "./sidebar-switch-item"
 
@@ -82,6 +83,11 @@ export const SidebarSwitcher: FC<SidebarSwitcherProps> = ({
 
         {/* TODO */}
         {/* <Alerts /> */}
+
+        <WithTooltip
+          display={<div>Memory History</div>}
+          trigger={<MemoryHistorySheet />}
+        />
 
         <WithTooltip
           display={<div>Profile Settings</div>}
