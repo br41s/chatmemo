@@ -205,7 +205,7 @@ if(roleEls.length>0){
 /* Strategy 2: claude.ai class-based selectors */
 if(msgs.length===0){
   var userEls=[...document.querySelectorAll('[class*="font-user-message"]')];
-  var assistEls=[...document.querySelectorAll('[class*="font-claude-message"],[class*="prose"]:not([class*="font-user-message"])')];
+  var assistEls=[...document.querySelectorAll('[class*="font-claude-response"]')];
   if(userEls.length>0||assistEls.length>0){
     var all=[];
     userEls.forEach(function(el){all.push({el:el,role:'user'})});
