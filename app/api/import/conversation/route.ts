@@ -222,10 +222,16 @@ export async function POST(request: NextRequest) {
       { status: 200, headers }
     )
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unexpected error"
+    const raw = error instanceof Error ? error.message : "Unexpected error"
+    // Surface rate-limit errors as retryable 429 instead of opaque 500
+    const isRateLimit =
+      raw.includes("429") || raw.toLowerCase().includes("rate limit")
+    const message = isRateLimit
+      ? "OpenRouter rate limit — wait a moment and try again"
+      : raw
     return NextResponse.json(
       { success: false, message },
-      { status: 500, headers }
+      { status: isRateLimit ? 429 : 500, headers }
     )
   }
 }
