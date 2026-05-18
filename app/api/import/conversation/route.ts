@@ -14,13 +14,15 @@
  */
 
 import { getServerProfile } from "@/lib/server/server-chat-helpers"
-import { createClient } from "@/lib/supabase/server"
+import {
+  callSummarizer,
+  createOpenRouterClient,
+  MIN_SUMMARY_WORDS
+} from "@/lib/server/openrouter"
 import { createClient as createServiceClient } from "@supabase/supabase-js"
 import { insertSummary } from "@/db/summaries"
-import { cookies } from "next/headers"
 import { NextRequest, NextResponse } from "next/server"
 import { ServerRuntime } from "next"
-import OpenAI from "openai"
 
 export const runtime: ServerRuntime = "nodejs"
 
@@ -50,8 +52,6 @@ export async function OPTIONS(request: NextRequest) {
 // Constants
 // ---------------------------------------------------------------------------
 
-const OPENROUTER_TIMEOUT_MS = 30_000
-const MIN_SUMMARY_WORDS = 10
 const MIN_CHARS = 200
 
 const SYSTEM_PROMPT = `You are a memory assistant. You are given a conversation a user had with an AI assistant.
@@ -121,8 +121,7 @@ export async function POST(request: NextRequest) {
   try {
     const userId = await resolveUserId(request)
 
-    const openrouterKey = process.env.OPENROUTER_API_KEY || null
-
+    const openrouterKey = process.env.OPENROUTER_API_KEY
     if (!openrouterKey) {
       return NextResponse.json(
         { success: false, reason: "OpenRouter API key not configured" },
@@ -177,44 +176,28 @@ export async function POST(request: NextRequest) {
     }
 
     const convDate = date ?? new Date().toISOString().slice(0, 10)
-    const convHeader = `## ${title} (${convDate})`
-    const inputText = `${convHeader}\n\n${fullText}`
+    const inputText = `## ${title} (${convDate})\n\n${fullText}`
 
     // --- Summarize ---
-    const openai = new OpenAI({
-      apiKey: openrouterKey,
-      baseURL: "https://openrouter.ai/api/v1",
-      timeout: OPENROUTER_TIMEOUT_MS
-    })
+    const openai = createOpenRouterClient(openrouterKey)
+    const summaryText = await callSummarizer(
+      openai,
+      SYSTEM_PROMPT,
+      inputText,
+      900
+    )
 
-    const completion = await openai.chat.completions.create({
-      model: "openai/gpt-oss-120b:free",
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: inputText }
-      ],
-      temperature: 0.3,
-      max_tokens: 900,
-      stream: false
-    })
-
-    const summaryText = (completion.choices[0]?.message?.content ?? "").trim()
-
-    if (
-      !summaryText ||
-      summaryText === "SKIP" ||
-      summaryText.split(/\s+/).length < MIN_SUMMARY_WORDS
-    ) {
+    if (!summaryText) {
       return NextResponse.json(
         { success: true, inserted: 0, reason: "Nothing worth remembering" },
         { status: 200, headers }
       )
     }
 
-    // Use service role client when using token auth (no session cookie)
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-    const supabase = createServiceClient(supabaseUrl, serviceRoleKey)
+    const supabase = createServiceClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    )
     await insertSummary(supabase, userId, summaryText)
 
     return NextResponse.json(
@@ -223,7 +206,6 @@ export async function POST(request: NextRequest) {
     )
   } catch (error) {
     const raw = error instanceof Error ? error.message : "Unexpected error"
-    // Surface rate-limit errors as retryable 429 instead of opaque 500
     const isRateLimit =
       raw.includes("429") || raw.toLowerCase().includes("rate limit")
     const message = isRateLimit

@@ -23,6 +23,9 @@ const SESSIONS_FILE = join(CONFIG_DIR, "imported-sessions.json")
 const MIN_USER_MESSAGES = 3
 const MAX_MESSAGES = 200 // cap to avoid huge payloads
 
+// Keep in sync with lib/server/openrouter.ts → SUMMARIZE_MODEL
+const SUMMARIZE_MODEL = "openai/gpt-oss-120b:free"
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -160,7 +163,7 @@ async function summarize(openrouterKey, title, date, messages) {
         Authorization: `Bearer ${openrouterKey}`
       },
       body: JSON.stringify({
-        model: "openai/gpt-oss-120b:free",
+        model: SUMMARIZE_MODEL,
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: input }

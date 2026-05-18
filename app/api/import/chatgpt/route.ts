@@ -1,19 +1,19 @@
-import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
+import { getServerProfile } from "@/lib/server/server-chat-helpers"
+import {
+  callSummarizer,
+  createOpenRouterClient,
+  resolveOpenRouterKey
+} from "@/lib/server/openrouter"
 import { createClient } from "@/lib/supabase/server"
 import { insertSummary } from "@/db/summaries"
 import { buildSummaryChunks, parseChatGPTExport } from "@/lib/importers/chatgpt"
 import { cookies } from "next/headers"
 import { NextRequest, NextResponse } from "next/server"
 import { ServerRuntime } from "next"
-import OpenAI from "openai"
 
 export const runtime: ServerRuntime = "nodejs"
 
-/** Max size of the uploaded JSON file (bytes). */
 const MAX_FILE_BYTES = 10 * 1024 * 1024 // 10 MB
-
-const OPENROUTER_TIMEOUT_MS = 20_000
-const MIN_SUMMARY_WORDS = 10
 
 const IMPORT_SYSTEM_PROMPT = `You are a memory assistant. You are given a set of past conversations a user had with ChatGPT.
 
@@ -37,14 +37,9 @@ If the conversations contain nothing worth remembering, output only the single w
 
 export async function POST(request: NextRequest) {
   try {
-    // Auth — throws if session is missing
     const profile = await getServerProfile()
     const userId = profile.user_id
-
-    // Resolve OpenRouter key (profile key > env fallback)
-    const openrouterKey =
-      profile.openrouter_api_key || process.env.OPENROUTER_API_KEY || null
-    checkApiKey(openrouterKey, "OpenRouter")
+    const openrouterKey = resolveOpenRouterKey(profile)
 
     // --- Parse multipart form ---
     let formData: FormData
@@ -67,14 +62,12 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
-
     if (fileField.size === 0) {
       return NextResponse.json(
         { success: false, reason: "Uploaded file is empty" },
         { status: 400 }
       )
     }
-
     if (fileField.size > MAX_FILE_BYTES) {
       return NextResponse.json(
         {
@@ -85,11 +78,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // --- Parse JSON ---
     let raw: unknown
     try {
-      const text = await fileField.text()
-      raw = JSON.parse(text)
+      raw = JSON.parse(await fileField.text())
     } catch {
       return NextResponse.json(
         { success: false, reason: "File is not valid JSON" },
@@ -97,9 +88,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // --- Extract conversations ---
     const conversations = parseChatGPTExport(raw)
-
     if (conversations.length === 0) {
       return NextResponse.json(
         {
@@ -111,52 +100,30 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // --- Build text chunks for summarization ---
     const chunks = buildSummaryChunks(conversations)
-
-    // --- Summarize each chunk with OpenRouter ---
-    const openai = new OpenAI({
-      apiKey: openrouterKey ?? "",
-      baseURL: "https://openrouter.ai/api/v1",
-      timeout: OPENROUTER_TIMEOUT_MS
-    })
-
+    const openai = createOpenRouterClient(openrouterKey, 20_000)
     const supabase = createClient(cookies())
     let inserted = 0
     const skipped: string[] = []
 
     for (const chunk of chunks) {
       try {
-        const completion = await openai.chat.completions.create({
-          model: "openai/gpt-oss-120b:free",
-          messages: [
-            { role: "system", content: IMPORT_SYSTEM_PROMPT },
-            { role: "user", content: chunk }
-          ],
-          temperature: 0.3,
-          max_tokens: 700,
-          stream: false
-        })
-
-        const summaryText = (
-          completion.choices[0]?.message?.content ?? ""
-        ).trim()
-
-        if (
-          !summaryText ||
-          summaryText === "SKIP" ||
-          summaryText.split(/\s+/).length < MIN_SUMMARY_WORDS
-        ) {
+        const summaryText = await callSummarizer(
+          openai,
+          IMPORT_SYSTEM_PROMPT,
+          chunk,
+          700
+        )
+        if (!summaryText) {
           skipped.push("chunk not useful")
           continue
         }
-
         await insertSummary(supabase, userId, summaryText)
         inserted++
       } catch (err) {
-        // Log and continue — don't fail the whole import for one bad chunk
-        const msg = err instanceof Error ? err.message : "unknown"
-        skipped.push(`chunk error: ${msg}`)
+        skipped.push(
+          `chunk error: ${err instanceof Error ? err.message : "unknown"}`
+        )
       }
     }
 

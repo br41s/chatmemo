@@ -1,18 +1,20 @@
-import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
+import { getServerProfile } from "@/lib/server/server-chat-helpers"
+import {
+  callSummarizer,
+  createOpenRouterClient,
+  resolveOpenRouterKey
+} from "@/lib/server/openrouter"
 import { createClient } from "@/lib/supabase/server"
 import { insertSummary } from "@/db/summaries"
 import { cookies } from "next/headers"
 import { NextRequest, NextResponse } from "next/server"
 import { ServerRuntime } from "next"
-import OpenAI from "openai"
 
 export const runtime: ServerRuntime = "nodejs"
 
 const MAX_MESSAGES = 20
-const MIN_USEFUL_MESSAGES = 4 // at least 2 full turns before summarising
-const MIN_SUMMARY_WORDS = 10
+const MIN_USEFUL_MESSAGES = 4
 const DUPLICATE_THRESHOLD = 0.75 // Jaccard similarity above this → skip insert
-const OPENROUTER_TIMEOUT_MS = 15_000
 
 /** Word-level Jaccard similarity between two strings (0–1). */
 function jaccardSimilarity(a: string, b: string): number {
@@ -27,6 +29,23 @@ function jaccardSimilarity(a: string, b: string): number {
   return intersection / (setA.size + setB.size - intersection)
 }
 
+const SYSTEM_PROMPT = `You are a memory assistant. Extract a concise, durable memory summary from the following conversation.
+
+Focus on:
+- User preferences, habits, and working style
+- Active projects, goals, and ongoing context
+- Important constraints, restrictions, or requirements stated by the user
+- Personal facts that are stable and useful for future sessions
+
+Avoid:
+- Ephemeral or one-off requests
+- Verbatim quotes from the conversation
+- Trivial details or small talk
+- Time-sensitive information unlikely to remain relevant
+
+Output: plain text only, under 350 words.
+If the conversation contains nothing worth remembering, output only the single word: SKIP`
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -39,14 +58,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Auth — throws if session is missing
     const profile = await getServerProfile()
     const userId = profile.user_id
+    const openrouterKey = resolveOpenRouterKey(profile)
 
-    // Server supabase client for DB queries (shares session via cookies)
     const supabase = createClient(cookies())
 
-    // Security: verify the chat belongs to the authenticated user
+    // Verify the chat belongs to the authenticated user
     const { data: chat, error: chatError } = await supabase
       .from("chats")
       .select("id, user_id")
@@ -58,7 +76,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: "Chat not found" }, { status: 404 })
     }
 
-    // Fetch the last N messages ordered by sequence_number
     const { data: rows, error: msgError } = await supabase
       .from("messages")
       .select("role, content")
@@ -80,16 +97,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Restore chronological order
-    const messages = [...rows].reverse()
-
-    // Resolve OpenRouter API key (profile key takes precedence, env key as fallback)
-    const openrouterKey =
-      profile.openrouter_api_key || process.env.OPENROUTER_API_KEY || null
-    checkApiKey(openrouterKey, "OpenRouter")
-
-    // Build conversation text for the summarization prompt
-    const conversationText = messages
+    const conversationText = [...rows]
+      .reverse()
       .filter(m => m.role === "user" || m.role === "assistant")
       .map(m => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
       .join("\n")
@@ -101,54 +110,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const systemPrompt = `You are a memory assistant. Extract a concise, durable memory summary from the following conversation.
+    const openai = createOpenRouterClient(openrouterKey, 15_000)
+    const summaryText = await callSummarizer(
+      openai,
+      SYSTEM_PROMPT,
+      conversationText,
+      600
+    )
 
-Focus on:
-- User preferences, habits, and working style
-- Active projects, goals, and ongoing context
-- Important constraints, restrictions, or requirements stated by the user
-- Personal facts that are stable and useful for future sessions
-
-Avoid:
-- Ephemeral or one-off requests
-- Verbatim quotes from the conversation
-- Trivial details or small talk
-- Time-sensitive information unlikely to remain relevant
-
-Output: plain text only, under 350 words.
-If the conversation contains nothing worth remembering, output only the single word: SKIP`
-
-    const openai = new OpenAI({
-      apiKey: openrouterKey ?? "",
-      baseURL: "https://openrouter.ai/api/v1",
-      timeout: OPENROUTER_TIMEOUT_MS
-    })
-
-    const completion = await openai.chat.completions.create({
-      model: "openai/gpt-oss-120b:free",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: conversationText }
-      ],
-      temperature: 0.3,
-      max_tokens: 600,
-      stream: false
-    })
-
-    const summaryText = (completion.choices[0]?.message?.content ?? "").trim()
-
-    if (
-      !summaryText ||
-      summaryText === "SKIP" ||
-      summaryText.split(/\s+/).length < MIN_SUMMARY_WORDS
-    ) {
+    if (!summaryText) {
       return NextResponse.json(
         { success: true, inserted: false, reason: "summary not useful" },
         { status: 200 }
       )
     }
 
-    // Near-duplicate guard: skip if the new summary is too similar to the last one
+    // Near-duplicate guard
     const { data: lastRow } = await supabase
       .from("summaries")
       .select("content")
@@ -170,9 +147,12 @@ If the conversation contains nothing worth remembering, output only the single w
     await insertSummary(supabase, userId, summaryText)
 
     return NextResponse.json({ success: true, inserted: true }, { status: 200 })
-  } catch (error: any) {
-    const message = error?.message || "Unexpected error"
-    const status = error?.status || 500
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Unexpected error"
+    const status =
+      typeof error === "object" && error !== null && "status" in error
+        ? (error as { status: number }).status
+        : 500
     return NextResponse.json({ message }, { status })
   }
 }

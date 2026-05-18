@@ -1,4 +1,9 @@
 import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
+import {
+  callSummarizer,
+  createOpenRouterClient,
+  resolveOpenRouterKey
+} from "@/lib/server/openrouter"
 import { createClient } from "@/lib/supabase/server"
 import { insertSummary } from "@/db/summaries"
 import {
@@ -9,15 +14,10 @@ import {
 import { cookies } from "next/headers"
 import { NextRequest, NextResponse } from "next/server"
 import { ServerRuntime } from "next"
-import OpenAI from "openai"
 
 export const runtime: ServerRuntime = "nodejs"
 
-/** Max size of the uploaded JSON file (bytes). */
 const MAX_FILE_BYTES = 10 * 1024 * 1024 // 10 MB
-
-const OPENROUTER_TIMEOUT_MS = 30_000
-const MIN_SUMMARY_WORDS = 10
 
 /** Conversations with fewer chars than this are not stored as raw full text. */
 const MIN_CHARS_FOR_RAW = 300
@@ -55,14 +55,9 @@ If the conversations contain absolutely nothing worth remembering, output only t
 
 export async function POST(request: NextRequest) {
   try {
-    // Auth — throws if session is missing
     const profile = await getServerProfile()
     const userId = profile.user_id
-
-    // Resolve OpenRouter key
-    const openrouterKey =
-      profile.openrouter_api_key || process.env.OPENROUTER_API_KEY || null
-    checkApiKey(openrouterKey, "OpenRouter")
+    const openrouterKey = resolveOpenRouterKey(profile)
 
     // --- Parse multipart form ---
     let formData: FormData
@@ -85,14 +80,12 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
-
     if (fileField.size === 0) {
       return NextResponse.json(
         { success: false, reason: "Uploaded file is empty" },
         { status: 400 }
       )
     }
-
     if (fileField.size > MAX_FILE_BYTES) {
       return NextResponse.json(
         {
@@ -103,11 +96,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // --- Parse JSON ---
     let raw: unknown
     try {
-      const text = await fileField.text()
-      raw = JSON.parse(text)
+      raw = JSON.parse(await fileField.text())
     } catch {
       return NextResponse.json(
         { success: false, reason: "File is not valid JSON" },
@@ -115,9 +106,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // --- Extract conversations ---
     const conversations = parseClaudeExport(raw)
-
     if (conversations.length === 0) {
       return NextResponse.json(
         {
@@ -130,15 +119,12 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = createClient(cookies())
+    const openai = createOpenRouterClient(openrouterKey, 30_000)
     let inserted = 0
     let rawInserted = 0
     const skipped: string[] = []
 
-    // -----------------------------------------------------------------------
-    // Step 1: Insert full conversation text for substantive conversations.
-    //   These are stored verbatim so no information is lost and the user can
-    //   browse/restore them from Memory History.
-    // -----------------------------------------------------------------------
+    // Step 1: Insert full conversation text for substantive conversations
     for (const conv of conversations) {
       const fullText = formatConversationFull(conv)
       if (fullText.length < MIN_CHARS_FOR_RAW) continue
@@ -146,81 +132,53 @@ export async function POST(request: NextRequest) {
         await insertSummary(supabase, userId, fullText)
         rawInserted++
       } catch {
-        // Non-fatal — continue with LLM summaries
+        // non-fatal
       }
     }
 
-    // -----------------------------------------------------------------------
-    // Step 2: Generate rich LLM summaries, batched CONVS_PER_BATCH at a time.
-    //   Each batch produces one detailed memory entry focusing on patterns and
-    //   durable context across the grouped conversations.
-    // -----------------------------------------------------------------------
+    // Step 2: LLM summaries batched CONVS_PER_BATCH at a time
     const perConvTexts = buildPerConvTexts(conversations)
-    const openai = new OpenAI({
-      apiKey: openrouterKey ?? "",
-      baseURL: "https://openrouter.ai/api/v1",
-      timeout: OPENROUTER_TIMEOUT_MS
-    })
-
     for (let i = 0; i < perConvTexts.length; i += CONVS_PER_BATCH) {
-      const batchTexts = perConvTexts.slice(i, i + CONVS_PER_BATCH)
-      const batchInput = batchTexts.join("\n\n---\n\n")
-
+      const batchInput = perConvTexts
+        .slice(i, i + CONVS_PER_BATCH)
+        .join("\n\n---\n\n")
       try {
-        const completion = await openai.chat.completions.create({
-          model: "openai/gpt-oss-120b:free",
-          messages: [
-            { role: "system", content: IMPORT_SYSTEM_PROMPT },
-            { role: "user", content: batchInput }
-          ],
-          temperature: 0.3,
-          max_tokens: 1200,
-          stream: false
-        })
-
-        const summaryText = (
-          completion.choices[0]?.message?.content ?? ""
-        ).trim()
-
-        if (
-          !summaryText ||
-          summaryText === "SKIP" ||
-          summaryText.split(/\s+/).length < MIN_SUMMARY_WORDS
-        ) {
+        const summaryText = await callSummarizer(
+          openai,
+          IMPORT_SYSTEM_PROMPT,
+          batchInput,
+          1200
+        )
+        if (!summaryText) {
           skipped.push(
             `batch ${Math.floor(i / CONVS_PER_BATCH) + 1} not useful`
           )
           continue
         }
-
         await insertSummary(supabase, userId, summaryText)
         inserted++
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "unknown"
-        skipped.push(`batch error: ${msg}`)
+        skipped.push(
+          `batch error: ${err instanceof Error ? err.message : "unknown"}`
+        )
       }
     }
 
-    // -----------------------------------------------------------------------
-    // Step 3: Insert a compact date index as the final (most-recent) row so
-    //   it is always first in retrieval and makes every conversation findable
-    //   by date, title, or topic even when LLM summaries abstract details away.
-    // -----------------------------------------------------------------------
-    const dateIndexLines = conversations.map(c => {
-      const date = c.updatedAt
-        ? new Date(c.updatedAt).toISOString().slice(0, 10)
-        : "unknown"
-      return `[${date}] ${c.title}`
-    })
+    // Step 3: Compact date index as final row for fast date-based recall
     const dateIndex = [
       `[Claude Conversation Index — imported ${new Date().toISOString().slice(0, 10)}]`,
-      ...dateIndexLines
+      ...conversations.map(c => {
+        const date = c.updatedAt
+          ? new Date(c.updatedAt).toISOString().slice(0, 10)
+          : "unknown"
+        return `[${date}] ${c.title}`
+      })
     ].join("\n")
 
     try {
       await insertSummary(supabase, userId, dateIndex)
     } catch {
-      // Non-fatal
+      // non-fatal
     }
 
     return NextResponse.json({
