@@ -17,12 +17,24 @@ export async function POST(request: Request) {
   try {
     const profile = await getServerProfile()
 
-    checkApiKey(profile.openai_api_key, "OpenAI")
+    // Route to OpenRouter when model uses provider/name format (e.g. openai/gpt-4o),
+    // otherwise fall back to direct OpenAI.
+    const isOpenRouterModel = chatSettings.model.includes("/")
 
-    const openai = new OpenAI({
-      apiKey: profile.openai_api_key || "",
-      organization: profile.openai_organization_id
-    })
+    let openai: OpenAI
+    if (isOpenRouterModel) {
+      checkApiKey(profile.openrouter_api_key, "OpenRouter")
+      openai = new OpenAI({
+        apiKey: profile.openrouter_api_key || "",
+        baseURL: "https://openrouter.ai/api/v1"
+      })
+    } else {
+      checkApiKey(profile.openai_api_key, "OpenAI")
+      openai = new OpenAI({
+        apiKey: profile.openai_api_key || "",
+        organization: profile.openai_organization_id
+      })
+    }
 
     let allTools: OpenAI.Chat.Completions.ChatCompletionTool[] = []
     let allRouteMaps = {}
