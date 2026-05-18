@@ -13,6 +13,7 @@ import { FC } from "react"
 import { TabsList } from "../ui/tabs"
 import { WithTooltip } from "../ui/with-tooltip"
 import { MemoryHistorySheet } from "../memory/memory-history-sheet"
+import { TimelineSheet } from "../timeline/timeline-sheet"
 import { ProfileSettings } from "../utility/profile-settings"
 import { SidebarSwitchItem } from "./sidebar-switch-item"
 
@@ -83,6 +84,11 @@ export const SidebarSwitcher: FC<SidebarSwitcherProps> = ({
 
         {/* TODO */}
         {/* <Alerts /> */}
+
+        <WithTooltip
+          display={<div>Conversation Timeline</div>}
+          trigger={<TimelineSheet />}
+        />
 
         <WithTooltip
           display={<div>Memory History</div>}
