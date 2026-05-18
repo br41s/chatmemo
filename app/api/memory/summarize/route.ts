@@ -125,7 +125,7 @@ If the conversation contains nothing worth remembering, output only the single w
     })
 
     const completion = await openai.chat.completions.create({
-      model: "meta-llama/llama-3.3-70b-instruct:free",
+      model: "google/gemini-2.5-flash-preview:free",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: conversationText }

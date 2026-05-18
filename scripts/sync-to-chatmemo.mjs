@@ -160,7 +160,7 @@ async function summarize(openrouterKey, title, date, messages) {
         Authorization: `Bearer ${openrouterKey}`
       },
       body: JSON.stringify({
-        model: "meta-llama/llama-3.3-70b-instruct:free",
+        model: "google/gemini-2.5-flash-preview:free",
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: input }

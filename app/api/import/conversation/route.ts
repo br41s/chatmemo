@@ -188,7 +188,7 @@ export async function POST(request: NextRequest) {
     })
 
     const completion = await openai.chat.completions.create({
-      model: "meta-llama/llama-3.3-70b-instruct:free",
+      model: "google/gemini-2.5-flash-preview:free",
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: inputText }
