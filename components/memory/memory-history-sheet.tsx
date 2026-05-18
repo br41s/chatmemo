@@ -9,7 +9,7 @@ import {
   SheetTitle,
   SheetTrigger
 } from "@/components/ui/sheet"
-import { IconHistory, IconBrandOpenai } from "@tabler/icons-react"
+import { IconHistory, IconBrandOpenai, IconTrash } from "@tabler/icons-react"
 import { useCallback, useRef, useState } from "react"
 
 interface SummaryRow {
@@ -44,6 +44,9 @@ export function MemoryHistorySheet() {
   const [loading, setLoading] = useState(false)
   const [restoringId, setRestoringId] = useState<string | null>(null)
   const [restoredId, setRestoredId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [clearingAll, setClearingAll] = useState(false)
+  const [confirmClear, setConfirmClear] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // Import state (shared between ChatGPT and Claude importers)
@@ -78,6 +81,7 @@ export function MemoryHistorySheet() {
       setImportResult(null)
       setImportError(null)
       setImportingSource(null)
+      setConfirmClear(false)
       loadHistory()
     }
   }
@@ -146,6 +150,43 @@ export function MemoryHistorySheet() {
     }
   }
 
+  const handleDelete = async (id: string) => {
+    setDeletingId(id)
+    setError(null)
+    try {
+      const res = await fetch("/api/summary/delete", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id })
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      setSummaries(prev => prev.filter(s => s.id !== id))
+    } catch {
+      setError("Failed to delete entry")
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  const handleClearAll = async () => {
+    if (!confirmClear) {
+      setConfirmClear(true)
+      return
+    }
+    setClearingAll(true)
+    setConfirmClear(false)
+    setError(null)
+    try {
+      const res = await fetch("/api/summary/clear", { method: "DELETE" })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      setSummaries([])
+    } catch {
+      setError("Failed to clear memory")
+    } finally {
+      setClearingAll(false)
+    }
+  }
+
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetTrigger asChild>
@@ -160,10 +201,29 @@ export function MemoryHistorySheet() {
 
       <SheetContent side="left" className="flex w-[380px] flex-col gap-4 p-4">
         <SheetHeader className="pb-2">
-          <SheetTitle className="flex items-center gap-2 text-base">
-            <IconHistory size={18} />
-            Memory History
-          </SheetTitle>
+          <div className="flex items-center justify-between">
+            <SheetTitle className="flex items-center gap-2 text-base">
+              <IconHistory size={18} />
+              Memory History
+            </SheetTitle>
+            {summaries.length > 0 && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className={`h-7 text-xs ${confirmClear ? "text-red-500 hover:text-red-600" : "text-muted-foreground hover:text-red-500"}`}
+                disabled={clearingAll}
+                onClick={handleClearAll}
+                onBlur={() => setConfirmClear(false)}
+              >
+                <IconTrash size={13} className="mr-1" />
+                {clearingAll
+                  ? "Clearing…"
+                  : confirmClear
+                    ? "Confirm clear all"
+                    : "Clear all"}
+              </Button>
+            )}
+          </div>
         </SheetHeader>
 
         {restoredId && (
@@ -220,21 +280,41 @@ export function MemoryHistorySheet() {
                       {preview(row.content)}
                     </p>
 
-                    {!isCurrent && (
+                    <div className="flex items-center gap-1.5">
+                      {!isCurrent && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs"
+                          disabled={
+                            isRestoring ||
+                            restoringId !== null ||
+                            deletingId !== null
+                          }
+                          onClick={() => handleRestore(row.id)}
+                        >
+                          {isRestoring
+                            ? "Restoring…"
+                            : justRestored
+                              ? "Restored ✓"
+                              : "Restore"}
+                        </Button>
+                      )}
                       <Button
                         size="sm"
-                        variant="outline"
-                        className="h-7 text-xs"
-                        disabled={isRestoring || restoringId !== null}
-                        onClick={() => handleRestore(row.id)}
+                        variant="ghost"
+                        className="size-7 p-0 text-muted-foreground hover:text-red-500"
+                        disabled={deletingId === row.id || restoringId !== null}
+                        onClick={() => handleDelete(row.id)}
+                        title="Delete this entry"
                       >
-                        {isRestoring
-                          ? "Restoring…"
-                          : justRestored
-                            ? "Restored ✓"
-                            : "Restore"}
+                        {deletingId === row.id ? (
+                          <span className="text-xs">…</span>
+                        ) : (
+                          <IconTrash size={13} />
+                        )}
                       </Button>
-                    )}
+                    </div>
                   </li>
                 )
               })}

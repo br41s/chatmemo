@@ -29,6 +29,10 @@ const IMPORT_SYSTEM_PROMPT = `You are a memory assistant. You are given one or m
 
 Your job is to extract a detailed, durable memory summary that will help a future AI assistant understand this user deeply.
 
+FORMAT: For each conversation, start with a header line exactly like this:
+### [YYYY-MM-DD] Conversation Title
+Then bullet the key facts from that conversation underneath.
+
 Extract and preserve:
 - Active and ongoing projects (names, tech stack, goals, current status)
 - Preferences, habits, and working style
@@ -38,7 +42,7 @@ Extract and preserve:
 - Decisions made and their rationale
 - Anything specific enough to be useful in a future session
 
-Be specific and detailed. Preserve proper nouns, project names, technology choices, and concrete facts. Do not generalize.
+Be specific and detailed. Preserve proper nouns, project names, technology choices, concrete facts, and exact dates. Do not generalize.
 
 Avoid:
 - Ephemeral one-off requests with no lasting relevance
@@ -164,7 +168,7 @@ export async function POST(request: NextRequest) {
 
       try {
         const completion = await openai.chat.completions.create({
-          model: "openai/gpt-4o-mini",
+          model: "google/gemini-2.0-flash-exp:free",
           messages: [
             { role: "system", content: IMPORT_SYSTEM_PROMPT },
             { role: "user", content: batchInput }
@@ -195,6 +199,28 @@ export async function POST(request: NextRequest) {
         const msg = err instanceof Error ? err.message : "unknown"
         skipped.push(`batch error: ${msg}`)
       }
+    }
+
+    // -----------------------------------------------------------------------
+    // Step 3: Insert a compact date index as the final (most-recent) row so
+    //   it is always first in retrieval and makes every conversation findable
+    //   by date, title, or topic even when LLM summaries abstract details away.
+    // -----------------------------------------------------------------------
+    const dateIndexLines = conversations.map(c => {
+      const date = c.updatedAt
+        ? new Date(c.updatedAt).toISOString().slice(0, 10)
+        : "unknown"
+      return `[${date}] ${c.title}`
+    })
+    const dateIndex = [
+      `[Claude Conversation Index — imported ${new Date().toISOString().slice(0, 10)}]`,
+      ...dateIndexLines
+    ].join("\n")
+
+    try {
+      await insertSummary(supabase, userId, dateIndex)
+    } catch {
+      // Non-fatal
     }
 
     return NextResponse.json({

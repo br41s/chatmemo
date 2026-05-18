@@ -128,7 +128,7 @@ export async function POST(request: NextRequest) {
     for (const chunk of chunks) {
       try {
         const completion = await openai.chat.completions.create({
-          model: "openai/gpt-4o-mini",
+          model: "google/gemini-2.0-flash-exp:free",
           messages: [
             { role: "system", content: IMPORT_SYSTEM_PROMPT },
             { role: "user", content: chunk }

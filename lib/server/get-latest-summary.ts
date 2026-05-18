@@ -2,10 +2,10 @@ import { createClient } from "@/lib/supabase/server"
 import { cookies } from "next/headers"
 
 /** Max total chars injected into the system prompt as memory context. */
-const MAX_MEMORY_CHARS = 12_000
+const MAX_MEMORY_CHARS = 24_000
 
 /** How many most-recent summaries to fetch and concatenate. */
-const MAX_SUMMARIES = 15
+const MAX_SUMMARIES = 25
 
 /**
  * Returns the concatenation of the user's most recent memory summaries,

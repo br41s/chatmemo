@@ -125,7 +125,7 @@ If the conversation contains nothing worth remembering, output only the single w
     })
 
     const completion = await openai.chat.completions.create({
-      model: "openai/gpt-4o-mini",
+      model: "google/gemini-2.0-flash-exp:free",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: conversationText }

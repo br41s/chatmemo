@@ -158,6 +158,7 @@ export default function WorkspaceLayout({ children }: WorkspaceLayoutProps) {
 
     setChatSettings({
       model: (searchParams.get("model") ||
+        localStorage.getItem("chatmemo.selectedModel") ||
         workspace?.default_model ||
         "openai/gpt-4o-mini") as LLMID,
       prompt:
