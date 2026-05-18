@@ -160,7 +160,7 @@ async function summarize(openrouterKey, title, date, messages) {
         Authorization: `Bearer ${openrouterKey}`
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash-preview:free",
+        model: "openai/gpt-oss-120b:free",
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: input }

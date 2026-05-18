@@ -168,7 +168,7 @@ export async function POST(request: NextRequest) {
 
       try {
         const completion = await openai.chat.completions.create({
-          model: "google/gemini-2.5-flash-preview:free",
+          model: "openai/gpt-oss-120b:free",
           messages: [
             { role: "system", content: IMPORT_SYSTEM_PROMPT },
             { role: "user", content: batchInput }
