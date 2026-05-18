@@ -7,9 +7,10 @@
  * What it does:
  *  1. Reads credentials from .env.local
  *  2. Gets your Supabase user ID (first registered user via service role)
- *  3. Writes ~/.chatmemo/config.json (used by the hook script)
- *  4. Registers the Stop hook in ~/.claude/settings.json
- *  5. Prints the bookmarklet URL — drag it to your bookmarks bar
+ *  3. Writes CHATMEMO_IMPORT_USER_ID to .env.local (used by the API endpoint)
+ *  4. Writes ~/.chatmemo/config.json (used by the hook script)
+ *  5. Registers the Stop hook in ~/.claude/settings.json
+ *  6. Prints the bookmarklet URL — drag it to your bookmarks bar
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs"
@@ -21,13 +22,13 @@ const CONFIG_FILE = join(CONFIG_DIR, "config.json")
 const CLAUDE_SETTINGS = join(homedir(), ".claude", "settings.json")
 const HOOK_SCRIPT = resolve("scripts/sync-to-chatmemo.mjs")
 const CHATMEMO_URL = "http://localhost:3000"
+const ENV_PATH = resolve(".env.local")
 
 // ---------------------------------------------------------------------------
 // 1. Read .env.local
 // ---------------------------------------------------------------------------
 
-const envPath = resolve(".env.local")
-if (!existsSync(envPath)) {
+if (!existsSync(ENV_PATH)) {
   console.error("✗ .env.local not found. Run this script from the chatmemo project root.")
   process.exit(1)
 }
@@ -41,10 +42,11 @@ function readEnv(file) {
   return env
 }
 
-const env = readEnv(envPath)
+const env = readEnv(ENV_PATH)
 const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL
 const serviceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY
 const openrouterKey = env.OPENROUTER_API_KEY
+const importToken = env.CHATMEMO_IMPORT_TOKEN
 
 if (!supabaseUrl || !serviceRoleKey || serviceRoleKey === "your-service-role-key") {
   console.error("✗ Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env.local")
@@ -52,6 +54,12 @@ if (!supabaseUrl || !serviceRoleKey || serviceRoleKey === "your-service-role-key
 }
 if (!openrouterKey) {
   console.error("✗ Missing OPENROUTER_API_KEY in .env.local")
+  process.exit(1)
+}
+if (!importToken) {
+  console.error("✗ Missing CHATMEMO_IMPORT_TOKEN in .env.local")
+  console.error("  Add this line to .env.local:  CHATMEMO_IMPORT_TOKEN=<random-hex-token>")
+  console.error("  Generate one with: node -e \"require('crypto').randomBytes(32, (_,b)=>console.log(b.toString('hex')))\"")
   process.exit(1)
 }
 
@@ -94,7 +102,30 @@ try {
 console.log(`✓ User ID: ${userId}`)
 
 // ---------------------------------------------------------------------------
-// 3. Write ~/.chatmemo/config.json
+// 3. Write CHATMEMO_IMPORT_USER_ID to .env.local
+// ---------------------------------------------------------------------------
+
+let envContent = readFileSync(ENV_PATH, "utf8")
+
+if (envContent.includes("CHATMEMO_IMPORT_USER_ID=")) {
+  // Update existing value
+  envContent = envContent.replace(
+    /^CHATMEMO_IMPORT_USER_ID=.*$/m,
+    `CHATMEMO_IMPORT_USER_ID=${userId}`
+  )
+} else {
+  // Insert after CHATMEMO_IMPORT_TOKEN line
+  envContent = envContent.replace(
+    /^(CHATMEMO_IMPORT_TOKEN=.*)$/m,
+    `$1\nCHATMEMO_IMPORT_USER_ID=${userId}`
+  )
+}
+
+writeFileSync(ENV_PATH, envContent)
+console.log("✓ Wrote CHATMEMO_IMPORT_USER_ID to .env.local")
+
+// ---------------------------------------------------------------------------
+// 4. Write ~/.chatmemo/config.json
 // ---------------------------------------------------------------------------
 
 if (!existsSync(CONFIG_DIR)) mkdirSync(CONFIG_DIR, { recursive: true })
@@ -112,7 +143,7 @@ writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2))
 console.log(`✓ Wrote ${CONFIG_FILE}`)
 
 // ---------------------------------------------------------------------------
-// 4. Register Stop hook in ~/.claude/settings.json
+// 5. Register Stop hook in ~/.claude/settings.json
 // ---------------------------------------------------------------------------
 
 let claudeSettings = {}
@@ -144,46 +175,74 @@ if (!alreadyRegistered) {
 }
 
 // ---------------------------------------------------------------------------
-// 5. Generate bookmarklet
+// 6. Generate bookmarklet
 // ---------------------------------------------------------------------------
+
+// claude.ai DOM selectors (updated 2026-05):
+//   User messages:      [class*="font-user-message"]
+//   Assistant messages: [class*="font-claude-message"] or .prose containers
+//   Fallback:           data-message-author-role attribute
 
 const bookmarkletCode = `(function(){
 var CHATMEMO='${CHATMEMO_URL}';
-var title=(document.querySelector('h1,h2,[data-testid*="title"]')?.innerText||document.title).replace(/\\s*[-|]\\s*Claude.*$/i,'').trim()||'Claude conversation';
+var TOKEN='${importToken}';
+var title=(document.querySelector('h1,h2,[data-testid*="title"],[class*="conversation-title"]')?.innerText||document.title).replace(/\\s*[-|]\\s*Claude.*$/i,'').trim()||'Claude conversation';
 var date=new Date().toISOString().slice(0,10);
 var msgs=[];
 function getText(el){return(el?.innerText||'').trim()}
-var humanEls=[...document.querySelectorAll('[data-testid*="human-turn"],[data-testid*="user-turn"],[class*="HumanTurn"],[class*="human-turn"]')];
-var assistEls=[...document.querySelectorAll('[data-testid*="assistant-turn"],[data-testid*="AssistantTurn"],[class*="AssistantTurn"],[class*="assistant-turn"]')];
-if(humanEls.length>0){
-  var all=[];
-  humanEls.forEach(function(el){all.push({el:el,role:'user'})});
-  assistEls.forEach(function(el){all.push({el:el,role:'assistant'})});
-  all.sort(function(a,b){return a.el.compareDocumentPosition(b.el)&4?-1:1});
-  all.forEach(function(t){var tx=getText(t.el);if(tx.length>10)msgs.push({role:t.role,text:tx})});
-}
-if(msgs.length===0){
-  var art=[...document.querySelectorAll('[data-is-streaming],[data-message-author-role]')];
-  art.forEach(function(el){
-    var role=el.dataset.messageAuthorRole||'user';
+
+/* Strategy 1: role-based data attribute (future-proof) */
+var roleEls=[...document.querySelectorAll('[data-message-author-role]')];
+if(roleEls.length>0){
+  roleEls.forEach(function(el){
+    var role=el.dataset.messageAuthorRole;
+    if(role!=='user'&&role!=='assistant')return;
     var tx=getText(el);
     if(tx.length>10)msgs.push({role:role,text:tx});
   });
 }
-if(msgs.length===0){alert('ChatMemo: could not find messages.\\nOpen DevTools → Elements, find a message, right-click → Copy selector, and update the bookmarklet.');return}
+
+/* Strategy 2: claude.ai class-based selectors */
+if(msgs.length===0){
+  var userEls=[...document.querySelectorAll('[class*="font-user-message"]')];
+  var assistEls=[...document.querySelectorAll('[class*="font-claude-message"],[class*="prose"]:not([class*="font-user-message"])')];
+  if(userEls.length>0||assistEls.length>0){
+    var all=[];
+    userEls.forEach(function(el){all.push({el:el,role:'user'})});
+    assistEls.forEach(function(el){all.push({el:el,role:'assistant'})});
+    all.sort(function(a,b){return a.el.compareDocumentPosition(b.el)&4?-1:1});
+    all.forEach(function(t){var tx=getText(t.el);if(tx.length>10)msgs.push({role:t.role,text:tx})});
+  }
+}
+
+/* Strategy 3: generic article/turn containers */
+if(msgs.length===0){
+  var arts=[...document.querySelectorAll('[data-testid*="human-turn"],[data-testid*="assistant-turn"],[class*="HumanTurn"],[class*="AssistantTurn"],[class*="human-turn"],[class*="assistant-turn"]')];
+  arts.forEach(function(el){
+    var cls=el.className||'';
+    var role=(cls.toLowerCase().includes('human')||cls.toLowerCase().includes('user'))?'user':'assistant';
+    var tx=getText(el);
+    if(tx.length>10)msgs.push({role:role,text:tx});
+  });
+}
+
+if(msgs.length===0){
+  alert('ChatMemo: could not find messages.\\nTry refreshing the page or open the conversation fully before clicking.');
+  return;
+}
+
 fetch(CHATMEMO+'/api/import/conversation',{
   method:'POST',
-  headers:{'Content-Type':'application/json'},
-  credentials:'include',
+  headers:{'Content-Type':'application/json','Authorization':'Bearer '+TOKEN},
   body:JSON.stringify({title:title,date:date,messages:msgs})
 }).then(function(r){return r.json()}).then(function(d){
   var ok=d.success&&d.inserted>0;
   var n=document.createElement('div');
   n.setAttribute('style','position:fixed;top:16px;right:16px;z-index:99999;background:'+(ok?'#16a34a':d.inserted===0?'#ca8a04':'#dc2626')+';color:#fff;padding:10px 18px;border-radius:8px;font:14px/1.4 sans-serif;box-shadow:0 2px 12px rgba(0,0,0,.25);max-width:320px');
-  n.innerText=ok?'✓ Saved to ChatMemo':d.inserted===0?'ℹ ChatMemo: nothing new to save':'✗ ChatMemo error: '+(d.reason||d.message||'unknown');
+  n.innerText=ok?'✓ Saved to ChatMemo ('+msgs.length+' msgs)':d.inserted===0?'ℹ ChatMemo: nothing new to save':'✗ ChatMemo error: '+(d.reason||d.message||'unknown');
   document.body.appendChild(n);
   setTimeout(function(){n.remove()},4000);
-}).catch(function(){alert('ChatMemo: connection failed.\\nMake sure ChatMemo is running at ${CHATMEMO_URL} and you are logged in.')});
+}).catch(function(e){alert('ChatMemo: connection failed.\\nMake sure ChatMemo is running at ${CHATMEMO_URL}.\\nError: '+e.message)});
 })()`
 
 const bookmarkletUrl = "javascript:" + encodeURIComponent(bookmarkletCode)
@@ -204,4 +263,4 @@ console.log("\nHow it works:")
 console.log("  • Claude Code sessions → synced automatically after every session")
 console.log("    (fires when Claude stops, imports once per session with ≥3 turns)")
 console.log("  • Claude.ai browser → click the bookmarklet on any conversation")
-console.log("    (ChatMemo must be open in another tab so the session cookie is active)")
+console.log("    (ChatMemo does NOT need to be open — uses Bearer token auth)")

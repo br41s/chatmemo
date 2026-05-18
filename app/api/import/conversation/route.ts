@@ -2,16 +2,20 @@
  * POST /api/import/conversation
  *
  * Accepts a single conversation (from the bookmarklet or any client) and
- * stores it as a memory summary. Requires the user to be logged into
- * ChatMemo — the bookmarklet must be clicked while ChatMemo is open in
- * another tab so the Supabase session cookie is present.
+ * stores it as a memory summary.
  *
- * CORS is open for https://claude.ai so the bookmarklet can POST cross-origin
- * with credentials.
+ * Two auth modes:
+ *  1. Bearer token  — bookmarklet sends `Authorization: Bearer <CHATMEMO_IMPORT_TOKEN>`
+ *     The server resolves userId from CHATMEMO_IMPORT_USER_ID env var (written by
+ *     setup:sync). Works cross-origin even when SameSite cookies can't travel.
+ *  2. Session cookie — any same-origin client that has a Supabase session cookie.
+ *
+ * CORS is open for https://claude.ai so the bookmarklet can POST cross-origin.
  */
 
 import { getServerProfile } from "@/lib/server/server-chat-helpers"
 import { createClient } from "@/lib/supabase/server"
+import { createClient as createServiceClient } from "@supabase/supabase-js"
 import { insertSummary } from "@/db/summaries"
 import { cookies } from "next/headers"
 import { NextRequest, NextResponse } from "next/server"
@@ -21,7 +25,7 @@ import OpenAI from "openai"
 export const runtime: ServerRuntime = "nodejs"
 
 // ---------------------------------------------------------------------------
-// CORS — allow claude.ai to POST with cookies
+// CORS — allow claude.ai to POST without cookies
 // ---------------------------------------------------------------------------
 
 const ALLOWED_ORIGINS = ["https://claude.ai", "http://localhost:3000"]
@@ -32,7 +36,7 @@ function corsHeaders(origin: string | null): Record<string, string> {
   return {
     "Access-Control-Allow-Origin": allowed,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "Access-Control-Allow-Credentials": "true"
   }
 }
@@ -72,6 +76,41 @@ Output: plain text only, up to 600 words.
 If the conversation contains nothing worth remembering, output only the single word: SKIP`
 
 // ---------------------------------------------------------------------------
+// Auth helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Try Bearer token auth first (bookmarklet path).
+ * Falls back to session cookie auth (same-origin path).
+ * Returns userId or throws.
+ */
+async function resolveUserId(request: NextRequest): Promise<string> {
+  const authHeader = request.headers.get("authorization") ?? ""
+
+  if (authHeader.startsWith("Bearer ")) {
+    const token = authHeader.slice(7).trim()
+    const importToken = process.env.CHATMEMO_IMPORT_TOKEN
+    const importUserId = process.env.CHATMEMO_IMPORT_USER_ID
+
+    if (!importToken || !importUserId) {
+      throw new Error(
+        "Bearer token auth not configured — run npm run setup:sync"
+      )
+    }
+
+    if (token !== importToken) {
+      throw new Error("Invalid import token")
+    }
+
+    return importUserId
+  }
+
+  // Fall back to cookie-based session auth
+  const profile = await getServerProfile()
+  return profile.user_id
+}
+
+// ---------------------------------------------------------------------------
 // Handler
 // ---------------------------------------------------------------------------
 
@@ -80,11 +119,9 @@ export async function POST(request: NextRequest) {
   const headers = corsHeaders(origin)
 
   try {
-    const profile = await getServerProfile()
-    const userId = profile.user_id
+    const userId = await resolveUserId(request)
 
-    const openrouterKey =
-      profile.openrouter_api_key || process.env.OPENROUTER_API_KEY || null
+    const openrouterKey = process.env.OPENROUTER_API_KEY || null
 
     if (!openrouterKey) {
       return NextResponse.json(
@@ -174,7 +211,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const supabase = createClient(cookies())
+    // Use service role client when using token auth (no session cookie)
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+    const supabase = createServiceClient(supabaseUrl, serviceRoleKey)
     await insertSummary(supabase, userId, summaryText)
 
     return NextResponse.json(
