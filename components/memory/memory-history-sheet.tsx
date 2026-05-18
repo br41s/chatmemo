@@ -9,8 +9,8 @@ import {
   SheetTitle,
   SheetTrigger
 } from "@/components/ui/sheet"
-import { IconHistory } from "@tabler/icons-react"
-import { useCallback, useState } from "react"
+import { IconHistory, IconBrandOpenai } from "@tabler/icons-react"
+import { useCallback, useRef, useState } from "react"
 
 interface SummaryRow {
   id: string
@@ -32,6 +32,12 @@ function preview(content: string, maxChars = 120): string {
   return clean.length > maxChars ? clean.slice(0, maxChars) + "…" : clean
 }
 
+interface ImportResult {
+  conversations_found: number
+  chunks_processed: number
+  inserted: number
+}
+
 export function MemoryHistorySheet() {
   const [open, setOpen] = useState(false)
   const [summaries, setSummaries] = useState<SummaryRow[]>([])
@@ -39,6 +45,15 @@ export function MemoryHistorySheet() {
   const [restoringId, setRestoringId] = useState<string | null>(null)
   const [restoredId, setRestoredId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  // Import state (shared between ChatGPT and Claude importers)
+  const chatgptFileInputRef = useRef<HTMLInputElement>(null)
+  const claudeFileInputRef = useRef<HTMLInputElement>(null)
+  const [importingSource, setImportingSource] = useState<
+    "chatgpt" | "claude" | null
+  >(null)
+  const [importResult, setImportResult] = useState<ImportResult | null>(null)
+  const [importError, setImportError] = useState<string | null>(null)
 
   const loadHistory = useCallback(async () => {
     setLoading(true)
@@ -60,7 +75,54 @@ export function MemoryHistorySheet() {
     if (next) {
       setRestoredId(null)
       setError(null)
+      setImportResult(null)
+      setImportError(null)
+      setImportingSource(null)
       loadHistory()
+    }
+  }
+
+  const handleImport = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    source: "chatgpt" | "claude"
+  ) => {
+    const file = e.target.files?.[0]
+    // Reset input so re-selecting the same file triggers onChange again
+    e.target.value = ""
+    if (!file) return
+
+    setImportingSource(source)
+    setImportResult(null)
+    setImportError(null)
+
+    try {
+      const fd = new FormData()
+      fd.append("file", file)
+
+      const endpoint =
+        source === "chatgpt" ? "/api/import/chatgpt" : "/api/import/claude"
+      const res = await fetch(endpoint, { method: "POST", body: fd })
+      const data = await res.json()
+
+      if (!res.ok || !data.success) {
+        setImportError(
+          data.reason ?? data.message ?? `Server error (${res.status})`
+        )
+        return
+      }
+
+      setImportResult({
+        conversations_found: data.conversations_found ?? 0,
+        chunks_processed: data.chunks_processed ?? 0,
+        inserted: data.inserted ?? 0
+      })
+
+      // Refresh history list to show newly inserted summaries
+      await loadHistory()
+    } catch {
+      setImportError("Network error — check your connection and try again")
+    } finally {
+      setImportingSource(null)
     }
   }
 
@@ -179,6 +241,75 @@ export function MemoryHistorySheet() {
             </ul>
           </ScrollArea>
         )}
+
+        {/* Import section */}
+        <div className="mt-auto border-t pt-3">
+          <p className="mb-2 text-xs font-medium text-muted-foreground">
+            Import conversation history
+          </p>
+
+          {/* Hidden file inputs */}
+          <input
+            ref={chatgptFileInputRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={e => handleImport(e, "chatgpt")}
+          />
+          <input
+            ref={claudeFileInputRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={e => handleImport(e, "claude")}
+          />
+
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="flex-1 text-xs"
+              disabled={importingSource !== null}
+              onClick={() => chatgptFileInputRef.current?.click()}
+            >
+              <IconBrandOpenai size={13} className="mr-1 shrink-0" />
+              {importingSource === "chatgpt" ? "Importing…" : "ChatGPT"}
+            </Button>
+
+            <Button
+              size="sm"
+              variant="outline"
+              className="flex-1 text-xs"
+              disabled={importingSource !== null}
+              onClick={() => claudeFileInputRef.current?.click()}
+            >
+              <span className="mr-1 shrink-0 text-[11px] font-bold">A</span>
+              {importingSource === "claude" ? "Importing…" : "Claude"}
+            </Button>
+          </div>
+
+          <p className="mt-1.5 text-[10px] text-muted-foreground">
+            Upload{" "}
+            <code className="rounded bg-muted px-0.5">conversations.json</code>{" "}
+            from your ChatGPT or Claude export.
+          </p>
+
+          {importResult && (
+            <div className="mt-2 rounded-md bg-green-500/10 px-3 py-2 text-xs text-green-600 dark:text-green-400">
+              ✓ Imported {importResult.inserted} memory
+              {importResult.inserted !== 1 ? " entries" : " entry"} from{" "}
+              {importResult.conversations_found} conversation
+              {importResult.conversations_found !== 1 ? "s" : ""}
+              {importResult.inserted === 0 ? " — nothing new to save" : ""}
+            </div>
+          )}
+
+          {importError && (
+            <div className="mt-2 rounded-md bg-red-500/10 px-3 py-2 text-xs text-red-600 dark:text-red-400">
+              {importError}
+            </div>
+          )}
+        </div>
       </SheetContent>
     </Sheet>
   )

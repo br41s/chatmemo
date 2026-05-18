@@ -1,0 +1,230 @@
+/**
+ * ChatGPT export parser — conversations.json format.
+ *
+ * The official ChatGPT export is a ZIP containing conversations.json.
+ * This module operates on the already-extracted JSON array.
+ *
+ * Export format (as of 2024-2025):
+ *   Array of conversation objects, each with a `mapping` graph.
+ *   The mapping is a node graph (not a linear array). To reconstruct
+ *   the ordered thread we walk from the root to `current_node`.
+ */
+
+// ---------------------------------------------------------------------------
+// Raw ChatGPT export types (defensive — all fields optional except essentials)
+// ---------------------------------------------------------------------------
+
+interface RawContentPart {
+  content_type?: string
+  text?: string
+}
+
+interface RawMessageContent {
+  content_type?: string
+  /** parts can be strings or rich objects (image refs, etc.) */
+  parts?: Array<string | RawContentPart | null>
+}
+
+interface RawMessage {
+  id?: string
+  author?: { role?: string }
+  content?: RawMessageContent
+  create_time?: number | null
+}
+
+interface RawNode {
+  id?: string
+  message?: RawMessage | null
+  parent?: string | null
+  children?: string[]
+}
+
+interface RawConversation {
+  id?: string
+  title?: string
+  create_time?: number
+  update_time?: number
+  mapping?: Record<string, RawNode>
+  current_node?: string | null
+}
+
+// ---------------------------------------------------------------------------
+// Parsed / internal types
+// ---------------------------------------------------------------------------
+
+export interface ParsedMessage {
+  role: "user" | "assistant"
+  text: string
+}
+
+export interface ParsedConversation {
+  id: string
+  title: string
+  updatedAt: number // unix timestamp
+  messages: ParsedMessage[]
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Extract plain text from a raw message content block. */
+function extractText(content: RawMessageContent | undefined): string {
+  if (!content) return ""
+  const parts = content.parts ?? []
+  return parts
+    .map(part => {
+      if (typeof part === "string") return part
+      if (part && typeof part === "object" && typeof part.text === "string")
+        return part.text
+      return ""
+    })
+    .join("")
+    .trim()
+}
+
+/**
+ * Reconstruct the linear message thread for a conversation by walking
+ * the mapping graph from the root node down to `current_node`.
+ *
+ * Strategy:
+ *   1. Find root(s) — nodes with no parent or parent === null.
+ *   2. Follow children depth-first, always taking the branch that leads
+ *      to current_node (or the first child if ambiguous).
+ *
+ * This handles branching conversations (edits / regenerations) correctly
+ * by always following the path that ends at current_node.
+ */
+function reconstructThread(
+  mapping: Record<string, RawNode>,
+  currentNodeId: string | null | undefined
+): ParsedMessage[] {
+  if (!currentNodeId || !mapping[currentNodeId]) return []
+
+  // Build child→parent index and collect ancestors of currentNodeId
+  const ancestors = new Set<string>()
+  let cursor: string | null | undefined = currentNodeId
+  while (cursor && mapping[cursor]) {
+    ancestors.add(cursor)
+    cursor = mapping[cursor].parent
+  }
+
+  // Walk from root to currentNodeId, collecting messages
+  const messages: ParsedMessage[] = []
+
+  // Find root: a node whose parent is null/undefined or not in mapping
+  const root = Object.values(mapping).find(
+    node => !node.parent || !mapping[node.parent]
+  )
+  if (!root?.id) return []
+
+  const visit = (nodeId: string) => {
+    const node = mapping[nodeId]
+    if (!node) return
+
+    const msg = node.message
+    const role = msg?.author?.role
+
+    if (role === "user" || role === "assistant") {
+      const text = extractText(msg?.content)
+      if (text.length > 0) {
+        messages.push({ role, text })
+      }
+    }
+
+    // Follow the child that is an ancestor of currentNodeId, else first child
+    const children = node.children ?? []
+    const nextChild = children.find(cid => ancestors.has(cid)) ?? children[0]
+    if (nextChild) visit(nextChild)
+  }
+
+  visit(root.id)
+  return messages
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/** Maximum conversations to process per import (most recent first). */
+const MAX_CONVERSATIONS = 40
+
+/** Maximum messages to keep per conversation (most recent). */
+const MAX_MESSAGES_PER_CONV = 40
+
+/**
+ * Parse a raw ChatGPT `conversations.json` array into a clean internal
+ * representation. Silently skips malformed entries.
+ *
+ * @param raw - The parsed JSON value from conversations.json
+ */
+export function parseChatGPTExport(raw: unknown): ParsedConversation[] {
+  if (!Array.isArray(raw)) return []
+
+  const results: ParsedConversation[] = []
+
+  for (const item of raw) {
+    try {
+      const conv = item as RawConversation
+      if (!conv?.mapping || typeof conv.mapping !== "object") continue
+
+      const messages = reconstructThread(conv.mapping, conv.current_node)
+      if (messages.length === 0) continue
+
+      // Trim to most recent messages to cap prompt size
+      const trimmed =
+        messages.length > MAX_MESSAGES_PER_CONV
+          ? messages.slice(-MAX_MESSAGES_PER_CONV)
+          : messages
+
+      results.push({
+        id: conv.id ?? crypto.randomUUID(),
+        title: (conv.title ?? "Untitled").slice(0, 200),
+        updatedAt: conv.update_time ?? conv.create_time ?? 0,
+        messages: trimmed
+      })
+    } catch {
+      // Skip malformed entries — never crash the whole import
+    }
+  }
+
+  // Sort by most recently updated, keep top N
+  return results
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, MAX_CONVERSATIONS)
+}
+
+/**
+ * Convert a list of ParsedConversation into a compact text block suitable
+ * for a summarization prompt. Groups multiple short conversations together.
+ *
+ * Returns an array of text chunks (each chunk → one LLM call).
+ */
+export function buildSummaryChunks(
+  conversations: ParsedConversation[],
+  maxCharsPerChunk = 8_000
+): string[] {
+  const chunks: string[] = []
+  let current = ""
+
+  for (const conv of conversations) {
+    const header = `\n## ${conv.title}\n`
+    const body = conv.messages
+      .map(m => `${m.role === "user" ? "User" : "Assistant"}: ${m.text}`)
+      .join("\n")
+    const section = header + body
+
+    if (
+      current.length + section.length > maxCharsPerChunk &&
+      current.length > 0
+    ) {
+      chunks.push(current.trim())
+      current = section
+    } else {
+      current += section
+    }
+  }
+
+  if (current.trim().length > 0) chunks.push(current.trim())
+  return chunks
+}
