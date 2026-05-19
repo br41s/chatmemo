@@ -6,6 +6,7 @@ import {
 } from "@/lib/server/openrouter"
 import { createClient } from "@/lib/supabase/server"
 import { insertSummary } from "@/db/summaries"
+import { getLessons, upsertLessons } from "@/lib/db/lessons"
 import { cookies } from "next/headers"
 import { NextRequest, NextResponse } from "next/server"
 import { ServerRuntime } from "next"
@@ -28,6 +29,36 @@ function jaccardSimilarity(a: string, b: string): number {
   })
   return intersection / (setA.size + setB.size - intersection)
 }
+
+const LESSONS_SYSTEM_PROMPT = `You are a personal AI assistant maintaining a persistent "User Lessons" document — a growing knowledge base about one specific user, updated after each conversation.
+
+TASK:
+Review the conversation summary below. If it reveals new, durable, non-redundant facts about the user, add them to the document. If existing entries are contradicted or outdated, update them.
+
+RULES:
+- Only add genuinely new information not already captured
+- Be specific: project names, tech choices, personal context, preferences, recurring patterns, decisions
+- One fact per bullet point — concise, no filler
+- Do NOT add timestamps, dates, or "learned today" markers — the document captures timeless facts
+- If nothing meaningful is new, return the document exactly as-is (no changes)
+- Never remove sections, even if empty
+
+DOCUMENT STRUCTURE (always maintain this):
+# User Lessons
+
+## Preferences & Communication Style
+- (how the user likes to work, communicate, respond)
+
+## Active Projects & Work Context
+- (ongoing projects, tech stack, goals, role)
+
+## Personal Context
+- (background, interests, stable personal facts)
+
+## Recurring Patterns & Constraints
+- (things that come up repeatedly, hard requirements, known friction points)
+
+Return ONLY the updated document. No preamble, no commentary, no markdown fences.`
 
 const SYSTEM_PROMPT = `You are a memory assistant. Extract a concise, durable memory summary from the following conversation.
 
@@ -145,6 +176,49 @@ export async function POST(request: NextRequest) {
     }
 
     await insertSummary(supabase, userId, summaryText)
+
+    // ------------------------------------------------------------------
+    // Lessons update pass — runs after the summary is saved.
+    // Reads the current lessons doc + today's summary and rewrites the
+    // doc if new meaningful facts were found. Non-fatal if it fails.
+    // ------------------------------------------------------------------
+    try {
+      const currentLessons = await getLessons(supabase, userId)
+      const emptyTemplate = `# User Lessons
+
+## Preferences & Communication Style
+
+## Active Projects & Work Context
+
+## Personal Context
+
+## Recurring Patterns & Constraints`
+
+      const lessonsInput =
+        `CURRENT USER LESSONS DOCUMENT:\n${currentLessons ?? emptyTemplate}\n\n` +
+        `TODAY'S CONVERSATION SUMMARY:\n${summaryText}`
+
+      const updatedLessons = await callSummarizer(
+        openai,
+        LESSONS_SYSTEM_PROMPT,
+        lessonsInput,
+        800
+      )
+
+      if (
+        updatedLessons &&
+        updatedLessons !== "SKIP" &&
+        updatedLessons !== currentLessons
+      ) {
+        await upsertLessons(supabase, userId, updatedLessons)
+      }
+    } catch (lessonsErr) {
+      // Non-fatal — log but don't fail the summarize response
+      console.error(
+        "[summarize] Lessons update failed:",
+        lessonsErr instanceof Error ? lessonsErr.message : lessonsErr
+      )
+    }
 
     return NextResponse.json({ success: true, inserted: true }, { status: 200 })
   } catch (error: unknown) {

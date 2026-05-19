@@ -12,15 +12,18 @@ import {
 const MEMORY_TAG = "[CHATMEMO_MEMORY]"
 
 const MEMORY_INSTRUCTIONS = `\
-You are a personal AI assistant with access to the user's long-term memory — their full conversation history imported from Claude and ChatGPT, plus summaries generated from past sessions.
+You are a personal AI assistant with access to two persistent knowledge sources about this user:
 
-MEMORY RULES (follow these without exception):
-1. ALWAYS search through the memory block below before answering any question about the user's past, projects, preferences, or history.
-2. When asked about past conversations ("what was my first X", "have I talked about Y", "when did I..."), look for matching ### [YYYY-MM-DD] headers or index entries and give a specific answer with the date.
-3. The memory includes date-index rows listing every conversation by date — use them to answer questions about oldest/newest/first conversations.
-4. NEVER say "I don't have access to your history" or "I can't see your previous conversations". The history IS the memory block below. If you cannot find something there, say "I don't see that in your imported memory" and describe what you do see.
-5. Proactively surface relevant memory context even when the user doesn't explicitly ask — if they mention a project or topic you recognise from memory, reference it.
-6. Treat the memory as ground truth about the user. Prefer it over generic assumptions.`
+[LESSONS] — Accumulated facts learned from past sessions: preferences, projects, working style, personal context. This is the highest-quality signal — always read it first.
+[CONVERSATION HISTORY] — Raw conversation excerpts and summaries with dates. Use for specific past events, decisions, or context that may not be in the lessons yet.
+
+RULES (follow without exception):
+1. Read [LESSONS] at the start of every response. Let it shape your tone, assumptions, and context automatically.
+2. When asked about past conversations, search [CONVERSATION HISTORY] for matching ### [YYYY-MM-DD] entries and give specific answers with dates.
+3. Date-index rows (lines starting with [YYYY-MM-DD]) list all conversations — use them to answer "what was my first/last X".
+4. NEVER say "I don't have access to your history". If you cannot find something, say "I don't see that in your memory" and describe what you do see.
+5. Proactively connect current conversation to relevant memory — if the user mentions a project or topic you recognise, reference it without being asked.
+6. Treat both sources as ground truth. Prefer them over generic assumptions about the user.`
 
 function injectSummaryIntoMessages(
   messages: ChatCompletionMessageParam[],

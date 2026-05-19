@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server"
+import { getLessons } from "@/lib/db/lessons"
 import { cookies } from "next/headers"
 
 /** Max total chars injected into the system prompt as memory context. */
@@ -103,5 +104,24 @@ export async function getLatestSummaryForUser(
     totalChars += content.length
   }
 
-  return parts.length > 0 ? parts.join("\n\n---\n\n") : null
+  // Fetch the lessons document (separate from conversation history)
+  const lessons = await getLessons(supabase, userId)
+
+  // Build the final combined context:
+  // Lessons first (timeless, high-signal), then conversation history
+  const sections: string[] = []
+
+  if (lessons) {
+    sections.push(
+      `[LESSONS — Accumulated knowledge about you from past sessions]\n${lessons}\n[/LESSONS]`
+    )
+  }
+
+  if (parts.length > 0) {
+    sections.push(
+      `[CONVERSATION HISTORY — newest entries first]\n${parts.join("\n\n---\n\n")}\n[/CONVERSATION HISTORY]`
+    )
+  }
+
+  return sections.length > 0 ? sections.join("\n\n") : null
 }
