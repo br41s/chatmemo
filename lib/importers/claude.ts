@@ -30,6 +30,17 @@
  * parsing the `content` array.
  */
 
+import {
+  buildRawRows,
+  msToDate,
+  safeTitle,
+  type ParsedConversation,
+  type ParsedMessage
+} from "./shared"
+
+export type { ParsedConversation, ParsedMessage }
+export { buildRawRows }
+
 // ---------------------------------------------------------------------------
 // Raw types (defensive — all optional except what we rely on)
 // ---------------------------------------------------------------------------
@@ -58,26 +69,9 @@ interface RawConversation {
 }
 
 // ---------------------------------------------------------------------------
-// Public types
-// ---------------------------------------------------------------------------
-
-export interface ParsedMessage {
-  role: "user" | "assistant"
-  text: string
-}
-
-export interface ParsedConversation {
-  id: string
-  title: string
-  updatedAt: number // unix timestamp ms
-  messages: ParsedMessage[]
-}
-
-// ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const MAX_CONVERSATIONS = 100
 const MAX_MESSAGES_PER_CONV = 200
 
 // ---------------------------------------------------------------------------
@@ -91,11 +85,9 @@ const MAX_MESSAGES_PER_CONV = 200
  *   2. Concatenate `content[]` blocks with `type === "text"` (fallback)
  */
 function extractText(msg: RawMessage): string {
-  // Primary: flat text field
   const flat = (msg.text ?? "").trim()
   if (flat.length > 0) return flat
 
-  // Fallback: filter content blocks for type=text
   if (Array.isArray(msg.content)) {
     const parts = msg.content
       .filter(b => b?.type === "text" && typeof b.text === "string")
@@ -107,6 +99,7 @@ function extractText(msg: RawMessage): string {
   return ""
 }
 
+/** Parse an ISO 8601 string to unix milliseconds. Returns 0 on failure. */
 function isoToMs(iso: string | undefined): number {
   if (!iso) return 0
   const ts = Date.parse(iso)
@@ -119,7 +112,10 @@ function isoToMs(iso: string | undefined): number {
 
 /**
  * Parse a raw Claude `conversations.json` array into a clean internal
- * representation. Silently skips malformed entries.
+ * representation. Returns ALL parseable conversations sorted newest-first.
+ * Silently skips malformed entries.
+ *
+ * updatedAt is stored as UNIX milliseconds (consistent with all importers).
  *
  * @param raw - The parsed JSON value from conversations.json
  */
@@ -141,22 +137,15 @@ export function parseClaudeExport(raw: unknown): ParsedConversation[] {
 
       for (const msg of messages) {
         if (!msg || typeof msg !== "object") continue
-
         const sender = msg.sender
         if (sender !== "human" && sender !== "assistant") continue
-
         const text = extractText(msg)
         if (text.length === 0) continue
-
-        parsed.push({
-          role: sender === "human" ? "user" : "assistant",
-          text
-        })
+        parsed.push({ role: sender === "human" ? "user" : "assistant", text })
       }
 
       if (parsed.length === 0) continue
 
-      // Trim to most recent N messages
       const trimmed =
         parsed.length > MAX_MESSAGES_PER_CONV
           ? parsed.slice(-MAX_MESSAGES_PER_CONV)
@@ -173,15 +162,53 @@ export function parseClaudeExport(raw: unknown): ParsedConversation[] {
     }
   }
 
-  // Sort by most recently updated, keep top N
-  return results
-    .sort((a, b) => b.updatedAt - a.updatedAt)
-    .slice(0, MAX_CONVERSATIONS)
+  // Sort newest first — no cap (process all conversations)
+  return results.sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
+// ---------------------------------------------------------------------------
+// Raw storage — correct dates, no LLM
+// ---------------------------------------------------------------------------
+
+/**
+ * Format a single conversation as a `### [YYYY-MM-DD] Title` section.
+ * Used by the import route for raw per-conversation inserts (Step 1).
+ * The timeline parser reads this header directly → correct date in timeline.
+ */
+export function formatConversationFull(conv: ParsedConversation): string {
+  const header = `### [${msToDate(conv.updatedAt)}] ${safeTitle(conv.title)}`
+  const body = conv.messages
+    .map(m => `${m.role === "user" ? "User" : "Assistant"}: ${m.text}`)
+    .join("\n\n")
+  return `${header}\n\n${body}`
+}
+
+// ---------------------------------------------------------------------------
+// LLM pass — quality memory extraction
+// ---------------------------------------------------------------------------
+
+/**
+ * Build per-conversation text blocks for LLM summarisation.
+ * Each item corresponds to ONE conversation.
+ * Headers include `### [YYYY-MM-DD] Title` so the LLM output preserves
+ * real dates in its summaries.
+ */
+export function buildPerConvTexts(
+  conversations: ParsedConversation[]
+): string[] {
+  return conversations.map(conv => {
+    const header = `### [${msToDate(conv.updatedAt)}] ${safeTitle(conv.title)}`
+    const body = conv.messages
+      .map(m => `${m.role === "user" ? "User" : "Assistant"}: ${m.text}`)
+      .join("\n\n")
+    return `${header}\n\n${body}`
+  })
 }
 
 /**
- * Convert parsed conversations into text chunks suitable for LLM summarization.
- * Multiple short conversations are grouped into a single chunk.
+ * Group conversations into LLM input chunks, each under `maxCharsPerChunk`.
+ * Headers include `### [YYYY-MM-DD] Title` so the model can reproduce them
+ * in its output → correct dates in LLM-generated summaries.
  */
 export function buildSummaryChunks(
   conversations: ParsedConversation[],
@@ -191,7 +218,7 @@ export function buildSummaryChunks(
   let current = ""
 
   for (const conv of conversations) {
-    const header = `\n## ${conv.title}\n`
+    const header = `\n### [${msToDate(conv.updatedAt)}] ${safeTitle(conv.title)}\n`
     const body = conv.messages
       .map(m => `${m.role === "user" ? "User" : "Assistant"}: ${m.text}`)
       .join("\n")
@@ -212,37 +239,20 @@ export function buildSummaryChunks(
   return chunks
 }
 
-/**
- * Format a single conversation as plain text for raw storage (no LLM compression).
- * Suitable for direct insertion into the summaries table.
- */
-export function formatConversationFull(conv: ParsedConversation): string {
-  const date = conv.updatedAt
-    ? new Date(conv.updatedAt).toISOString().slice(0, 10)
-    : "unknown date"
-  const header = `[Conversation: ${conv.title} | ${date}]`
-  const body = conv.messages
-    .map(m => `${m.role === "user" ? "User" : "Assistant"}: ${m.text}`)
-    .join("\n\n")
-  return `${header}\n\n${body}`
-}
+// ---------------------------------------------------------------------------
+// Date index
+// ---------------------------------------------------------------------------
 
 /**
- * Build per-conversation text blocks for LLM summarization.
- * Each item in the returned array corresponds to ONE conversation.
- * The caller decides how many to batch per LLM call.
+ * Build a compact date-index string listing all conversations by date.
+ * Inserted as a single summary row for fast historical lookups.
  */
-export function buildPerConvTexts(
-  conversations: ParsedConversation[]
-): string[] {
-  return conversations.map(conv => {
-    const date = conv.updatedAt
-      ? new Date(conv.updatedAt).toISOString().slice(0, 10)
-      : "unknown date"
-    const header = `## ${conv.title} (${date})`
-    const body = conv.messages
-      .map(m => `${m.role === "user" ? "User" : "Assistant"}: ${m.text}`)
-      .join("\n\n")
-    return `${header}\n\n${body}`
-  })
+export function buildDateIndex(conversations: ParsedConversation[]): string {
+  const lines = [
+    `[Claude Conversation Index — imported ${new Date().toISOString().slice(0, 10)}]`,
+    ...conversations.map(
+      c => `[${msToDate(c.updatedAt)}] ${safeTitle(c.title)}`
+    )
+  ]
+  return lines.join("\n")
 }

@@ -1,7 +1,11 @@
 import { getServerProfile } from "@/lib/server/server-chat-helpers"
 import { createClient } from "@/lib/supabase/server"
 import { insertSummary } from "@/db/summaries"
-import { buildRawRows, parseChatGPTExport } from "@/lib/importers/chatgpt"
+import {
+  buildDateIndex,
+  buildRawRows,
+  parseChatGPTExport
+} from "@/lib/importers/chatgpt"
 import { cookies } from "next/headers"
 import { NextRequest, NextResponse } from "next/server"
 import { ServerRuntime } from "next"
@@ -96,19 +100,8 @@ export async function POST(request: NextRequest) {
     // ------------------------------------------------------------------
     // Step 2: Compact date index for fast date-based recall
     // ------------------------------------------------------------------
-    const dateIndex = [
-      `[ChatGPT Conversation Index — imported ${new Date().toISOString().slice(0, 10)}]`,
-      ...conversations.map(c => {
-        const date =
-          c.updatedAt > 0
-            ? new Date(c.updatedAt * 1000).toISOString().slice(0, 10)
-            : "unknown"
-        return `[${date}] ${c.title}`
-      })
-    ].join("\n")
-
     try {
-      await insertSummary(supabase, userId, dateIndex)
+      await insertSummary(supabase, userId, buildDateIndex(conversations))
     } catch {
       // non-fatal
     }

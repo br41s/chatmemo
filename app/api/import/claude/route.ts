@@ -7,6 +7,7 @@ import {
 import { createClient } from "@/lib/supabase/server"
 import { insertSummary } from "@/db/summaries"
 import {
+  buildDateIndex,
   buildPerConvTexts,
   formatConversationFull,
   parseClaudeExport
@@ -165,18 +166,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 3: Compact date index as final row for fast date-based recall
-    const dateIndex = [
-      `[Claude Conversation Index — imported ${new Date().toISOString().slice(0, 10)}]`,
-      ...conversations.map(c => {
-        const date = c.updatedAt
-          ? new Date(c.updatedAt).toISOString().slice(0, 10)
-          : "unknown"
-        return `[${date}] ${c.title}`
-      })
-    ].join("\n")
-
     try {
-      await insertSummary(supabase, userId, dateIndex)
+      await insertSummary(supabase, userId, buildDateIndex(conversations))
     } catch {
       // non-fatal
     }

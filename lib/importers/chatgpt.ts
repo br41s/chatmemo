@@ -7,8 +7,20 @@
  * Export format (as of 2024-2025):
  *   Array of conversation objects, each with a `mapping` graph.
  *   The mapping is a node graph (not a linear array). To reconstruct
- *   the ordered thread we walk from the root to `current_node`.
+ *   the ordered thread we walk BACKWARDS from `current_node` via
+ *   parent references (newer exports no longer populate `children`).
  */
+
+import {
+  buildRawRows,
+  msToDate,
+  safeTitle,
+  type ParsedConversation,
+  type ParsedMessage
+} from "./shared"
+
+export type { ParsedConversation, ParsedMessage }
+export { buildRawRows }
 
 // ---------------------------------------------------------------------------
 // Raw ChatGPT export types (defensive — all fields optional except essentials)
@@ -49,22 +61,6 @@ interface RawConversation {
 }
 
 // ---------------------------------------------------------------------------
-// Parsed / internal types
-// ---------------------------------------------------------------------------
-
-export interface ParsedMessage {
-  role: "user" | "assistant"
-  text: string
-}
-
-export interface ParsedConversation {
-  id: string
-  title: string
-  updatedAt: number // unix timestamp
-  messages: ParsedMessage[]
-}
-
-// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -97,11 +93,9 @@ function extractText(content: RawMessageContent | undefined): string {
  * Reconstruct the linear message thread for a conversation.
  *
  * Newer ChatGPT exports (2025+) do NOT populate the `children` array on
- * mapping nodes — only `parent` links are reliable. We therefore walk
- * BACKWARDS from `current_node` following parent references, then reverse
- * the collected path to get chronological order.
- *
- * This is simpler and handles all known export formats correctly.
+ * mapping nodes — only `parent` links are reliable. We walk BACKWARDS from
+ * `current_node` following parent references, then reverse to get
+ * chronological order.
  */
 function reconstructThread(
   mapping: Record<string, RawNode>,
@@ -136,19 +130,12 @@ function reconstructThread(
 // Public API
 // ---------------------------------------------------------------------------
 
-/** Maximum messages to keep per conversation when building raw rows. */
-const MAX_MESSAGES_RAW = 20
-
-/** Maximum messages to keep per conversation for LLM summarisation. */
-const MAX_MESSAGES_LLM = 40
-
-/** How many recent conversations to send through the LLM pass. */
-export const LLM_CONV_LIMIT = 40
-
 /**
  * Parse a raw ChatGPT `conversations.json` array into a clean internal
  * representation. Returns ALL parseable conversations sorted newest-first.
  * Silently skips malformed entries.
+ *
+ * updatedAt is stored as UNIX milliseconds (consistent with all importers).
  *
  * @param raw - The parsed JSON value from conversations.json
  */
@@ -165,10 +152,13 @@ export function parseChatGPTExport(raw: unknown): ParsedConversation[] {
       const messages = reconstructThread(conv.mapping, conv.current_node)
       if (messages.length === 0) continue
 
+      // ChatGPT timestamps are unix seconds → convert to ms
+      const updatedAtMs = (conv.update_time ?? conv.create_time ?? 0) * 1000
+
       results.push({
         id: conv.id ?? crypto.randomUUID(),
         title: (conv.title ?? "Untitled").slice(0, 200),
-        updatedAt: conv.update_time ?? conv.create_time ?? 0,
+        updatedAt: updatedAtMs,
         messages
       })
     } catch {
@@ -180,100 +170,19 @@ export function parseChatGPTExport(raw: unknown): ParsedConversation[] {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Convert a unix timestamp (seconds) to YYYY-MM-DD. */
-function tsToDate(ts: number): string {
-  return ts > 0
-    ? new Date(ts * 1000).toISOString().slice(0, 10)
-    : new Date().toISOString().slice(0, 10)
-}
-
-/** Strip characters that would confuse the `### [YYYY-MM-DD]` header parser. */
-function safeTitle(title: string): string {
-  return title.replace(/[\[\]]/g, "").trim() || "Untitled"
-}
-
-// ---------------------------------------------------------------------------
-// Raw rows — fast insert, all conversations, correct dates
+// Date index
 // ---------------------------------------------------------------------------
 
 /**
- * Format every conversation as a `### [YYYY-MM-DD] Title` section followed
- * by a compact message excerpt.  Groups `convsPerRow` conversations per row
- * so the summaries table stays manageable.
- *
- * The timeline parser already understands this header format, so each row
- * produces correctly-dated entries without any LLM call.
+ * Build a compact date-index string listing all conversations by date.
+ * Inserted as a single summary row for fast historical lookups.
  */
-export function buildRawRows(
-  conversations: ParsedConversation[],
-  convsPerRow = 5
-): string[] {
-  const rows: string[] = []
-
-  for (let i = 0; i < conversations.length; i += convsPerRow) {
-    const batch = conversations.slice(i, i + convsPerRow)
-    const text = batch
-      .map(conv => {
-        const date = tsToDate(conv.updatedAt)
-        const header = `### [${date}] ${safeTitle(conv.title)}`
-        const msgs = conv.messages
-          .slice(-MAX_MESSAGES_RAW)
-          .map(
-            m =>
-              `${m.role === "user" ? "User" : "Assistant"}: ${m.text.slice(0, 300)}`
-          )
-          .join("\n")
-        return `${header}\n${msgs}`
-      })
-      .join("\n\n")
-    rows.push(text)
-  }
-
-  return rows
-}
-
-// ---------------------------------------------------------------------------
-// LLM chunks — quality memory extraction for the most recent conversations
-// ---------------------------------------------------------------------------
-
-/**
- * Build LLM input chunks for the top `LLM_CONV_LIMIT` most-recent
- * conversations.  Each chunk fits within `maxCharsPerChunk` and is sent as
- * a single summarisation call.  The system prompt must ask the model to
- * emit `### [YYYY-MM-DD] Title` headers so the timeline parser picks up
- * the correct dates.
- */
-export function buildSummaryChunks(
-  conversations: ParsedConversation[],
-  maxCharsPerChunk = 12_000
-): string[] {
-  const top = conversations.slice(0, LLM_CONV_LIMIT)
-  const chunks: string[] = []
-  let current = ""
-
-  for (const conv of top) {
-    const date = tsToDate(conv.updatedAt)
-    const header = `\n### [${date}] ${safeTitle(conv.title)}\n`
-    const body = conv.messages
-      .slice(-MAX_MESSAGES_LLM)
-      .map(m => `${m.role === "user" ? "User" : "Assistant"}: ${m.text}`)
-      .join("\n")
-    const section = header + body
-
-    if (
-      current.length + section.length > maxCharsPerChunk &&
-      current.length > 0
-    ) {
-      chunks.push(current.trim())
-      current = section
-    } else {
-      current += section
-    }
-  }
-
-  if (current.trim().length > 0) chunks.push(current.trim())
-  return chunks
+export function buildDateIndex(conversations: ParsedConversation[]): string {
+  const lines = [
+    `[ChatGPT Conversation Index — imported ${new Date().toISOString().slice(0, 10)}]`,
+    ...conversations.map(
+      c => `[${msToDate(c.updatedAt)}] ${safeTitle(c.title)}`
+    )
+  ]
+  return lines.join("\n")
 }
