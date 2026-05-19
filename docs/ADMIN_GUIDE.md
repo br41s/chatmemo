@@ -38,14 +38,14 @@
 │  /api/import/conversation  ← bookmarklet            │
 │  /api/import/claude        ← bulk Claude export     │
 │  /api/import/chatgpt       ← bulk ChatGPT export    │
-│  /api/import/chatgpt       ← multi-file, no LLM     │
 │  /api/memory/summarize     ← auto-summarise + lessons│
 │  /api/chat/openrouter      ← chat completions       │
 │  /api/timeline             ← conversation timeline  │
 │                                                     │
-│  lib/server/openrouter.ts  ← shared LLM helpers    │
+│  lib/server/openrouter.ts       ← shared LLM helpers│
 │  lib/server/get-latest-summary.ts ← memory inject  │
-│  lib/db/lessons.ts         ← user_lessons helpers  │
+│  lib/db/lessons.ts              ← user_lessons DB   │
+│  lib/importers/shared.ts        ← importer utils    │
 └──────────────┬──────────────────────────────────────┘
                │
        ┌───────┴────────┐
@@ -56,10 +56,16 @@
    + lessons)        chats, messages)
 ```
 
-**Claude Code hook** (`scripts/sync-to-chatmemo.mjs`):
-- Registered as a Stop hook in `~/.claude/settings.json`.
-- Fires after every Claude Code session turn.
-- Reads the JSONL transcript, summarises via OpenRouter, inserts into Supabase directly (service role key, no HTTP to ChatMemo server).
+**Claude Code scripts** (run outside the Next.js server, talk to Supabase/OpenRouter directly):
+
+| Script | Purpose |
+|---|---|
+| `scripts/sync-to-chatmemo.mjs` | Stop hook — fires after every VS Code turn |
+| `scripts/import-claude-sessions.mjs` | One-shot bulk import of all past sessions |
+| `scripts/watch-claude-sessions.mjs` | Background daemon for macOS app auto-sync |
+| `scripts/claude-sessions-shared.mjs` | Shared utilities for the above three |
+
+All scripts use `~/.chatmemo/config.json` (written by `setup:sync`) and track imported sessions in `~/.chatmemo/imported-sessions.json`.
 
 ---
 
@@ -239,13 +245,13 @@ The bookmarklet uses three fallback strategies to detect messages on claude.ai:
 
 If claude.ai changes its HTML structure, update the selector constants in `scripts/chatmemo-hook-setup.mjs` and re-run `npm run setup:sync`.
 
-### Claude Code Hook
+### Claude Code Hook (VS Code)
 
-The Stop hook fires automatically after every Claude Code session. It:
-- Reads the JSONL transcript from `~/.claude/projects/.../...jsonl`.
+The Stop hook fires automatically after every Claude Code turn in VS Code. It:
+- Reads the JSONL transcript from `~/.claude/projects/<slug>/<session-id>.jsonl`.
 - Requires at least 3 user messages before importing.
 - Tracks imported session IDs in `~/.chatmemo/imported-sessions.json` to avoid duplicates.
-- Calls OpenRouter directly (no HTTP to the ChatMemo server) using the service role key.
+- Calls OpenRouter and Supabase directly — no HTTP to the ChatMemo server.
 
 To verify the hook is registered:
 
@@ -253,32 +259,63 @@ To verify the hook is registered:
 cat ~/.claude/settings.json | grep sync-to-chatmemo
 ```
 
+### Claude Code Bulk Import
+
+To import all historical sessions from `~/.claude/projects/` in one shot:
+
+```bash
+npm run import:claude
+```
+
+Shows per-session progress. Safe to interrupt and re-run — already-imported sessions are skipped. LLM failures are not marked as done, so they retry automatically on the next run.
+
+### Claude Code Background Daemon (macOS app)
+
+The macOS Claude Code app does not fire the Stop hook. A background daemon handles auto-sync:
+
+```bash
+# Install and start
+npm run watch:claude:install
+launchctl load ~/Library/LaunchAgents/com.chatmemo.watch-claude-sessions.plist
+
+# Check status
+launchctl list | grep chatmemo
+
+# View logs
+tail -f ~/.chatmemo/watch.log
+
+# Stop permanently
+launchctl unload ~/Library/LaunchAgents/com.chatmemo.watch-claude-sessions.plist
+rm ~/Library/LaunchAgents/com.chatmemo.watch-claude-sessions.plist
+```
+
+The daemon polls every 5 minutes and processes sessions idle for 10+ minutes. It starts automatically at login.
+
 ---
 
 ## 8. Switching the Summarisation Model
 
-All routes share a single model constant defined in **`lib/server/openrouter.ts`**:
+There are two separate model constants to update:
 
+**Server routes** — defined in `lib/server/openrouter.ts`:
 ```typescript
-export const SUMMARIZE_MODEL = "openai/gpt-oss-120b:free"
+export const SUMMARIZE_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
 ```
 
-The sync script mirrors this constant:
-
+**Claude Code scripts** — defined in `scripts/claude-sessions-shared.mjs`:
 ```javascript
-// scripts/sync-to-chatmemo.mjs
-const SUMMARIZE_MODEL = "openai/gpt-oss-120b:free"  // keep in sync with lib/server/openrouter.ts
+export const SUMMARIZE_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
 ```
 
-**To change the model**, update both lines and restart the server.
+**To change the model**, update both constants and restart the server + daemon.
 
 ### Recommended free models on OpenRouter
 
-| Model | Speed | Quality | Rate limit |
+| Model | Speed | Quality | Notes |
 |---|---|---|---|
-| `openai/gpt-oss-120b:free` | medium | high | shared quota |
-| `google/gemini-2.5-flash-preview:free` | fast | good | shared quota |
-| `meta-llama/llama-3.3-70b-instruct:free` | slow (overloaded) | high | 8 rpm |
+| `meta-llama/llama-3.3-70b-instruct:free` | fast | high | Current default |
+| `google/gemini-2.5-flash-preview:free` | fast | good | Good alternative |
+| `openai/gpt-oss-120b:free` | medium | high | Can be slow under load |
 
 > **Note:** Free-tier models share a public quota. If you hit rate limits frequently, add credits to your OpenRouter account and remove the `:free` suffix from the model name.
 
@@ -325,12 +362,23 @@ The 2025 ChatGPT export format dropped `children` arrays from mapping nodes. The
 ### Lessons document not updating
 The lessons update runs after the session summariser. Ensure the chat has at least 4 messages and the OpenRouter API key is valid. Check server logs for `[summarize] Lessons update failed:`. The lessons update is non-fatal — a failure here does not affect the session summary.
 
-### Claude Code hook not firing
+### Claude Code hook not firing (VS Code)
 Check that the hook is registered:
 ```bash
 cat ~/.claude/settings.json
 ```
 Look for an entry with `sync-to-chatmemo.mjs`. If missing, re-run `npm run setup:sync`.
+
+### Claude Code macOS app sessions not syncing
+The macOS app uses the background daemon, not the Stop hook. Check it is running:
+```bash
+launchctl list | grep chatmemo   # should show a PID
+tail -f ~/.chatmemo/watch.log
+```
+If missing, reinstall: `npm run watch:claude:install` then `launchctl load ~/Library/LaunchAgents/com.chatmemo.watch-claude-sessions.plist`.
+
+### `import:claude` stops with LLM timeouts
+The free OpenRouter model is rate-limited. The script automatically retries on the next run (LLM failures are not marked as done). Re-run `npm run import:claude` after a few minutes. Increasing `DELAY_BETWEEN_CALLS_MS` in `scripts/import-claude-sessions.mjs` also helps.
 
 ---
 

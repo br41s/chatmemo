@@ -12,6 +12,7 @@
    - 3.1 [Claude.ai Bookmarklet (live sync)](#31-claudeai-bookmarklet-live-sync)
    - 3.2 [Claude Export (bulk import)](#32-claude-export-bulk-import)
    - 3.3 [ChatGPT Export (bulk import)](#33-chatgpt-export-bulk-import)
+   - 3.4 [Claude Code Sessions](#34-claude-code-sessions)
 4. [Memory History](#4-memory-history)
 5. [Conversation Timeline](#5-conversation-timeline)
 6. [Self-Improving Lessons](#6-self-improving-lessons)
@@ -121,6 +122,39 @@ ChatGPT exports come as multiple `.json` files. You can import all of them at on
 
 ---
 
+### 3.4 Claude Code Sessions
+
+ChatMemo captures your Claude Code work sessions automatically — both from the **VS Code extension** (via Stop hook) and the **macOS desktop app** (via background daemon).
+
+#### Bulk import of past sessions
+
+Import all historical sessions at once (one-time, run after initial setup):
+
+```bash
+npm run import:claude
+```
+
+This scans `~/.claude/projects/` for all JSONL session files, skips ones already imported, summarises each via OpenRouter, and inserts them into Supabase. Progress is printed per session. Safe to interrupt and re-run — already-imported sessions are skipped.
+
+#### Automatic sync (background daemon)
+
+New sessions are synced automatically. The system uses two complementary mechanisms:
+
+| Source | Mechanism |
+|---|---|
+| **VS Code** (Claude Code extension) | Stop hook fires after every turn, imports the session immediately |
+| **macOS app** | Background daemon polls every 5 minutes, picks up sessions idle for 10+ minutes |
+
+The daemon is managed by macOS **launchd** — it starts at login and runs indefinitely in the background. No manual action is needed after setup.
+
+To check daemon status:
+```bash
+launchctl list | grep chatmemo
+tail -f ~/.chatmemo/watch.log
+```
+
+---
+
 ## 4. Memory History
 
 The **Memory History** panel shows all your stored summaries.
@@ -186,9 +220,9 @@ ChatMemo supports any model available through OpenRouter or directly via provide
 | General use | `openai/gpt-4o` |
 | Fast / cheap | `openai/gpt-4o-mini` |
 | Reasoning | `anthropic/claude-3-5-sonnet` |
-| Free tier | `openai/gpt-oss-120b:free` |
+| Free tier | `meta-llama/llama-3.3-70b-instruct:free` |
 
-> The model used for **summarising memories** is separate and configured by the admin. It defaults to `openai/gpt-oss-120b:free`.
+> The model used for **summarising memories** is separate and configured by the admin. It defaults to `meta-llama/llama-3.3-70b-instruct:free`.
 
 ---
 
