@@ -71,29 +71,37 @@ export interface ParsedConversation {
 /** Extract plain text from a raw message content block. */
 function extractText(content: RawMessageContent | undefined): string {
   if (!content) return ""
-  const parts = content.parts ?? []
-  return parts
-    .map(part => {
-      if (typeof part === "string") return part
-      if (part && typeof part === "object" && typeof part.text === "string")
-        return part.text
-      return ""
-    })
-    .join("")
-    .trim()
+
+  // Modern export: parts array (text messages, multimodal, etc.)
+  if (content.parts && content.parts.length > 0) {
+    return content.parts
+      .map(part => {
+        if (typeof part === "string") return part
+        if (part && typeof part === "object" && typeof part.text === "string")
+          return part.text
+        return ""
+      })
+      .join("")
+      .trim()
+  }
+
+  // Older / code / execution_output nodes store text directly on content
+  if (typeof (content as Record<string, unknown>).text === "string") {
+    return ((content as Record<string, unknown>).text as string).trim()
+  }
+
+  return ""
 }
 
 /**
- * Reconstruct the linear message thread for a conversation by walking
- * the mapping graph from the root node down to `current_node`.
+ * Reconstruct the linear message thread for a conversation.
  *
- * Strategy:
- *   1. Find root(s) — nodes with no parent or parent === null.
- *   2. Follow children depth-first, always taking the branch that leads
- *      to current_node (or the first child if ambiguous).
+ * Newer ChatGPT exports (2025+) do NOT populate the `children` array on
+ * mapping nodes — only `parent` links are reliable. We therefore walk
+ * BACKWARDS from `current_node` following parent references, then reverse
+ * the collected path to get chronological order.
  *
- * This handles branching conversations (edits / regenerations) correctly
- * by always following the path that ends at current_node.
+ * This is simpler and handles all known export formats correctly.
  */
 function reconstructThread(
   mapping: Record<string, RawNode>,
@@ -101,44 +109,26 @@ function reconstructThread(
 ): ParsedMessage[] {
   if (!currentNodeId || !mapping[currentNodeId]) return []
 
-  // Build child→parent index and collect ancestors of currentNodeId
-  const ancestors = new Set<string>()
+  // Walk backwards from current_node to root via parent links
+  const path: string[] = []
   let cursor: string | null | undefined = currentNodeId
   while (cursor && mapping[cursor]) {
-    ancestors.add(cursor)
+    path.push(cursor)
     cursor = mapping[cursor].parent
   }
+  path.reverse() // now root → current_node
 
-  // Walk from root to currentNodeId, collecting messages
   const messages: ParsedMessage[] = []
-
-  // Find root: a node whose parent is null/undefined or not in mapping
-  const root = Object.values(mapping).find(
-    node => !node.parent || !mapping[node.parent]
-  )
-  if (!root?.id) return []
-
-  const visit = (nodeId: string) => {
-    const node = mapping[nodeId]
-    if (!node) return
-
-    const msg = node.message
+  for (const nodeId of path) {
+    const msg = mapping[nodeId]?.message
     const role = msg?.author?.role
-
-    if (role === "user" || role === "assistant") {
-      const text = extractText(msg?.content)
-      if (text.length > 0) {
-        messages.push({ role, text })
-      }
+    if (role !== "user" && role !== "assistant") continue
+    const text = extractText(msg?.content)
+    if (text.length > 0) {
+      messages.push({ role, text })
     }
-
-    // Follow the child that is an ancestor of currentNodeId, else first child
-    const children = node.children ?? []
-    const nextChild = children.find(cid => ancestors.has(cid)) ?? children[0]
-    if (nextChild) visit(nextChild)
   }
 
-  visit(root.id)
   return messages
 }
 
