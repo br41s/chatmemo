@@ -38,17 +38,22 @@
 │  /api/import/conversation  ← bookmarklet            │
 │  /api/import/claude        ← bulk Claude export     │
 │  /api/import/chatgpt       ← bulk ChatGPT export    │
-│  /api/memory/summarize     ← in-app auto-summarise  │
+│  /api/import/chatgpt       ← multi-file, no LLM     │
+│  /api/memory/summarize     ← auto-summarise + lessons│
 │  /api/chat/openrouter      ← chat completions       │
+│  /api/timeline             ← conversation timeline  │
 │                                                     │
 │  lib/server/openrouter.ts  ← shared LLM helpers    │
+│  lib/server/get-latest-summary.ts ← memory inject  │
+│  lib/db/lessons.ts         ← user_lessons helpers  │
 └──────────────┬──────────────────────────────────────┘
                │
        ┌───────┴────────┐
        │                │
        ▼                ▼
   OpenRouter API    Supabase (Postgres + Auth)
-  (summarisation)   (summaries, chats, messages)
+  (summarisation    (summaries, user_lessons,
+   + lessons)        chats, messages)
 ```
 
 **Claude Code hook** (`scripts/sync-to-chatmemo.mjs`):
@@ -108,7 +113,8 @@ CHATMEMO_IMPORT_TOKEN=<generate with: node -e "require('crypto').randomBytes(32,
 CHATMEMO_IMPORT_USER_ID=<set automatically by npm run setup:sync>
 
 # ── File upload size limit (bytes) ──────────────────
-NEXT_PUBLIC_USER_FILE_SIZE_LIMIT=10485760  # 10 MB
+NEXT_PUBLIC_USER_FILE_SIZE_LIMIT=10485760  # 10 MB (chat file attachments)
+# Note: import routes (ChatGPT/Claude) have their own 100 MB limit in code
 
 # ── Optional provider keys ──────────────────────────
 OPENAI_API_KEY=
@@ -144,10 +150,30 @@ npm run db-push      # pushes local migrations to remote Supabase
 
 | Table | Purpose |
 |---|---|
-| `summaries` | Memory summaries. Each row is one LLM-generated block of text. |
+| `summaries` | Memory rows. Append-only. Includes raw conversation excerpts, LLM summaries, and date-index rows. |
+| `user_lessons` | Self-improving knowledge doc. One row per user, upserted after each session. |
 | `profiles` | User profile (display name, API keys, settings). |
 | `chats` | Chat sessions. |
 | `messages` | Individual messages within a chat. |
+
+### `user_lessons` migration
+
+The `supabase db push` CLI command is blocked by a pre-existing policy conflict in an older migration. Run this SQL **once** manually in the Supabase dashboard SQL editor:
+
+```sql
+CREATE TABLE IF NOT EXISTS user_lessons (
+  id          uuid        PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id     uuid        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  content     text        NOT NULL DEFAULT '',
+  updated_at  timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT  user_lessons_user_id_key UNIQUE (user_id)
+);
+ALTER TABLE user_lessons ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can read own lessons"   ON user_lessons FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can insert own lessons" ON user_lessons FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can update own lessons" ON user_lessons FOR UPDATE USING (auth.uid() = user_id);
+CREATE POLICY "Users can delete own lessons" ON user_lessons FOR DELETE USING (auth.uid() = user_id);
+```
 
 ### RLS policies on `summaries`
 
@@ -291,7 +317,13 @@ document.querySelectorAll('[class*="font-user-message"],[class*="font-claude-res
 If it returns 0, update the selectors in `scripts/chatmemo-hook-setup.mjs` and re-run `setup:sync`.
 
 ### Memory not showing in chat
-Memory is injected at **chat start**. Open a **new chat** after importing. Verify the summary exists in Memory History (🧠 icon in sidebar).
+Memory is injected at **chat start**. Open a **new chat** after importing. Verify the summary exists in Memory History (clock icon in sidebar).
+
+### ChatGPT import shows wrong dates / 0 conversations
+The 2025 ChatGPT export format dropped `children` arrays from mapping nodes. The importer uses parent-link traversal from `current_node` — if it returns 0, the file may be malformed. Check that each conversation object has a `mapping` key and a valid `current_node`.
+
+### Lessons document not updating
+The lessons update runs after the session summariser. Ensure the chat has at least 4 messages and the OpenRouter API key is valid. Check server logs for `[summarize] Lessons update failed:`. The lessons update is non-fatal — a failure here does not affect the session summary.
 
 ### Claude Code hook not firing
 Check that the hook is registered:
