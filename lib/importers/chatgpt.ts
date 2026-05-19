@@ -136,15 +136,19 @@ function reconstructThread(
 // Public API
 // ---------------------------------------------------------------------------
 
-/** Maximum conversations to process per import (most recent first). */
-const MAX_CONVERSATIONS = 40
+/** Maximum messages to keep per conversation when building raw rows. */
+const MAX_MESSAGES_RAW = 20
 
-/** Maximum messages to keep per conversation (most recent). */
-const MAX_MESSAGES_PER_CONV = 40
+/** Maximum messages to keep per conversation for LLM summarisation. */
+const MAX_MESSAGES_LLM = 40
+
+/** How many recent conversations to send through the LLM pass. */
+export const LLM_CONV_LIMIT = 40
 
 /**
  * Parse a raw ChatGPT `conversations.json` array into a clean internal
- * representation. Silently skips malformed entries.
+ * representation. Returns ALL parseable conversations sorted newest-first.
+ * Silently skips malformed entries.
  *
  * @param raw - The parsed JSON value from conversations.json
  */
@@ -161,45 +165,100 @@ export function parseChatGPTExport(raw: unknown): ParsedConversation[] {
       const messages = reconstructThread(conv.mapping, conv.current_node)
       if (messages.length === 0) continue
 
-      // Trim to most recent messages to cap prompt size
-      const trimmed =
-        messages.length > MAX_MESSAGES_PER_CONV
-          ? messages.slice(-MAX_MESSAGES_PER_CONV)
-          : messages
-
       results.push({
         id: conv.id ?? crypto.randomUUID(),
         title: (conv.title ?? "Untitled").slice(0, 200),
         updatedAt: conv.update_time ?? conv.create_time ?? 0,
-        messages: trimmed
+        messages
       })
     } catch {
       // Skip malformed entries — never crash the whole import
     }
   }
 
-  // Sort by most recently updated, keep top N
-  return results
-    .sort((a, b) => b.updatedAt - a.updatedAt)
-    .slice(0, MAX_CONVERSATIONS)
+  return results.sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Convert a unix timestamp (seconds) to YYYY-MM-DD. */
+function tsToDate(ts: number): string {
+  return ts > 0
+    ? new Date(ts * 1000).toISOString().slice(0, 10)
+    : new Date().toISOString().slice(0, 10)
+}
+
+/** Strip characters that would confuse the `### [YYYY-MM-DD]` header parser. */
+function safeTitle(title: string): string {
+  return title.replace(/[\[\]]/g, "").trim() || "Untitled"
+}
+
+// ---------------------------------------------------------------------------
+// Raw rows — fast insert, all conversations, correct dates
+// ---------------------------------------------------------------------------
+
 /**
- * Convert a list of ParsedConversation into a compact text block suitable
- * for a summarization prompt. Groups multiple short conversations together.
+ * Format every conversation as a `### [YYYY-MM-DD] Title` section followed
+ * by a compact message excerpt.  Groups `convsPerRow` conversations per row
+ * so the summaries table stays manageable.
  *
- * Returns an array of text chunks (each chunk → one LLM call).
+ * The timeline parser already understands this header format, so each row
+ * produces correctly-dated entries without any LLM call.
+ */
+export function buildRawRows(
+  conversations: ParsedConversation[],
+  convsPerRow = 5
+): string[] {
+  const rows: string[] = []
+
+  for (let i = 0; i < conversations.length; i += convsPerRow) {
+    const batch = conversations.slice(i, i + convsPerRow)
+    const text = batch
+      .map(conv => {
+        const date = tsToDate(conv.updatedAt)
+        const header = `### [${date}] ${safeTitle(conv.title)}`
+        const msgs = conv.messages
+          .slice(-MAX_MESSAGES_RAW)
+          .map(
+            m =>
+              `${m.role === "user" ? "User" : "Assistant"}: ${m.text.slice(0, 300)}`
+          )
+          .join("\n")
+        return `${header}\n${msgs}`
+      })
+      .join("\n\n")
+    rows.push(text)
+  }
+
+  return rows
+}
+
+// ---------------------------------------------------------------------------
+// LLM chunks — quality memory extraction for the most recent conversations
+// ---------------------------------------------------------------------------
+
+/**
+ * Build LLM input chunks for the top `LLM_CONV_LIMIT` most-recent
+ * conversations.  Each chunk fits within `maxCharsPerChunk` and is sent as
+ * a single summarisation call.  The system prompt must ask the model to
+ * emit `### [YYYY-MM-DD] Title` headers so the timeline parser picks up
+ * the correct dates.
  */
 export function buildSummaryChunks(
   conversations: ParsedConversation[],
-  maxCharsPerChunk = 8_000
+  maxCharsPerChunk = 12_000
 ): string[] {
+  const top = conversations.slice(0, LLM_CONV_LIMIT)
   const chunks: string[] = []
   let current = ""
 
-  for (const conv of conversations) {
-    const header = `\n## ${conv.title}\n`
+  for (const conv of top) {
+    const date = tsToDate(conv.updatedAt)
+    const header = `\n### [${date}] ${safeTitle(conv.title)}\n`
     const body = conv.messages
+      .slice(-MAX_MESSAGES_LLM)
       .map(m => `${m.role === "user" ? "User" : "Assistant"}: ${m.text}`)
       .join("\n")
     const section = header + body

@@ -1,12 +1,7 @@
 import { getServerProfile } from "@/lib/server/server-chat-helpers"
-import {
-  callSummarizer,
-  createOpenRouterClient,
-  resolveOpenRouterKey
-} from "@/lib/server/openrouter"
 import { createClient } from "@/lib/supabase/server"
 import { insertSummary } from "@/db/summaries"
-import { buildSummaryChunks, parseChatGPTExport } from "@/lib/importers/chatgpt"
+import { buildRawRows, parseChatGPTExport } from "@/lib/importers/chatgpt"
 import { cookies } from "next/headers"
 import { NextRequest, NextResponse } from "next/server"
 import { ServerRuntime } from "next"
@@ -15,31 +10,10 @@ export const runtime: ServerRuntime = "nodejs"
 
 const MAX_FILE_BYTES = 100 * 1024 * 1024 // 100 MB
 
-const IMPORT_SYSTEM_PROMPT = `You are a memory assistant. You are given a set of past conversations a user had with ChatGPT.
-
-Your job is to extract a concise, durable memory summary that will help a new AI assistant understand this user.
-
-Focus on:
-- User preferences, habits, and working style
-- Active projects, goals, and ongoing context
-- Important constraints, requirements, or recurring patterns
-- Technical stack, languages, or tools the user works with
-- Personal facts that are stable and useful for future sessions
-
-Avoid:
-- Ephemeral or one-off requests
-- Verbatim quotes
-- Trivial details or small talk
-- Time-sensitive information unlikely to remain relevant
-
-Output: plain text only, under 400 words.
-If the conversations contain nothing worth remembering, output only the single word: SKIP`
-
 export async function POST(request: NextRequest) {
   try {
     const profile = await getServerProfile()
     const userId = profile.user_id
-    const openrouterKey = resolveOpenRouterKey(profile)
 
     // --- Parse multipart form ---
     let formData: FormData
@@ -100,39 +74,49 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const chunks = buildSummaryChunks(conversations)
-    const openai = createOpenRouterClient(openrouterKey, 20_000)
     const supabase = createClient(cookies())
     let inserted = 0
-    const skipped: string[] = []
 
-    for (const chunk of chunks) {
+    // ------------------------------------------------------------------
+    // Step 1: Insert raw dated rows for ALL conversations (no LLM).
+    // Each row uses ### [YYYY-MM-DD] Title headers so the timeline parser
+    // displays the real conversation date instead of the import date.
+    // 5 conversations per row keeps the table manageable.
+    // ------------------------------------------------------------------
+    const rawRows = buildRawRows(conversations)
+    for (const row of rawRows) {
       try {
-        const summaryText = await callSummarizer(
-          openai,
-          IMPORT_SYSTEM_PROMPT,
-          chunk,
-          700
-        )
-        if (!summaryText) {
-          skipped.push("chunk not useful")
-          continue
-        }
-        await insertSummary(supabase, userId, summaryText)
+        await insertSummary(supabase, userId, row)
         inserted++
-      } catch (err) {
-        skipped.push(
-          `chunk error: ${err instanceof Error ? err.message : "unknown"}`
-        )
+      } catch {
+        // non-fatal — continue with remaining rows
       }
+    }
+
+    // ------------------------------------------------------------------
+    // Step 2: Compact date index for fast date-based recall
+    // ------------------------------------------------------------------
+    const dateIndex = [
+      `[ChatGPT Conversation Index — imported ${new Date().toISOString().slice(0, 10)}]`,
+      ...conversations.map(c => {
+        const date =
+          c.updatedAt > 0
+            ? new Date(c.updatedAt * 1000).toISOString().slice(0, 10)
+            : "unknown"
+        return `[${date}] ${c.title}`
+      })
+    ].join("\n")
+
+    try {
+      await insertSummary(supabase, userId, dateIndex)
+    } catch {
+      // non-fatal
     }
 
     return NextResponse.json({
       success: true,
       conversations_found: conversations.length,
-      chunks_processed: chunks.length,
-      inserted,
-      skipped: skipped.length > 0 ? skipped : undefined
+      inserted
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected error"
