@@ -80,12 +80,13 @@ async function main() {
       `${num} ${sessionId.slice(0, 8)}… "${projectName}" (${userMessages.length} msgs) → `
     )
 
-    const summaryText = await summarize(openrouterKey, title, date, capped)
-    if (!summaryText) {
+    const factsText = await summarize(openrouterKey, title, date, capped)
+    if (!factsText) {
       console.log("SKIP (LLM failed — will retry next run)")
       // Do NOT save — retry on next run
       failed++
     } else {
+      const summaryText = `### [${date}] ${projectName}\n\n${factsText}`
       const ok = await insertSummary(supabaseUrl, serviceRoleKey, userId, summaryText)
       if (ok) {
         console.log("✓ imported")

@@ -27,7 +27,7 @@ export const SESSIONS_FILE = join(CONFIG_DIR, "imported-sessions.json")
 
 export const MIN_USER_MESSAGES = 3
 export const MAX_MESSAGES = 200
-export const SUMMARIZE_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
+export const SUMMARIZE_MODEL = "openai/gpt-oss-120b:free"
 
 // ---------------------------------------------------------------------------
 // Config
@@ -193,9 +193,7 @@ const SYSTEM_PROMPT = `You are a memory assistant. You are given a Claude Code s
 
 Your job is to extract a detailed, durable memory summary that will help understand this developer's work and preferences.
 
-Start with a header line exactly like this:
-### [YYYY-MM-DD] Session Title
-Then bullet the key facts underneath.
+Output bullet points only — do NOT include a header, date, or title. Start directly with the first bullet point.
 
 Extract and preserve:
 - Projects worked on (name, language, architecture, current status)
