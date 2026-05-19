@@ -17,7 +17,7 @@ import { ServerRuntime } from "next"
 
 export const runtime: ServerRuntime = "nodejs"
 
-const MAX_FILE_BYTES = 10 * 1024 * 1024 // 10 MB
+const MAX_FILE_BYTES = 100 * 1024 * 1024 // 100 MB
 
 /** Conversations with fewer chars than this are not stored as raw full text. */
 const MIN_CHARS_FOR_RAW = 300

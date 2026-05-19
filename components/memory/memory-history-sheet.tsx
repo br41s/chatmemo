@@ -55,6 +55,10 @@ export function MemoryHistorySheet() {
   const [importingSource, setImportingSource] = useState<
     "chatgpt" | "claude" | null
   >(null)
+  const [importProgress, setImportProgress] = useState<{
+    current: number
+    total: number
+  } | null>(null)
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
 
@@ -81,6 +85,7 @@ export function MemoryHistorySheet() {
       setImportResult(null)
       setImportError(null)
       setImportingSource(null)
+      setImportProgress(null)
       setConfirmClear(false)
       loadHistory()
     }
@@ -90,43 +95,71 @@ export function MemoryHistorySheet() {
     e: React.ChangeEvent<HTMLInputElement>,
     source: "chatgpt" | "claude"
   ) => {
-    const file = e.target.files?.[0]
-    // Reset input so re-selecting the same file triggers onChange again
+    const files = Array.from(e.target.files ?? [])
+    // Reset input so re-selecting the same files triggers onChange again
     e.target.value = ""
-    if (!file) return
+    if (files.length === 0) return
 
     setImportingSource(source)
     setImportResult(null)
     setImportError(null)
+    setImportProgress(
+      files.length > 1 ? { current: 1, total: files.length } : null
+    )
+
+    const accumulated: ImportResult = {
+      conversations_found: 0,
+      chunks_processed: 0,
+      inserted: 0
+    }
+
+    const endpoint =
+      source === "chatgpt" ? "/api/import/chatgpt" : "/api/import/claude"
 
     try {
-      const fd = new FormData()
-      fd.append("file", file)
+      for (let i = 0; i < files.length; i++) {
+        if (files.length > 1) {
+          setImportProgress({ current: i + 1, total: files.length })
+        }
 
-      const endpoint =
-        source === "chatgpt" ? "/api/import/chatgpt" : "/api/import/claude"
-      const res = await fetch(endpoint, { method: "POST", body: fd })
-      const data = await res.json()
+        const fd = new FormData()
+        fd.append("file", files[i])
 
-      if (!res.ok || !data.success) {
-        setImportError(
-          data.reason ?? data.message ?? `Server error (${res.status})`
-        )
-        return
+        let res: Response
+        let data: Record<string, unknown>
+        try {
+          res = await fetch(endpoint, { method: "POST", body: fd })
+          data = await res.json()
+        } catch {
+          setImportError(
+            `File ${i + 1}/${files.length} (${files[i].name}): Network error`
+          )
+          return
+        }
+
+        if (!res.ok || !data.success) {
+          setImportError(
+            `File ${i + 1}/${files.length} (${files[i].name}): ${
+              (data.reason as string) ??
+              (data.message as string) ??
+              `Server error (${res.status})`
+            }`
+          )
+          return
+        }
+
+        accumulated.conversations_found +=
+          (data.conversations_found as number) ?? 0
+        accumulated.chunks_processed += (data.chunks_processed as number) ?? 0
+        accumulated.inserted += (data.inserted as number) ?? 0
       }
 
-      setImportResult({
-        conversations_found: data.conversations_found ?? 0,
-        chunks_processed: data.chunks_processed ?? 0,
-        inserted: data.inserted ?? 0
-      })
-
+      setImportResult(accumulated)
       // Refresh history list to show newly inserted summaries
       await loadHistory()
-    } catch {
-      setImportError("Network error — check your connection and try again")
     } finally {
       setImportingSource(null)
+      setImportProgress(null)
     }
   }
 
@@ -333,6 +366,7 @@ export function MemoryHistorySheet() {
             ref={chatgptFileInputRef}
             type="file"
             accept=".json,application/json"
+            multiple
             className="hidden"
             onChange={e => handleImport(e, "chatgpt")}
           />
@@ -353,7 +387,11 @@ export function MemoryHistorySheet() {
               onClick={() => chatgptFileInputRef.current?.click()}
             >
               <IconBrandOpenai size={13} className="mr-1 shrink-0" />
-              {importingSource === "chatgpt" ? "Importing…" : "ChatGPT"}
+              {importingSource === "chatgpt"
+                ? importProgress
+                  ? `Importing ${importProgress.current}/${importProgress.total}…`
+                  : "Importing…"
+                : "ChatGPT"}
             </Button>
 
             <Button
@@ -369,9 +407,10 @@ export function MemoryHistorySheet() {
           </div>
 
           <p className="mt-1.5 text-[10px] text-muted-foreground">
-            Upload{" "}
-            <code className="rounded bg-muted px-0.5">conversations.json</code>{" "}
-            from your ChatGPT or Claude export.
+            ChatGPT: select multiple{" "}
+            <code className="rounded bg-muted px-0.5">.json</code> files at
+            once. Claude: upload{" "}
+            <code className="rounded bg-muted px-0.5">conversations.json</code>.
           </p>
 
           {importResult && (

@@ -13,7 +13,7 @@ import { ServerRuntime } from "next"
 
 export const runtime: ServerRuntime = "nodejs"
 
-const MAX_FILE_BYTES = 10 * 1024 * 1024 // 10 MB
+const MAX_FILE_BYTES = 100 * 1024 * 1024 // 100 MB
 
 const IMPORT_SYSTEM_PROMPT = `You are a memory assistant. You are given a set of past conversations a user had with ChatGPT.
 
