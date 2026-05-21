@@ -134,13 +134,14 @@ async function poll(config) {
 
     log(`Processing ${sessionId.slice(0, 8)}… "${projectName}" (${userMessages.length} msgs)`)
 
-    const summaryText = await summarize(openrouterKey, title, date, capped)
-    if (!summaryText) {
+    const factsText = await summarize(openrouterKey, title, date, capped)
+    if (!factsText) {
       log(`  → LLM failed — will retry next poll`)
       // Do NOT save — retry on next poll
       continue
     }
 
+    const summaryText = `### [${date}] ${projectName}\n\n${factsText}`
     const ok = await insertSummary(supabaseUrl, serviceRoleKey, userId, summaryText)
     if (ok) {
       log(`  → imported`)
