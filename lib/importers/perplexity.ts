@@ -134,14 +134,24 @@ export function parsePerplexityExport(raw: unknown): ParsedConversation[] {
           ? parsed.slice(-MAX_MESSAGES_PER_CONV)
           : parsed
 
+      // Derive date: prefer conversation-level fields, fall back to the
+      // most recent entry's created_at, then today as last resort.
+      const convTs = Math.max(
+        isoToMs(conv.updated_at),
+        isoToMs(conv.created_at)
+      )
+      const entryTs = entries.reduce(
+        (max, e) => Math.max(max, isoToMs(e.created_at)),
+        0
+      )
+      const updatedAt = convTs || entryTs || Date.now()
+
       results.push({
         id: conv.context_uuid ?? crypto.randomUUID(),
         title: safeTitle(
           (conv.context_title ?? "Untitled").trim().slice(0, 200)
         ),
-        updatedAt:
-          Math.max(isoToMs(conv.updated_at), isoToMs(conv.created_at)) ||
-          Date.now(),
+        updatedAt,
         messages: trimmed,
         meta: { mode: (conv.mode ?? "DEFAULT").toUpperCase() }
       })
