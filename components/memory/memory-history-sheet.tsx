@@ -49,11 +49,12 @@ export function MemoryHistorySheet() {
   const [confirmClear, setConfirmClear] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Import state (shared between ChatGPT and Claude importers)
+  // Import state (shared between all importers)
   const chatgptFileInputRef = useRef<HTMLInputElement>(null)
   const claudeFileInputRef = useRef<HTMLInputElement>(null)
+  const perplexityFileInputRef = useRef<HTMLInputElement>(null)
   const [importingSource, setImportingSource] = useState<
-    "chatgpt" | "claude" | null
+    "chatgpt" | "claude" | "perplexity" | null
   >(null)
   const [importProgress, setImportProgress] = useState<{
     current: number
@@ -114,7 +115,11 @@ export function MemoryHistorySheet() {
     }
 
     const endpoint =
-      source === "chatgpt" ? "/api/import/chatgpt" : "/api/import/claude"
+      source === "chatgpt"
+        ? "/api/import/chatgpt"
+        : source === "perplexity"
+          ? "/api/import/perplexity"
+          : "/api/import/claude"
 
     try {
       for (let i = 0; i < files.length; i++) {
@@ -377,6 +382,13 @@ export function MemoryHistorySheet() {
             className="hidden"
             onChange={e => handleImport(e, "claude")}
           />
+          <input
+            ref={perplexityFileInputRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={e => handleImport(e, "perplexity")}
+          />
 
           <div className="flex gap-2">
             <Button
@@ -404,12 +416,23 @@ export function MemoryHistorySheet() {
               <span className="mr-1 shrink-0 text-[11px] font-bold">A</span>
               {importingSource === "claude" ? "Importing…" : "Claude"}
             </Button>
+
+            <Button
+              size="sm"
+              variant="outline"
+              className="flex-1 text-xs"
+              disabled={importingSource !== null}
+              onClick={() => perplexityFileInputRef.current?.click()}
+            >
+              <span className="mr-1 shrink-0 text-[11px] font-bold">P</span>
+              {importingSource === "perplexity" ? "Importing…" : "Perplexity"}
+            </Button>
           </div>
 
           <p className="mt-1.5 text-[10px] text-muted-foreground">
             ChatGPT: select multiple{" "}
             <code className="rounded bg-muted px-0.5">.json</code> files at
-            once. Claude: upload{" "}
+            once. Claude &amp; Perplexity: upload{" "}
             <code className="rounded bg-muted px-0.5">conversations.json</code>.
           </p>
 

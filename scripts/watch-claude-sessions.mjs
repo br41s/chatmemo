@@ -39,6 +39,7 @@ import {
   summarize,
   insertSummary
 } from "./claude-sessions-shared.mjs"
+import { findCopilotJSONLFiles, parseCopilotJSONL } from "./copilot-sessions-shared.mjs"
 
 // ---------------------------------------------------------------------------
 // Config
@@ -113,9 +114,9 @@ async function poll(config) {
     f => !sessions[f.sessionId] && now - f.mtime >= IDLE_THRESHOLD_MS
   )
 
-  if (candidates.length === 0) return
-
-  log(`Found ${candidates.length} session(s) to process`)
+  if (candidates.length > 0) {
+    log(`Found ${candidates.length} session(s) to process`)
+  }
 
   for (const { path: filePath, sessionId, projectSlug, mtime } of candidates) {
     const messages = parseJSONL(filePath)
@@ -148,6 +149,53 @@ async function poll(config) {
       sessions[sessionId] = new Date().toISOString()
     } else {
       log(`  → insert failed (will retry next poll)`)
+    }
+    saveSessionsFile(sessions)
+
+    await sleep(2_000)
+  }
+
+  // --- Copilot sessions ---
+
+  const allCopilotFiles = findCopilotJSONLFiles()
+  const copilotCandidates = allCopilotFiles.filter(
+    f => !sessions[`copilot:${f.sessionId}`] && now - f.mtime >= IDLE_THRESHOLD_MS
+  )
+
+  if (copilotCandidates.length > 0) {
+    log(`[Copilot] Found ${copilotCandidates.length} session(s) to process`)
+  }
+
+  for (const { path: filePath, sessionId, projectName, mtime } of copilotCandidates) {
+    const messages = parseCopilotJSONL(filePath)
+    const userMessages = messages.filter(m => m.role === "user")
+
+    if (userMessages.length < MIN_USER_MESSAGES) {
+      sessions[`copilot:${sessionId}`] = "skipped:" + new Date().toISOString()
+      saveSessionsFile(sessions)
+      continue
+    }
+
+    const capped = messages.slice(-MAX_MESSAGES)
+    const date = mtimeToDate(mtime)
+    const title = `[Copilot] ${projectName} — ${date}`
+
+    log(`[Copilot] Processing ${sessionId.slice(0, 8)}… "${projectName}" (${userMessages.length} msgs)`)
+
+    const factsText = await summarize(openrouterKey, title, date, capped)
+    if (!factsText) {
+      log(`[Copilot]   → LLM failed — will retry next poll`)
+      // Do NOT save — retry on next poll
+      continue
+    }
+
+    const summaryText = `### [${date}] ${projectName} [Copilot]\n\n${factsText}`
+    const ok = await insertSummary(supabaseUrl, serviceRoleKey, userId, summaryText)
+    if (ok) {
+      log(`[Copilot]   → imported`)
+      sessions[`copilot:${sessionId}`] = new Date().toISOString()
+    } else {
+      log(`[Copilot]   → insert failed (will retry next poll)`)
     }
     saveSessionsFile(sessions)
 

@@ -24,6 +24,8 @@ export interface ParsedConversation {
   /** Unix timestamp in milliseconds. */
   updatedAt: number
   messages: ParsedMessage[]
+  /** Optional importer-specific metadata (e.g. Perplexity mode). */
+  meta?: Record<string, string>
 }
 
 // ---------------------------------------------------------------------------

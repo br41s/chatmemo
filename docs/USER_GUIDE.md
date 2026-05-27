@@ -13,6 +13,7 @@
    - 3.2 [Claude Export (bulk import)](#32-claude-export-bulk-import)
    - 3.3 [ChatGPT Export (bulk import)](#33-chatgpt-export-bulk-import)
    - 3.4 [Claude Code Sessions](#34-claude-code-sessions)
+   - 3.5 [Perplexity Export (bulk import)](#35-perplexity-export-bulk-import)
 4. [Memory History](#4-memory-history)
 5. [Conversation Timeline](#5-conversation-timeline)
 6. [Self-Improving Lessons](#6-self-improving-lessons)
@@ -152,6 +153,26 @@ To check daemon status:
 launchctl list | grep chatmemo
 tail -f ~/.chatmemo/watch.log
 ```
+
+### 3.5 Perplexity Export (bulk import)
+
+Import your full Perplexity conversation history including COPILOT, DEFAULT, and REASONING mode sessions.
+
+**Export from Perplexity:**
+1. Go to [perplexity.ai](https://perplexity.ai) → **Settings** → **Account** → **Export data**.
+2. Download and extract the zip file. You will find a `conversations-*.json` file.
+
+**Import into ChatMemo:**
+1. Open ChatMemo → Memory History → **Perplexity** button.
+2. Select the `conversations-*.json` file.
+3. When done: **"✓ Imported N memory entries from M conversations"**
+
+**What gets stored:**
+- Every conversation is stored with its **real date** from the export metadata.
+- The Perplexity **mode** (COPILOT, DEFAULT, REASONING, etc.) is stored alongside each conversation for context.
+- A date index is inserted for fast date-based recall.
+- Import is fast — no LLM processing required.
+- Up to 100 MB file size supported.
 
 ---
 

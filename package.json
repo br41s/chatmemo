@@ -5,6 +5,7 @@
   "scripts": {
     "setup:sync": "node scripts/chatmemo-hook-setup.mjs",
     "import:claude": "node scripts/import-claude-sessions.mjs",
+    "import:copilot": "node scripts/import-copilot-sessions.mjs",
     "watch:claude": "node scripts/watch-claude-sessions.mjs",
     "watch:claude:install": "node scripts/watch-claude-sessions.mjs --install",
     "chat": "supabase start && npm run db-types && npm run dev",
