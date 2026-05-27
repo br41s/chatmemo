@@ -2,9 +2,11 @@
  * Parses raw summary rows into flat, dated TimelineEntry objects.
  *
  * Summaries can contain:
+ *  - A `[source:X]` prefix line (new tagged imports)
  *  - Multiple `### [YYYY-MM-DD] Title` sections (bulk imports, bookmarklet)
  *  - A single block with no date header (in-app summariser)
- *  - A date-index row `[Claude Conversation Index — imported …]` (skipped)
+ *  - Date-index rows `[X Conversation Index — imported …]` (skipped)
+ *  - Watermark rows `[chatmemo:watermark:…]` (skipped)
  *  - A TODO note `### [YYYY-MM-DD] TODO: …`
  */
 
@@ -12,6 +14,7 @@ export type TimelineSource =
   | "claude-ai" // bookmarklet
   | "claude-code" // VS Code Stop hook
   | "chatgpt" // ChatGPT bulk import
+  | "perplexity" // Perplexity bulk import
   | "import" // Claude bulk import
   | "todo" // manual note
   | "chat" // in-app live summariser
@@ -36,9 +39,33 @@ export interface TimelineEntry {
 // ---------------------------------------------------------------------------
 const HEADER_RE = /^###\s+\[(\d{4}-\d{2}-\d{2})\]\s+(.+)$/gm
 
+// [source:X] prefix written by all tagged importers
+const SOURCE_TAG_RE = /^\[source:(\w+)\]\n/
+
+// Row types to skip entirely (no narrative content)
+const SKIP_PREFIXES = [
+  "[Claude Conversation Index",
+  "[ChatGPT Conversation Index",
+  "[Perplexity Conversation Index",
+  "[chatmemo:watermark:"
+]
+
 // ---------------------------------------------------------------------------
 // Source detection
 // ---------------------------------------------------------------------------
+
+function tagToSource(tag: string): TimelineSource | null {
+  switch (tag) {
+    case "perplexity":
+      return "perplexity"
+    case "chatgpt":
+      return "chatgpt"
+    case "claude":
+      return "import"
+    default:
+      return null
+  }
+}
 
 function detectSource(title: string, content: string): TimelineSource {
   const t = title.toLowerCase()
@@ -46,6 +73,7 @@ function detectSource(title: string, content: string): TimelineSource {
   if (t.includes("[claude code]") || t.startsWith("[claude code]"))
     return "claude-code"
   if (t.startsWith("todo:") || t.includes("todo:")) return "todo"
+  if (c.includes("source: perplexity")) return "perplexity"
   if (c.includes("chatgpt") || c.includes("openai")) return "chatgpt"
   if (
     c.includes("claude conversation index") ||
@@ -71,28 +99,37 @@ export function parseSummariesToEntries(
   const entries: TimelineEntry[] = []
 
   for (const summary of summaries) {
-    const text = (summary.content ?? "").trim()
-    if (!text) continue
+    const raw = (summary.content ?? "").trim()
+    if (!raw) continue
 
-    // Skip pure date-index rows (no narrative content)
-    if (text.startsWith("[Claude Conversation Index")) continue
+    // Skip rows that should never appear in the timeline
+    if (SKIP_PREFIXES.some(p => raw.startsWith(p))) continue
+
+    // Extract [source:X] tag if present, then work on the clean text
+    const tagMatch = raw.match(SOURCE_TAG_RE)
+    const taggedSource: TimelineSource | null = tagMatch
+      ? tagToSource(tagMatch[1])
+      : null
+    const text = tagMatch ? raw.slice(tagMatch[0].length).trim() : raw
+
+    if (!text) continue
 
     // Find all ### headers
     const headerMatches = [...text.matchAll(HEADER_RE)]
 
     if (headerMatches.length === 0) {
       // Unstructured summary (in-app summariser or raw conversation text)
-      // Use the first non-empty line as a title hint
       const firstLine = text.split("\n").find(l => l.trim().length > 0) ?? ""
       const title =
         firstLine.replace(/^#+\s*/, "").slice(0, 120) || "Conversation"
+      const source = taggedSource ?? detectSource(title, text)
       entries.push({
         id: summary.id,
         summaryId: summary.id,
         date: summary.created_at.slice(0, 10),
         title,
         content: text,
-        source: detectSource(title, text),
+        source,
         importedAt: summary.created_at
       })
       continue
@@ -108,13 +145,15 @@ export function parseSummariesToEntries(
         i + 1 < headerMatches.length ? headerMatches[i + 1].index! : text.length
       const content = text.slice(bodyStart, bodyEnd).trim()
 
+      const source = taggedSource ?? detectSource(title, content)
+
       entries.push({
         id: `${summary.id}-${i}`,
         summaryId: summary.id,
         date,
         title,
         content,
-        source: detectSource(title, content),
+        source,
         importedAt: summary.created_at
       })
     }
