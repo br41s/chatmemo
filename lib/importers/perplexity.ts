@@ -76,10 +76,19 @@ const MAX_MESSAGES_PER_CONV = 200
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Parse an ISO 8601 string to unix milliseconds. Returns 0 on failure. */
-function isoToMs(iso: string | undefined): number {
-  if (!iso) return 0
-  const ts = Date.parse(iso)
+/**
+ * Parse a date value to unix milliseconds. Returns 0 on failure.
+ * Handles ISO 8601 strings and Unix timestamps (seconds, as number or string).
+ */
+function isoToMs(iso: string | number | null | undefined): number {
+  if (iso === null || iso === undefined || iso === "") return 0
+  // Numeric value or numeric string → treat as Unix seconds
+  const num = typeof iso === "number" ? iso : Number(iso)
+  if (!isNaN(num) && num > 1_000_000_000 && num < 10_000_000_000) {
+    return num * 1000
+  }
+  // ISO 8601 string
+  const ts = Date.parse(String(iso))
   return isNaN(ts) ? 0 : ts
 }
 
