@@ -139,7 +139,7 @@ export function MemoryHistorySheet() {
 
   const handleImport = async (
     e: React.ChangeEvent<HTMLInputElement>,
-    source: "chatgpt" | "claude"
+    source: "chatgpt" | "claude" | "perplexity"
   ) => {
     const files = Array.from(e.target.files ?? [])
     // Reset input so re-selecting the same files triggers onChange again
@@ -156,6 +156,7 @@ export function MemoryHistorySheet() {
     const accumulated: ImportResult = {
       conversations_found: 0,
       chunks_processed: 0,
+      skipped: 0,
       inserted: 0
     }
 
@@ -201,6 +202,7 @@ export function MemoryHistorySheet() {
         accumulated.conversations_found +=
           (data.conversations_found as number) ?? 0
         accumulated.chunks_processed += (data.chunks_processed as number) ?? 0
+        accumulated.skipped += (data.skipped as number) ?? 0
         accumulated.inserted += (data.inserted as number) ?? 0
       }
 
