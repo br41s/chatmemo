@@ -3,7 +3,6 @@ import { createClient } from "@/lib/supabase/server"
 import { getWatermark, insertSummary, setWatermark } from "@/db/summaries"
 import {
   buildDateIndex,
-  buildRawRows,
   formatConversationFull,
   parsePerplexityExport
 } from "@/lib/importers/perplexity"
@@ -110,21 +109,16 @@ export async function POST(request: NextRequest) {
     let inserted = 0
 
     // ------------------------------------------------------------------
-    // Step 1: Insert raw full-text rows for substantive conversations.
-    // Tagged with [source:perplexity] for selective deletion.
+    // Step 1: One row per conversation via formatConversationFull.
+    // This embeds "Source: Perplexity / MODE" so rows are identifiable
+    // for selective deletion even without the [source:X] tag.
+    // Tagged with [source:perplexity] prefix for the clear-source API.
     // ------------------------------------------------------------------
-    const rawRows = buildRawRows(
-      conversations.filter(
-        c => formatConversationFull(c).length >= MIN_CHARS_FOR_RAW
-      ),
-      5,
-      20,
-      300,
-      SOURCE
-    )
-    for (const row of rawRows) {
+    for (const conv of conversations) {
+      const fullText = formatConversationFull(conv)
+      if (fullText.length < MIN_CHARS_FOR_RAW) continue
       try {
-        await insertSummary(supabase, userId, row)
+        await insertSummary(supabase, userId, `[source:${SOURCE}]\n${fullText}`)
         inserted++
       } catch {
         // non-fatal — continue with remaining rows

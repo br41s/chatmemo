@@ -57,7 +57,20 @@ export async function DELETE(request: NextRequest) {
       if (!err2) deleted += legacyCount ?? 0
     }
 
-    // 3. Delete watermark so next import starts fresh
+    // 3. Perplexity-specific: also catch old raw rows that contain
+    //    "Source: Perplexity /" (written by formatConversationFull).
+    //    These were stored without a [source:] tag in the initial import.
+    if (source === "perplexity") {
+      const { count: oldCount, error: err3 } = await supabase
+        .from("summaries")
+        .delete({ count: "exact" })
+        .eq("user_id", userId)
+        .ilike("content", "%Source: Perplexity /%")
+
+      if (!err3) deleted += oldCount ?? 0
+    }
+
+    // 4. Delete watermark so next import starts fresh
     await supabase
       .from("summaries")
       .delete()
