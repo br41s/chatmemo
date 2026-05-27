@@ -139,7 +139,9 @@ export function parsePerplexityExport(raw: unknown): ParsedConversation[] {
         title: safeTitle(
           (conv.context_title ?? "Untitled").trim().slice(0, 200)
         ),
-        updatedAt: isoToMs(conv.updated_at) || isoToMs(conv.created_at),
+        updatedAt:
+          Math.max(isoToMs(conv.updated_at), isoToMs(conv.created_at)) ||
+          Date.now(),
         messages: trimmed,
         meta: { mode: (conv.mode ?? "DEFAULT").toUpperCase() }
       })

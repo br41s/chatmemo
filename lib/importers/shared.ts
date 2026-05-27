@@ -63,14 +63,18 @@ export function safeTitle(title: string): string {
  * @param convsPerRow    How many conversations to pack into each DB row.
  * @param maxMsgsPerConv Max messages to include per conversation (most recent).
  * @param maxMsgChars    Max characters per individual message.
+ * @param source         Optional source tag prepended to each row (e.g. "chatgpt").
+ *                       Enables selective deletion via the clear-source API.
  */
 export function buildRawRows(
   conversations: ParsedConversation[],
   convsPerRow = 5,
   maxMsgsPerConv = 20,
-  maxMsgChars = 300
+  maxMsgChars = 300,
+  source?: string
 ): string[] {
   const rows: string[] = []
+  const sourcePrefix = source ? `[source:${source}]\n` : ""
 
   for (let i = 0; i < conversations.length; i += convsPerRow) {
     const batch = conversations.slice(i, i + convsPerRow)
@@ -87,7 +91,7 @@ export function buildRawRows(
         return `${header}\n${msgs}`
       })
       .join("\n\n")
-    rows.push(text)
+    rows.push(`${sourcePrefix}${text}`)
   }
 
   return rows

@@ -35,6 +35,7 @@ function preview(content: string, maxChars = 120): string {
 interface ImportResult {
   conversations_found: number
   chunks_processed: number
+  skipped: number
   inserted: number
 }
 
@@ -63,6 +64,17 @@ export function MemoryHistorySheet() {
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
 
+  // Per-source clear state
+  const [clearingSource, setClearingSource] = useState<
+    "chatgpt" | "claude" | "perplexity" | null
+  >(null)
+  const [confirmClearSource, setConfirmClearSource] = useState<
+    "chatgpt" | "claude" | "perplexity" | null
+  >(null)
+  const [clearSourceResult, setClearSourceResult] = useState<string | null>(
+    null
+  )
+
   const loadHistory = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -88,7 +100,40 @@ export function MemoryHistorySheet() {
       setImportingSource(null)
       setImportProgress(null)
       setConfirmClear(false)
+      setConfirmClearSource(null)
+      setClearSourceResult(null)
       loadHistory()
+    }
+  }
+
+  const handleClearSource = async (
+    source: "chatgpt" | "claude" | "perplexity"
+  ) => {
+    if (confirmClearSource !== source) {
+      setConfirmClearSource(source)
+      setClearSourceResult(null)
+      return
+    }
+    setClearingSource(source)
+    setConfirmClearSource(null)
+    setError(null)
+    try {
+      const res = await fetch("/api/import/clear-source", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source })
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) throw new Error(data.reason ?? data.message)
+      const label = source.charAt(0).toUpperCase() + source.slice(1)
+      setClearSourceResult(
+        `${label} data cleared (${data.deleted ?? 0} rows removed)`
+      )
+      await loadHistory()
+    } catch (e) {
+      setError(`Failed to clear ${source} data`)
+    } finally {
+      setClearingSource(null)
     }
   }
 
@@ -386,6 +431,7 @@ export function MemoryHistorySheet() {
             ref={perplexityFileInputRef}
             type="file"
             accept=".json,application/json"
+            multiple
             className="hidden"
             onChange={e => handleImport(e, "perplexity")}
           />
@@ -430,10 +476,10 @@ export function MemoryHistorySheet() {
           </div>
 
           <p className="mt-1.5 text-[10px] text-muted-foreground">
-            ChatGPT: select multiple{" "}
+            ChatGPT &amp; Perplexity: select multiple{" "}
             <code className="rounded bg-muted px-0.5">.json</code> files at
-            once. Claude &amp; Perplexity: upload{" "}
-            <code className="rounded bg-muted px-0.5">conversations.json</code>.
+            once. Subsequent imports automatically skip already-imported
+            conversations.
           </p>
 
           {importResult && (
@@ -442,7 +488,12 @@ export function MemoryHistorySheet() {
               {importResult.inserted !== 1 ? " entries" : " entry"} from{" "}
               {importResult.conversations_found} conversation
               {importResult.conversations_found !== 1 ? "s" : ""}
-              {importResult.inserted === 0 ? " — nothing new to save" : ""}
+              {importResult.skipped > 0
+                ? ` (${importResult.skipped} already imported, skipped)`
+                : ""}
+              {importResult.inserted === 0 && !importResult.skipped
+                ? " — nothing new to save"
+                : ""}
             </div>
           )}
 
@@ -451,6 +502,55 @@ export function MemoryHistorySheet() {
               {importError}
             </div>
           )}
+
+          {/* Per-source selective clear */}
+          <div className="mt-3 border-t pt-2">
+            <p className="mb-1.5 text-[10px] font-medium text-muted-foreground">
+              Clear imported data by source
+            </p>
+            <div className="flex gap-1.5">
+              {(
+                [
+                  { source: "chatgpt", label: "ChatGPT" },
+                  { source: "claude", label: "Claude" },
+                  { source: "perplexity", label: "Perplexity" }
+                ] as const
+              ).map(({ source, label }) => {
+                const isClearing = clearingSource === source
+                const isConfirming = confirmClearSource === source
+                return (
+                  <Button
+                    key={source}
+                    size="sm"
+                    variant="ghost"
+                    className={`h-6 flex-1 text-[10px] ${
+                      isConfirming
+                        ? "text-red-500 hover:text-red-600"
+                        : "text-muted-foreground hover:text-red-500"
+                    }`}
+                    disabled={
+                      clearingSource !== null || importingSource !== null
+                    }
+                    onClick={() => handleClearSource(source)}
+                    onBlur={() => {
+                      if (confirmClearSource === source)
+                        setConfirmClearSource(null)
+                    }}
+                  >
+                    {isClearing ? "…" : isConfirming ? `Confirm` : `✕ ${label}`}
+                  </Button>
+                )
+              })}
+            </div>
+            {clearSourceResult && (
+              <p className="mt-1 text-[10px] text-green-600 dark:text-green-400">
+                {clearSourceResult}
+              </p>
+            )}
+            <p className="mt-1 text-[10px] text-muted-foreground">
+              Click once to confirm, again to execute.
+            </p>
+          </div>
         </div>
       </SheetContent>
     </Sheet>

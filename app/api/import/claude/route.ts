@@ -1,4 +1,6 @@
 import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
+// Source tag for selective deletion
+const SOURCE = "claude"
 import {
   callSummarizer,
   createOpenRouterClient,
@@ -125,19 +127,21 @@ export async function POST(request: NextRequest) {
     let rawInserted = 0
     const skipped: string[] = []
 
-    // Step 1: Insert full conversation text for substantive conversations
+    // Step 1: Insert full conversation text for substantive conversations.
+    // Tagged with [source:claude] for selective deletion.
     for (const conv of conversations) {
       const fullText = formatConversationFull(conv)
       if (fullText.length < MIN_CHARS_FOR_RAW) continue
       try {
-        await insertSummary(supabase, userId, fullText)
+        await insertSummary(supabase, userId, `[source:${SOURCE}]\n${fullText}`)
         rawInserted++
       } catch {
         // non-fatal
       }
     }
 
-    // Step 2: LLM summaries batched CONVS_PER_BATCH at a time
+    // Step 2: LLM summaries batched CONVS_PER_BATCH at a time.
+    // Tagged with [source:claude] for selective deletion.
     const perConvTexts = buildPerConvTexts(conversations)
     for (let i = 0; i < perConvTexts.length; i += CONVS_PER_BATCH) {
       const batchInput = perConvTexts
@@ -156,7 +160,11 @@ export async function POST(request: NextRequest) {
           )
           continue
         }
-        await insertSummary(supabase, userId, summaryText)
+        await insertSummary(
+          supabase,
+          userId,
+          `[source:${SOURCE}]\n${summaryText}`
+        )
         inserted++
       } catch (err) {
         skipped.push(
@@ -165,9 +173,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Step 3: Compact date index as final row for fast date-based recall
+    // Step 3: Compact date index as final row for fast date-based recall.
+    // Tagged with [source:claude] for selective deletion.
     try {
-      await insertSummary(supabase, userId, buildDateIndex(conversations))
+      await insertSummary(
+        supabase,
+        userId,
+        `[source:${SOURCE}]\n${buildDateIndex(conversations)}`
+      )
     } catch {
       // non-fatal
     }
