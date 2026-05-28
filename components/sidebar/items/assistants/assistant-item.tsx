@@ -8,7 +8,6 @@ import { Tables } from "@/supabase/types"
 import { IconRobotFace } from "@tabler/icons-react"
 import Image from "next/image"
 import { FC, useContext, useEffect, useState } from "react"
-import profile from "react-syntax-highlighter/dist/esm/languages/hljs/profile"
 import { SidebarItem } from "../all/sidebar-display-item"
 import { AssistantRetrievalSelect } from "./assistant-retrieval-select"
 import { AssistantToolSelect } from "./assistant-tool-select"
@@ -100,7 +99,6 @@ export const AssistantItem: FC<AssistantItemProps> = ({ assistant }) => {
     })
   }
 
-  if (!profile) return null
   if (!selectedWorkspace) return null
 
   return (
