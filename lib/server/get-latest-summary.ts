@@ -7,10 +7,17 @@ const MAX_MEMORY_CHARS = 48_000
 
 /**
  * How many most-recent rows to pull for the main memory block.
- * With raw ChatGPT rows (~10k chars each) this gives roughly 4-5 rows
- * before hitting MAX_MEMORY_CHARS — which covers the most recent ~25 convs.
+ * With raw ChatGPT/Perplexity rows (~2–10k chars each) this allows
+ * older rows (e.g. Claude Code sessions) to be included in the window
+ * even after a large bulk import.
  */
-const MAX_RECENT_ROWS = 50
+const MAX_RECENT_ROWS = 200
+
+/**
+ * Per-row char cap: prevents a single large Perplexity/ChatGPT row from
+ * consuming the entire memory budget, leaving room for older entries.
+ */
+const MAX_ROW_CHARS = 3_000
 
 /**
  * Additionally fetch the most recent N date-index rows separately so the
@@ -97,11 +104,15 @@ export async function getLatestSummaryForUser(
     totalChars += idx.length
   }
 
-  // Then recent content rows
+  // Then recent content rows (capped per-row so large imports don't crowd out older entries)
   for (const content of contentRows) {
-    if (totalChars + content.length > MAX_MEMORY_CHARS) break
-    parts.push(content)
-    totalChars += content.length
+    const capped =
+      content.length > MAX_ROW_CHARS
+        ? content.slice(0, MAX_ROW_CHARS) + "\n… [truncated]"
+        : content
+    if (totalChars + capped.length > MAX_MEMORY_CHARS) break
+    parts.push(capped)
+    totalChars += capped.length
   }
 
   // Fetch the lessons document (separate from conversation history)

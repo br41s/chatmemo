@@ -86,7 +86,7 @@ async function main() {
       // Do NOT save — retry on next run
       failed++
     } else {
-      const summaryText = `### [${date}] ${projectName}\n\n${factsText}`
+      const summaryText = `[source:claude]\n### [${date}] ${projectName}\n\n${factsText}`
       const ok = await insertSummary(supabaseUrl, serviceRoleKey, userId, summaryText)
       if (ok) {
         console.log("✓ imported")

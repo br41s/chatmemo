@@ -138,18 +138,18 @@ export const GlobalState: FC<GlobalStateProps> = ({ children }) => {
 
       if (profile) {
         const hostedModelRes = await fetchHostedModels(profile)
-        if (!hostedModelRes) return
+        // Don't bail — use empty defaults so the rest of init still runs
+        const envKeyMap = hostedModelRes?.envKeyMap ?? {}
+        const hostedModels = hostedModelRes?.hostedModels ?? []
 
-        setEnvKeyMap(hostedModelRes.envKeyMap)
-        setAvailableHostedModels(hostedModelRes.hostedModels)
+        setEnvKeyMap(envKeyMap)
+        setAvailableHostedModels(hostedModels)
 
-        if (
-          profile["openrouter_api_key"] ||
-          hostedModelRes.envKeyMap["openrouter"]
-        ) {
+        if (profile["openrouter_api_key"] || envKeyMap["openrouter"]) {
           const openRouterModels = await fetchOpenRouterModels()
-          if (!openRouterModels) return
-          setAvailableOpenRouterModels(openRouterModels)
+          if (openRouterModels) {
+            setAvailableOpenRouterModels(openRouterModels)
+          }
         }
       }
 
