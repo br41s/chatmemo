@@ -19,7 +19,8 @@
 5. [Conversation Timeline](#5-conversation-timeline)
 6. [Self-Improving Lessons](#6-self-improving-lessons)
 7. [Choosing a Chat Model](#7-choosing-a-chat-model)
-8. [Tips and Limitations](#8-tips-and-limitations)
+8. [Tools (API Plugins)](#8-tools-api-plugins)
+9. [Tips and Limitations](#9-tips-and-limitations)
 
 ---
 
@@ -298,7 +299,21 @@ ChatMemo supports any model available through OpenRouter or directly via provide
 
 ---
 
-## 8. Tips and Limitations
+## 8. Tools (API Plugins)
+
+The **Tools** section (⚡ bolt icon in the left sidebar) lets you register external APIs as callable functions. When an assistant has tools attached, it can decide mid-conversation to call one and use the result in its reply.
+
+**How to add a tool:**
+1. Click the ⚡ icon in the left sidebar → **New Tool**.
+2. Give it a name and paste its OpenAPI schema (JSON).
+3. Optionally add custom HTTP headers (e.g. `{"Authorization": "Bearer <token>"}`).
+4. Attach the tool to an **Assistant** — tools are not active in plain chats.
+
+> **Provider limitation:** Tools only work with **OpenAI** and **OpenRouter** models. If you select a tool while using an Anthropic, Google, Groq, or Mistral model directly, you will see an error and the chat will proceed without tool calls. Switch to an OpenAI or OpenRouter model to use tools.
+
+---
+
+## 9. Tips and Limitations
 
 **Tips:**
 - Import conversations after a productive session, not during — the bookmarklet captures the full conversation at that moment.
