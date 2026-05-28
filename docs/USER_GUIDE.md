@@ -164,15 +164,18 @@ Import your full Perplexity conversation history including COPILOT, DEFAULT, and
 
 **Import into ChatMemo:**
 1. Open ChatMemo → Memory History → **Perplexity** button.
-2. Select the `conversations-*.json` file.
+2. Select one or more `conversations-*.json` files (multi-file supported).
 3. When done: **"✓ Imported N memory entries from M conversations"**
 
 **What gets stored:**
-- Every conversation is stored with its **real date** from the export metadata.
+- Every conversation is stored with its **real date** from the export (derived from entry timestamps).
 - The Perplexity **mode** (COPILOT, DEFAULT, REASONING, etc.) is stored alongside each conversation for context.
 - A date index is inserted for fast date-based recall.
 - Import is fast — no LLM processing required.
-- Up to 100 MB file size supported.
+- Up to 100 MB per file supported.
+
+**Incremental import:**
+After the first import, subsequent imports of the same or updated export files automatically skip conversations already imported (based on a watermark of the most recent timestamp). Only new conversations are added.
 
 ---
 
@@ -185,20 +188,30 @@ The **Memory History** panel shows all your stored summaries.
 - Click the **trash** icon on any row to delete that summary.
 - Click **Clear all** to wipe all memories (asks for confirmation).
 
+**Selective source clear:**
+At the bottom of the panel, under *Clear imported data by source*, there are three buttons — **✕ ChatGPT**, **✕ Claude**, **✕ Perplexity** — that delete only the data imported from that source and reset its watermark. Two-click confirmation required. Use this when you want to fix a bad import without losing data from other sources.
+
 > Deleting a summary is permanent. The AI will stop referencing the deleted context in future chats.
 
 ---
 
 ## 5. Conversation Timeline
 
-The **Timeline** panel shows all your conversations — from Claude.ai, Claude Code, ChatGPT, and in-app chats — merged by date.
+The **Timeline** panel shows all your conversations — from Claude.ai, Claude Code, ChatGPT, Perplexity, and in-app chats — merged by date.
 
 - Click the timeline icon (⏱) in the left sidebar to open it.
 - Each entry shows the conversation date (real date, not import date), title, and source badge.
 - **Search**: filter by keyword across titles and content.
 - **Date range**: narrow to a specific time window using the from/to date pickers.
-- **Source filter**: show only Claude.ai, ChatGPT, Claude Code, etc.
-- Click the chevron (▼) on any entry to expand the full conversation excerpt.
+- **Source filter**: show only Claude.ai, ChatGPT, Claude Code, Perplexity, etc.
+
+**Reading a conversation:**
+- Click any entry to open it in the detail panel.
+- **Desktop**: the detail panel opens to the right — the list stays visible so you can navigate without going back.
+- **Mobile**: the detail replaces the list; tap ← to return.
+- The selected entry is shown with the one before and the one after for context.
+- Use **Load N more above / below** buttons to progressively reveal more adjacent conversations.
+- Changing any filter closes the detail and returns to the list.
 
 ---
 

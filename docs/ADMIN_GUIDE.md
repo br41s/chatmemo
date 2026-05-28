@@ -38,6 +38,8 @@
 │  /api/import/conversation  ← bookmarklet            │
 │  /api/import/claude        ← bulk Claude export     │
 │  /api/import/chatgpt       ← bulk ChatGPT export    │
+│  /api/import/perplexity    ← bulk Perplexity export │
+│  /api/import/clear-source  ← selective source clear │
 │  /api/memory/summarize     ← auto-summarise + lessons│
 │  /api/chat/openrouter      ← chat completions       │
 │  /api/timeline             ← conversation timeline  │
@@ -46,6 +48,8 @@
 │  lib/server/get-latest-summary.ts ← memory inject  │
 │  lib/db/lessons.ts              ← user_lessons DB   │
 │  lib/importers/shared.ts        ← importer utils    │
+│  lib/importers/perplexity.ts    ← Perplexity parser │
+│  db/summaries.ts                ← watermark helpers │
 └──────────────┬──────────────────────────────────────┘
                │
        ┌───────┴────────┐
@@ -379,6 +383,18 @@ If missing, reinstall: `npm run watch:claude:install` then `launchctl load ~/Lib
 
 ### `import:claude` stops with LLM timeouts
 The free OpenRouter model is rate-limited. The script automatically retries on the next run (LLM failures are not marked as done). Re-run `npm run import:claude` after a few minutes. Increasing `DELAY_BETWEEN_CALLS_MS` in `scripts/import-claude-sessions.mjs` also helps.
+
+### Perplexity import shows today's date for all conversations
+Perplexity exports use Unix timestamps (seconds), not ISO strings, and only at the entry level — not the conversation level. The parser handles this automatically. If dates still appear wrong, the export file may use an unexpected format. Check that `entry.created_at` is a numeric Unix timestamp in the 1–10 billion range.
+
+### Perplexity "✕ Perplexity" clear only removes some rows
+Only rows imported after source tagging was introduced carry the `[source:perplexity]` prefix or the `Source: Perplexity /` line. Legacy rows from the very first import (stored via `buildRawRows` without any marker) cannot be selectively deleted — use **Clear all** and reimport all sources if a full reset is needed.
+
+### Incremental import not picking up new conversations
+Each source stores a watermark row `[chatmemo:watermark:source=X ts=N]` in the summaries table. If the watermark gets corrupted or points to a future timestamp, new conversations will be skipped. Fix: run **✕ Source** (clear that source) then reimport — this deletes the watermark and starts fresh.
+
+### Timeline shows no Perplexity entries after import
+The timeline parser skips watermark rows and date-index rows automatically. Perplexity entries require either the `[source:perplexity]` prefix or `Source: Perplexity /` text in the content body. If entries still don't appear, check the Memory History panel to confirm the rows were inserted, then reload the timeline.
 
 ---
 
