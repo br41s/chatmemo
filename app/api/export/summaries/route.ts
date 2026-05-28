@@ -27,12 +27,37 @@ export const runtime: ServerRuntime = "nodejs"
 
 type Row = { content: string; created_at: string }
 
+// Header pattern: ### [YYYY-MM-DD] anything
+const HEADER_RE = /^\s*###\s+\[\d{4}-\d{2}-\d{2}\]/
+
 function detectExportSource(
   content: string
 ): "claude" | "chatgpt" | "perplexity" | "other" {
+  // ── Explicit source tags (new format) ──────────────────────────────────
   if (content.startsWith("[source:claude]")) return "claude"
   if (content.startsWith("[source:chatgpt]")) return "chatgpt"
   if (content.startsWith("[source:perplexity]")) return "perplexity"
+
+  // ── Watermark rows — route to the matching source ──────────────────────
+  const wmMatch = content.match(/^\[chatmemo:watermark:source=(\w+)/)
+  if (wmMatch) {
+    const s = wmMatch[1]
+    if (s === "claude") return "claude"
+    if (s === "chatgpt") return "chatgpt"
+    if (s === "perplexity") return "perplexity"
+  }
+
+  // ── Legacy index rows ──────────────────────────────────────────────────
+  if (content.startsWith("[Claude Conversation Index")) return "claude"
+  if (content.startsWith("[ChatGPT Conversation Index")) return "chatgpt"
+  if (content.startsWith("[Perplexity Conversation Index")) return "perplexity"
+
+  // ── Untagged rows with ### [date] headers ─────────────────────────────
+  // Created by import-claude-sessions.mjs (bulk import) or the bookmarklet.
+  // Both are Claude-origin entries stored before source tagging was added.
+  if (HEADER_RE.test(content)) return "claude"
+
+  // ── Everything else (sync-hook bullets, in-app summaries) ─────────────
   return "other"
 }
 
