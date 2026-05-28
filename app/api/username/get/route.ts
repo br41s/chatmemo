@@ -10,9 +10,10 @@ export async function POST(request: Request) {
   }
 
   try {
+    // Use anon key — username is semi-public, no need for service role
     const supabaseAdmin = createClient<Database>(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     )
 
     const { data, error } = await supabaseAdmin

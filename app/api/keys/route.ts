@@ -1,9 +1,17 @@
 import { isUsingEnvironmentKey } from "@/lib/envs"
+import { getServerProfile } from "@/lib/server/server-chat-helpers"
 import { createResponse } from "@/lib/server/server-utils"
 import { EnvKey } from "@/types/key-type"
 import { VALID_ENV_KEYS } from "@/types/valid-keys"
 
 export async function GET() {
+  try {
+    await getServerProfile()
+  } catch {
+    return new Response(JSON.stringify({ message: "Unauthorized" }), {
+      status: 401
+    })
+  }
   const envKeyMap: Record<string, VALID_ENV_KEYS> = {
     azure: VALID_ENV_KEYS.AZURE_OPENAI_API_KEY,
     openai: VALID_ENV_KEYS.OPENAI_API_KEY,

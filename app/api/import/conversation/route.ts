@@ -23,6 +23,7 @@ import { createClient as createServiceClient } from "@supabase/supabase-js"
 import { insertSummary } from "@/db/summaries"
 import { NextRequest, NextResponse } from "next/server"
 import { ServerRuntime } from "next"
+import { timingSafeEqual } from "crypto"
 
 export const runtime: ServerRuntime = "nodejs"
 
@@ -30,7 +31,12 @@ export const runtime: ServerRuntime = "nodejs"
 // CORS — allow claude.ai to POST without cookies
 // ---------------------------------------------------------------------------
 
-const ALLOWED_ORIGINS = ["https://claude.ai", "http://localhost:3000"]
+// localhost is included in dev only — remove it from production to avoid
+// cross-origin abuse from local servers on the same machine as the user.
+const ALLOWED_ORIGINS = [
+  "https://claude.ai",
+  ...(process.env.NODE_ENV === "development" ? ["http://localhost:3000"] : [])
+]
 
 function corsHeaders(origin: string | null): Record<string, string> {
   const allowed =
@@ -98,7 +104,13 @@ async function resolveUserId(request: NextRequest): Promise<string> {
       )
     }
 
-    if (token !== importToken) {
+    // Constant-time comparison to prevent timing attacks
+    const tokenBuf = Buffer.from(token)
+    const importBuf = Buffer.from(importToken)
+    const tokensMatch =
+      tokenBuf.length === importBuf.length &&
+      timingSafeEqual(tokenBuf, importBuf)
+    if (!tokensMatch) {
       throw new Error("Invalid import token")
     }
 
