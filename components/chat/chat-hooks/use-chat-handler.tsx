@@ -26,7 +26,6 @@ export const useChatHandler = () => {
   const router = useRouter()
 
   const {
-    userInput,
     chatFiles,
     setUserInput,
     setNewMessageImages,
@@ -240,7 +239,7 @@ export const useChatHandler = () => {
         setToolInUse("retrieval")
 
         retrievedFileItems = await handleRetrieval(
-          userInput,
+          messageContent,
           newMessageFiles,
           chatFiles,
           chatSettings!.embeddingsProvider,

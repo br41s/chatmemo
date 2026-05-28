@@ -152,14 +152,15 @@ export async function POST(req: Request) {
           : null
     }))
 
-    await supabaseAdmin.from("file_items").upsert(file_items)
-
     const totalTokens = file_items.reduce((acc, item) => acc + item.tokens, 0)
 
-    await supabaseAdmin
-      .from("files")
-      .update({ tokens: totalTokens })
-      .eq("id", file_id)
+    await Promise.all([
+      supabaseAdmin.from("file_items").upsert(file_items),
+      supabaseAdmin
+        .from("files")
+        .update({ tokens: totalTokens })
+        .eq("id", file_id)
+    ])
 
     return new NextResponse("Embed Successful", {
       status: 200

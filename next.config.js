@@ -20,6 +20,8 @@ const securityHeaders = [
 module.exports = withBundleAnalyzer(
   withPWA({
     reactStrictMode: true,
+    compress: true,
+    poweredByHeader: false,
     async headers() {
       return [
         {
