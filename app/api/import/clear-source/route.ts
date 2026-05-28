@@ -35,7 +35,7 @@ export async function DELETE(request: NextRequest) {
     const supabase = createClient(cookies())
 
     // Run all delete operations in parallel — they target non-overlapping content patterns.
-    const deleteOps: Promise<{ count: number | null; error: unknown }>[] = [
+    const deleteOps = [
       // 1. New format: "[source:X]\n..."
       supabase
         .from("summaries")

@@ -10,6 +10,7 @@ import { Tables } from "@/supabase/types"
 import { ChatMessage, ChatPayload, LLMID, ModelProvider } from "@/types"
 import { useRouter } from "next/navigation"
 import { useContext, useEffect, useRef } from "react"
+import { toast } from "sonner"
 import { LLM_LIST } from "../../../lib/models/llm/llm-list"
 import {
   createTempMessages,
@@ -271,7 +272,16 @@ export const useChatHandler = () => {
 
       let generatedText = ""
 
-      if (selectedTools.length > 0) {
+      const isToolsCompatible =
+        modelData?.provider === "openai" || modelData?.provider === "openrouter"
+
+      if (selectedTools.length > 0 && !isToolsCompatible) {
+        toast.error(
+          `Tools are only supported with OpenAI and OpenRouter models. Switch your model to use tools.`
+        )
+      }
+
+      if (selectedTools.length > 0 && isToolsCompatible) {
         setToolInUse("Tools")
 
         const formattedMessages = await buildFinalMessages(
