@@ -2,87 +2,67 @@ import { createClient } from "@/lib/supabase/server"
 import { getLessons } from "@/lib/db/lessons"
 import { cookies } from "next/headers"
 
-/** Max total chars injected into the system prompt as memory context. */
-const MAX_MEMORY_CHARS = 48_000
+// ---------------------------------------------------------------------------
+// Memory budget
+//
+// Personal rows (Claude Code sessions, sync hook, bookmarklet) are compact
+// LLM summaries (~1 500 chars each). We give them a large budget so ALL of
+// them fit regardless of when they were imported — FinView from January is
+// just as accessible as a session from yesterday.
+//
+// Bulk import rows (Perplexity, ChatGPT) store the full raw conversation
+// (~10 k chars each). We include only the opening 400 chars — enough to give
+// the AI topic awareness — so they can't crowd out personal sessions.
+//
+// Total injected: up to ~95 k tokens. Fits comfortably inside the 131 k
+// context window of Llama 3.3 70B (current default free model).
+// ---------------------------------------------------------------------------
 
-/**
- * Per-row char cap: prevents a single large Perplexity/ChatGPT row from
- * consuming the entire budget, leaving room for other entries.
- */
-const MAX_ROW_CHARS = 3_000
+const PERSONAL_BUDGET = 320_000 // chars — covers ~200 sessions at 1 600 avg
+const BULK_BUDGET = 40_000 // chars — covers ~100 Perplexity/ChatGPT titles
 
-/**
- * How many "personal" rows to fetch in the dedicated personal query.
- * Personal rows = no [source:X] tag: Claude Code sessions, sync hook,
- * bookmarklet entries. They are often buried by bulk imports in recency order,
- * so we guarantee their presence by fetching them in a separate query.
- */
-const MAX_PERSONAL_ROWS = 60
+const PERSONAL_ROW_MAX = 2_000 // cap per personal row (already compact)
+const BULK_ROW_MAX = 400 // title + opening line only for bulk rows
 
-/**
- * How many recent rows of any type to fetch.
- * Captures the most recent bulk import activity (Perplexity, ChatGPT)
- * and any recent personal entries that happen to be new.
- */
-const MAX_RECENT_ROWS = 30
-
-/**
- * Budget split: personal rows get the larger half of the memory budget so
- * that Claude Code sessions and bookmarklet entries are always represented,
- * even when recent bulk imports dominate the recency order.
- */
-const PERSONAL_BUDGET = Math.floor(MAX_MEMORY_CHARS * 0.55) // ~26 k
-const RECENT_BUDGET = MAX_MEMORY_CHARS - PERSONAL_BUDGET // ~22 k
-
-/**
- * Additionally fetch the most recent N date-index rows separately so the
- * AI can answer questions like "what was my first conversation?" even when
- * the oldest raw rows are pushed out by the char limit.
- * Index rows are compact (~50 chars per entry) so they don't eat much budget.
- */
+const MAX_PERSONAL_ROWS = 500 // fetch all personal sessions, no date cutoff
+const MAX_BULK_ROWS = 50 // only recent bulk rows are useful
 const MAX_INDEX_ROWS = 5
+
 const INDEX_MARKER = "Conversation Index"
 
-function cappedContent(content: string): string {
-  return content.length > MAX_ROW_CHARS
-    ? content.slice(0, MAX_ROW_CHARS) + "\n… [truncated]"
-    : content
+function isBulkRow(content: string): boolean {
+  return (
+    content.startsWith("[source:perplexity]") ||
+    content.startsWith("[source:chatgpt]")
+  )
 }
 
 function isIndexRow(content: string): boolean {
   return content.includes(INDEX_MARKER)
 }
 
-function isPersonalRow(content: string): boolean {
-  // Personal = no explicit source tag, not a watermark, not an index row
-  return (
-    !content.startsWith("[source:") &&
-    !content.startsWith("[chatmemo:") &&
-    !isIndexRow(content)
-  )
+function cap(content: string, max: number): string {
+  return content.length > max ? content.slice(0, max) + "…" : content
 }
 
 /**
  * Returns memory content to inject into the system prompt.
  *
- * Strategy (two parallel queries):
- *   A. Personal rows (no [source:X] tag — Claude Code sessions, sync hook,
- *      bookmarklet). Fetched separately so bulk imports can't push them out.
- *   B. Recent rows (any source, newest-first). Covers current Perplexity /
- *      ChatGPT activity and any newly-synced personal entries.
- *   C. Index rows (compact conversation lists, fetched in parallel).
- *
- *   Budget: personal rows get ~55% of MAX_MEMORY_CHARS, recent rows ~45%.
- *   Index rows are prepended and come out of the shared budget.
+ * Three parallel queries:
+ *   A. Personal rows — no [source:X] tag: Claude Code sessions, VS Code
+ *      sync hook, bookmarklet entries. Fetched with a high limit (500) so
+ *      every project the user has ever worked on is always in context.
+ *   B. Recent bulk rows — Perplexity + ChatGPT. Title-only (400 chars) so
+ *      they don't dominate the budget.
+ *   C. Index rows — compact conversation lists.
  */
 export async function getLatestSummaryForUser(
   userId: string
 ): Promise<string | null> {
   const supabase = createClient(cookies())
 
-  // ── Parallel fetch: personal rows + recent rows + index rows ──────────
-  const [personalResult, recentResult, indexResult] = await Promise.all([
-    // A. Personal rows: no source tag → Claude Code sessions, sync, bookmarklet
+  const [personalResult, bulkResult, indexResult] = await Promise.all([
+    // A. Personal: no source tag, no watermarks, no index rows
     supabase
       .from("summaries")
       .select("id, content")
@@ -93,17 +73,16 @@ export async function getLatestSummaryForUser(
       .order("created_at", { ascending: false })
       .limit(MAX_PERSONAL_ROWS),
 
-    // B. Recent rows: any source, newest first (captures bulk import activity)
+    // B. Bulk imports: only recent, title-only when building context
     supabase
       .from("summaries")
       .select("id, content")
       .eq("user_id", userId)
-      .not("content", "ilike", `%${INDEX_MARKER}%`)
-      .not("content", "like", "[chatmemo:%]%")
+      .or("content.like.[source:perplexity]%,content.like.[source:chatgpt]%")
       .order("created_at", { ascending: false })
-      .limit(MAX_RECENT_ROWS),
+      .limit(MAX_BULK_ROWS),
 
-    // C. Index rows: compact lists of all past conversations
+    // C. Index rows
     supabase
       .from("summaries")
       .select("id, content")
@@ -113,69 +92,48 @@ export async function getLatestSummaryForUser(
       .limit(MAX_INDEX_ROWS)
   ])
 
-  if (personalResult.error) {
-    console.error(
-      "[getLatestSummaryForUser] personal query error:",
-      personalResult.error.message
-    )
-  }
-  if (recentResult.error) {
-    console.error(
-      "[getLatestSummaryForUser] recent query error:",
-      recentResult.error.message
-    )
-  }
-
   const personalData = personalResult.data ?? []
-  const recentData = recentResult.data ?? []
+  const bulkData = bulkResult.data ?? []
   const indexData = indexResult.data ?? []
 
-  if (personalData.length === 0 && recentData.length === 0) return null
+  if (personalData.length === 0 && bulkData.length === 0) return null
 
-  // ── Build context ──────────────────────────────────────────────────────
   const parts: string[] = []
   let totalChars = 0
 
-  // 1. Index rows first (tiny, high-value for history questions)
+  // 1. Index rows (tiny, high-value for history questions)
   for (const row of indexData.slice(0, MAX_INDEX_ROWS)) {
-    const content = row.content?.trim() ?? ""
+    const content = (row.content ?? "").trim()
     if (!content) continue
-    if (totalChars + content.length > MAX_MEMORY_CHARS) break
     parts.push(content)
     totalChars += content.length
   }
 
-  // 2. Personal rows — dedicated budget so they always appear
-  const personalIds = new Set<string>()
+  // 2. Personal rows — full summaries, large budget
   let personalChars = 0
-
   for (const row of personalData) {
     const content = (row.content ?? "").trim()
     if (!content) continue
-    const capped = cappedContent(content)
+    const capped = cap(content, PERSONAL_ROW_MAX)
     if (personalChars + capped.length > PERSONAL_BUDGET) break
     parts.push(capped)
-    personalIds.add(row.id)
     personalChars += capped.length
     totalChars += capped.length
   }
 
-  // 3. Recent rows — remaining budget, skip rows already added above
-  let recentChars = 0
-
-  for (const row of recentData) {
-    if (personalIds.has(row.id)) continue // dedup
+  // 3. Bulk rows — titles only
+  let bulkChars = 0
+  for (const row of bulkData) {
     const content = (row.content ?? "").trim()
-    if (!content || isIndexRow(content)) continue
-    const capped = cappedContent(content)
-    if (recentChars + capped.length > RECENT_BUDGET) break
-    if (totalChars + capped.length > MAX_MEMORY_CHARS) break
+    if (!content) continue
+    const capped = cap(content, BULK_ROW_MAX)
+    if (bulkChars + capped.length > BULK_BUDGET) break
     parts.push(capped)
-    recentChars += capped.length
+    bulkChars += capped.length
     totalChars += capped.length
   }
 
-  // ── Lessons ────────────────────────────────────────────────────────────
+  // Lessons (separate from conversation history)
   const lessons = await getLessons(supabase, userId)
 
   const sections: string[] = []
