@@ -9,7 +9,13 @@ import {
   SheetTitle,
   SheetTrigger
 } from "@/components/ui/sheet"
-import { IconHistory, IconBrandOpenai, IconTrash } from "@tabler/icons-react"
+import {
+  IconHistory,
+  IconBrandOpenai,
+  IconTrash,
+  IconDatabaseExport,
+  IconDatabaseImport
+} from "@tabler/icons-react"
 import { useCallback, useRef, useState } from "react"
 
 interface SummaryRow {
@@ -75,6 +81,13 @@ export function MemoryHistorySheet() {
     null
   )
 
+  // Backup / restore state
+  const restoreFileInputRef = useRef<HTMLInputElement>(null)
+  const [exportingBackup, setExportingBackup] = useState(false)
+  const [restoringBackup, setRestoringBackup] = useState(false)
+  const [backupError, setBackupError] = useState<string | null>(null)
+  const [backupResult, setBackupResult] = useState<string | null>(null)
+
   const loadHistory = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -102,6 +115,8 @@ export function MemoryHistorySheet() {
       setConfirmClear(false)
       setConfirmClearSource(null)
       setClearSourceResult(null)
+      setBackupError(null)
+      setBackupResult(null)
       loadHistory()
     }
   }
@@ -250,6 +265,121 @@ export function MemoryHistorySheet() {
       setError("Failed to delete entry")
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Backup helpers
+  // ---------------------------------------------------------------------------
+
+  function triggerDownload(content: string, filename: string) {
+    const blob = new Blob([content], { type: "application/json" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  const handleExportBackup = async () => {
+    setExportingBackup(true)
+    setBackupError(null)
+    setBackupResult(null)
+    try {
+      const res = await fetch("/api/export/summaries")
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+
+      const { sources, exportedAt } = data as {
+        version: number
+        exportedAt: string
+        sources: Record<string, { content: string; created_at: string }[]>
+      }
+
+      const dateStr = exportedAt.slice(0, 10)
+      const sourceLabels: Record<string, string> = {
+        claude: "claude",
+        chatgpt: "chatgpt",
+        perplexity: "perplexity",
+        other: "other"
+      }
+
+      let filesDownloaded = 0
+      for (const [key, rows] of Object.entries(sources)) {
+        if (rows.length === 0) continue
+        const filename = `chatmemo-backup-${sourceLabels[key] ?? key}-${dateStr}.json`
+        const payload = JSON.stringify(
+          { version: 1, source: key, exportedAt, rows },
+          null,
+          2
+        )
+        // Stagger downloads slightly so browsers don't block them
+        await new Promise(resolve => setTimeout(resolve, filesDownloaded * 150))
+        triggerDownload(payload, filename)
+        filesDownloaded++
+      }
+
+      const totalRows = Object.values(sources).reduce(
+        (sum, rows) => sum + rows.length,
+        0
+      )
+      setBackupResult(
+        `Downloaded ${filesDownloaded} file${filesDownloaded !== 1 ? "s" : ""} — ${totalRows} rows total`
+      )
+    } catch (e) {
+      setBackupError(e instanceof Error ? e.message : "Export failed")
+    } finally {
+      setExportingBackup(false)
+    }
+  }
+
+  const handleRestoreBackup = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0]
+    e.target.value = ""
+    if (!file) return
+
+    setRestoringBackup(true)
+    setBackupError(null)
+    setBackupResult(null)
+
+    try {
+      const text = await file.text()
+      let parsed: { rows?: unknown; version?: number; source?: string }
+      try {
+        parsed = JSON.parse(text)
+      } catch {
+        throw new Error("File is not valid JSON")
+      }
+
+      if (!Array.isArray(parsed.rows)) {
+        throw new Error('Backup file must have a "rows" array')
+      }
+
+      const res = await fetch("/api/import/restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows: parsed.rows })
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        throw new Error(data.message ?? `Server error ${res.status}`)
+      }
+
+      setBackupResult(
+        `Restored ${data.inserted} row${data.inserted !== 1 ? "s" : ""}${
+          data.skipped > 0 ? ` (${data.skipped} already existed, skipped)` : ""
+        }`
+      )
+      await loadHistory()
+    } catch (e) {
+      setBackupError(e instanceof Error ? e.message : "Restore failed")
+    } finally {
+      setRestoringBackup(false)
     }
   }
 
@@ -552,6 +682,64 @@ export function MemoryHistorySheet() {
             <p className="mt-1 text-[10px] text-muted-foreground">
               Click once to confirm, again to execute.
             </p>
+          </div>
+
+          {/* Backup & Restore */}
+          <div className="mt-3 border-t pt-2">
+            <p className="mb-1.5 text-[10px] font-medium text-muted-foreground">
+              Backup &amp; Restore
+            </p>
+
+            {/* Hidden restore file input */}
+            <input
+              ref={restoreFileInputRef}
+              type="file"
+              accept=".json,application/json"
+              className="hidden"
+              onChange={handleRestoreBackup}
+            />
+
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="flex-1 text-xs"
+                disabled={exportingBackup || restoringBackup}
+                onClick={handleExportBackup}
+              >
+                <IconDatabaseExport size={13} className="mr-1 shrink-0" />
+                {exportingBackup ? "Exporting…" : "Export all"}
+              </Button>
+
+              <Button
+                size="sm"
+                variant="outline"
+                className="flex-1 text-xs"
+                disabled={restoringBackup || exportingBackup}
+                onClick={() => restoreFileInputRef.current?.click()}
+              >
+                <IconDatabaseImport size={13} className="mr-1 shrink-0" />
+                {restoringBackup ? "Restoring…" : "Restore backup"}
+              </Button>
+            </div>
+
+            <p className="mt-1 text-[10px] text-muted-foreground">
+              Export downloads one{" "}
+              <code className="rounded bg-muted px-0.5">.json</code> file per
+              source. Restore accepts any of those files — duplicates are
+              skipped automatically.
+            </p>
+
+            {backupResult && (
+              <p className="mt-1.5 text-[10px] text-green-600 dark:text-green-400">
+                ✓ {backupResult}
+              </p>
+            )}
+            {backupError && (
+              <p className="mt-1.5 text-[10px] text-red-600 dark:text-red-400">
+                {backupError}
+              </p>
+            )}
           </div>
         </div>
       </SheetContent>
