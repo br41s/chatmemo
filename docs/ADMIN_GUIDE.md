@@ -169,6 +169,20 @@ npm run db-push      # pushes local migrations to remote Supabase
 | `chats` | Chat sessions. |
 | `messages` | Individual messages within a chat. |
 
+### Performance indexes
+
+Run these once in the Supabase SQL editor. They cover the middleware home-workspace lookup and all memory-retrieval queries:
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_workspaces_user_home
+  ON workspaces (user_id, is_home);
+
+CREATE INDEX IF NOT EXISTS idx_summaries_user_created
+  ON summaries (user_id, created_at DESC);
+```
+
+These are also included in migration `20260520000000_perf_indexes.sql` and will be applied automatically on fresh installs via `supabase db push`.
+
 ### `user_lessons` migration
 
 The `supabase db push` CLI command is blocked by a pre-existing policy conflict in an older migration. Run this SQL **once** manually in the Supabase dashboard SQL editor:
