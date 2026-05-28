@@ -15,6 +15,7 @@
    - 3.4 [Claude Code Sessions](#34-claude-code-sessions)
    - 3.5 [Perplexity Export (bulk import)](#35-perplexity-export-bulk-import)
 4. [Memory History](#4-memory-history)
+   - 4.1 [Backup & Restore](#41-backup--restore)
 5. [Conversation Timeline](#5-conversation-timeline)
 6. [Self-Improving Lessons](#6-self-improving-lessons)
 7. [Choosing a Chat Model](#7-choosing-a-chat-model)
@@ -192,6 +193,43 @@ The **Memory History** panel shows all your stored summaries.
 At the bottom of the panel, under *Clear imported data by source*, there are three buttons — **✕ ChatGPT**, **✕ Claude**, **✕ Perplexity** — that delete only the data imported from that source and reset its watermark. Two-click confirmation required. Use this when you want to fix a bad import without losing data from other sources.
 
 > Deleting a summary is permanent. The AI will stop referencing the deleted context in future chats.
+
+### 4.1 Backup & Restore
+
+**Why back up:** your conversation history is stored in Supabase. If you accidentally clear a source, need to migrate to a new account, or want an offline copy, the in-app export covers you.
+
+#### Exporting all data
+
+1. Open the Memory History panel.
+2. Scroll to the bottom — **Backup & Restore** section.
+3. Click **Export all**.
+4. The browser downloads one JSON file per source that has data:
+   - `chatmemo-backup-claude-YYYY-MM-DD.json` — Claude Code sessions, bookmarklet imports, legacy bulk imports
+   - `chatmemo-backup-chatgpt-YYYY-MM-DD.json` — ChatGPT bulk imports
+   - `chatmemo-backup-perplexity-YYYY-MM-DD.json` — Perplexity bulk imports
+   - `chatmemo-backup-other-YYYY-MM-DD.json` — VS Code sync-hook entries and in-app chat summaries
+
+Store these files somewhere safe (iCloud, external drive, etc.). **Repeat periodically** — monthly at minimum, weekly if you import frequently.
+
+#### Restoring from a backup
+
+1. Open the Memory History panel → Backup & Restore.
+2. Click **Restore backup**.
+3. Select **one backup file** (e.g. `chatmemo-backup-claude-2026-05-28.json`).
+4. Repeat for each file you want to restore.
+
+The restore is safe to run at any time — rows that already exist in the database are silently skipped. You will see a confirmation like `Restored 412 rows (0 skipped)` or `Restored 0 rows (412 already existed, skipped)`.
+
+#### When to use restore
+
+| Situation | Action |
+|---|---|
+| Accidentally clicked **✕ Claude** / **Clear all** | Restore the matching backup file |
+| Moving to a new Supabase project | Export on old → Restore on new |
+| Corrupted or missing data after an upgrade | Restore the most recent backup |
+| Just want to verify backup integrity | Restore (duplicates are skipped, no harm done) |
+
+> **Note:** the backup covers only the `summaries` table (conversation memory). Profiles, chat sessions, and messages are not included.
 
 ---
 

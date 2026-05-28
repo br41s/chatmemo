@@ -17,6 +17,7 @@
 9. [Upgrading](#9-upgrading)
 10. [Troubleshooting](#10-troubleshooting)
 11. [Security Notes](#11-security-notes)
+12. [Backup & Restore](#12-backup--restore)
 
 ---
 
@@ -40,6 +41,8 @@
 │  /api/import/chatgpt       ← bulk ChatGPT export    │
 │  /api/import/perplexity    ← bulk Perplexity export │
 │  /api/import/clear-source  ← selective source clear │
+│  /api/import/restore       ← restore from backup    │
+│  /api/export/summaries     ← export grouped by src  │
 │  /api/memory/summarize     ← auto-summarise + lessons│
 │  /api/chat/openrouter      ← chat completions       │
 │  /api/timeline             ← conversation timeline  │
@@ -405,3 +408,233 @@ The timeline parser skips watermark rows and date-index rows automatically. Perp
 - `.env.local` is gitignored. Verify with `git check-ignore -v .env.local`.
 - The bookmarklet URL contains the import token in plain text. Do not share your bookmarks export.
 - CORS on `/api/import/conversation` allows `https://claude.ai` and `http://localhost:3000`. Update `ALLOWED_ORIGINS` in the route if you deploy to a custom domain.
+
+---
+
+## 12. Backup & Restore
+
+ChatMemo has two complementary backup strategies. Use both for full coverage.
+
+---
+
+### 12.1 In-App Export (recommended for summaries data)
+
+The Memory History panel has a built-in **Export all** button that downloads one JSON backup file per source. This requires no database credentials and produces files that can be re-uploaded through the same panel.
+
+**To export:**
+1. Open the Memory History panel (clock icon in the sidebar).
+2. Scroll to the bottom — **Backup & Restore** section.
+3. Click **Export all**.
+4. The browser downloads up to four files (only sources with rows are downloaded):
+   - `chatmemo-backup-claude-YYYY-MM-DD.json` — Claude Code sessions, bookmarklet imports, legacy bulk imports
+   - `chatmemo-backup-chatgpt-YYYY-MM-DD.json` — ChatGPT bulk imports
+   - `chatmemo-backup-perplexity-YYYY-MM-DD.json` — Perplexity bulk imports
+   - `chatmemo-backup-other-YYYY-MM-DD.json` — VS Code sync-hook entries, in-app chat summaries
+
+**To restore:**
+1. Open Memory History → Backup & Restore.
+2. Click **Restore backup**.
+3. Select one backup file (repeat for each source file).
+4. The restore endpoint compares content hashes and skips any row that already exists — safe to run multiple times or across partial restores.
+
+**What is included:** every row in the `summaries` table — conversation summaries, date-index rows, and watermark rows. Restoring watermarks is correct: they prevent re-importing conversations that are already restored.
+
+**What is NOT included:** profiles, chat sessions, messages, lessons. These are stored in separate tables and are not part of the summaries backup.
+
+---
+
+### 12.2 Automated pg_dump Backup (full database, free tier)
+
+For a complete database backup (all tables, all users) scheduled to run daily, use `pg_dump` via a macOS `launchd` job.
+
+#### Step 1 — Find your Supabase database password
+
+> You do not create this password; Supabase sets it when you create the project.
+
+1. Go to **Supabase dashboard → Project Settings → Database**.
+2. Scroll to **"Database password"** and copy it (or click **Reset** to generate a new one).
+3. Also copy the **"Host"** value from the Connection string section — it looks like `db.abcdefghijkl.supabase.co`.
+
+#### Step 2 — Store the password in `~/.pgpass` (never in the script)
+
+`~/.pgpass` is a standard PostgreSQL file that `pg_dump` reads automatically. It must be readable only by your user.
+
+```bash
+# Create or append to ~/.pgpass
+echo "db.YOUR-PROJECT-REF.supabase.co:5432:postgres:postgres:YOUR-DB-PASSWORD" >> ~/.pgpass
+
+# Lock permissions — pg_dump refuses to use the file if it's world-readable
+chmod 600 ~/.pgpass
+```
+
+Verify:
+```bash
+cat ~/.pgpass
+# Should print: db.YOUR-PROJECT-REF.supabase.co:5432:postgres:postgres:YOUR-DB-PASSWORD
+```
+
+The password is now stored securely. **The backup script never contains the password.**
+
+#### Step 3 — Install `pg_dump`
+
+```bash
+brew install libpq
+echo 'export PATH="/opt/homebrew/opt/libpq/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+
+# Verify
+pg_dump --version
+```
+
+#### Step 4 — Create the backup script
+
+Create `~/scripts/backup-chatmemo.sh`:
+
+```bash
+#!/bin/bash
+set -euo pipefail
+
+DATE=$(date +%Y-%m-%d)
+BACKUP_DIR="$HOME/backups/chatmemo"
+mkdir -p "$BACKUP_DIR"
+
+# Connection string — NO password here; pg_dump reads it from ~/.pgpass
+DB_URL="postgresql://postgres@db.YOUR-PROJECT-REF.supabase.co:5432/postgres"
+
+echo "[$(date)] Starting backup..."
+
+# Back up only the summaries and user_lessons tables (the memory data)
+pg_dump "$DB_URL" \
+  --table=summaries \
+  --table=user_lessons \
+  --data-only \
+  --no-owner \
+  --no-privileges \
+  -f "$BACKUP_DIR/chatmemo-$DATE.sql"
+
+echo "[$(date)] Backup written to $BACKUP_DIR/chatmemo-$DATE.sql"
+
+# Keep only last 30 days
+find "$BACKUP_DIR" -name "chatmemo-*.sql" -mtime +30 -delete
+echo "[$(date)] Old backups pruned."
+```
+
+```bash
+chmod +x ~/scripts/backup-chatmemo.sh
+```
+
+Replace `YOUR-PROJECT-REF` with your actual Supabase project reference (the subdomain part of your Supabase URL).
+
+#### Step 5 — Test it manually
+
+```bash
+~/scripts/backup-chatmemo.sh
+```
+
+Expected output:
+```
+[2026-05-28 03:00:00] Starting backup...
+[2026-05-28 03:00:02] Backup written to /Users/brais/backups/chatmemo/chatmemo-2026-05-28.sql
+[2026-05-28 03:00:02] Old backups pruned.
+```
+
+Inspect the file:
+```bash
+head -20 ~/backups/chatmemo/chatmemo-2026-05-28.sql
+# Should show SQL INSERT statements for summaries rows
+```
+
+#### Step 6 — Schedule with launchd (runs at 3 AM daily)
+
+Create `~/Library/LaunchAgents/com.chatmemo.backup.plist`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.chatmemo.backup</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/brais/scripts/backup-chatmemo.sh</string>
+  </array>
+
+  <!-- Run at 03:00 every day -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>3</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+
+  <!-- Logs -->
+  <key>StandardOutPath</key>
+  <string>/Users/brais/backups/chatmemo/backup.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/brais/backups/chatmemo/backup.err</string>
+
+  <!-- Start on login, respawn if it crashes -->
+  <key>RunAtLoad</key>
+  <false/>
+  <key>KeepAlive</key>
+  <false/>
+</dict>
+</plist>
+```
+
+Load it:
+```bash
+launchctl load ~/Library/LaunchAgents/com.chatmemo.backup.plist
+```
+
+Verify it is scheduled:
+```bash
+launchctl list | grep chatmemo
+# Should print a line with com.chatmemo.backup
+```
+
+#### Managing the launchd job
+
+```bash
+# Reload after editing the plist
+launchctl unload ~/Library/LaunchAgents/com.chatmemo.backup.plist
+launchctl load   ~/Library/LaunchAgents/com.chatmemo.backup.plist
+
+# Run it right now (for testing)
+launchctl start com.chatmemo.backup
+
+# Disable permanently
+launchctl unload ~/Library/LaunchAgents/com.chatmemo.backup.plist
+```
+
+---
+
+### 12.3 Restoring from a pg_dump backup
+
+```bash
+psql "postgresql://postgres@db.YOUR-PROJECT-REF.supabase.co:5432/postgres" \
+  -f ~/backups/chatmemo/chatmemo-2026-05-28.sql
+```
+
+`psql` also reads `~/.pgpass` automatically — no password in the command.
+
+> **Caution:** restoring from a pg_dump `.sql` file inserts rows without checking for duplicates (unlike the in-app restore). If the table already has data, run the restore on a freshly-cleared table or filter the SQL file first.
+
+---
+
+### 12.4 Which strategy to use
+
+| Situation | Use |
+|---|---|
+| Back up memory data, want to restore via UI | In-app Export all (section 12.1) |
+| Scheduled automated daily backup | pg_dump via launchd (section 12.2) |
+| Migrate to a new Supabase project | pg_dump → psql restore |
+| Accidentally cleared a source, want to re-import | In-app Restore backup |
+| Supabase Pro plan | Built-in PITR (no setup needed) |
+
+The in-app export is the fastest way to recover from an accidental **Clear all** or source clear. The pg_dump job is the safety net for hardware failure or database corruption.
