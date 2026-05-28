@@ -19,6 +19,7 @@ import {
   ChatMessage,
   ChatSettings,
   LLM,
+  LLMID,
   MessageImage,
   OpenRouterLLM,
   WorkspaceImage
@@ -77,10 +78,9 @@ export const GlobalState: FC<GlobalStateProps> = ({ children }) => {
   const [userInput, setUserInput] = useState<string>("")
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatSettings, setChatSettings] = useState<ChatSettings>({
-    model:
-      (typeof window !== "undefined" &&
-        localStorage.getItem("chatmemo.selectedModel")) ||
-      "openai/gpt-4o-mini",
+    model: ((typeof window !== "undefined" &&
+      localStorage.getItem("chatmemo.selectedModel")) ||
+      "openai/gpt-4o-mini") as LLMID,
     prompt: "You are a helpful AI assistant.",
     temperature: 0.5,
     contextLength: 4000,
