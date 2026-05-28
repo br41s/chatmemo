@@ -34,57 +34,63 @@ export async function DELETE(request: NextRequest) {
     const userId = profile.user_id
     const supabase = createClient(cookies())
 
-    let deleted = 0
+    // Run all delete operations in parallel — they target non-overlapping content patterns.
+    const deleteOps: Promise<{ count: number | null; error: unknown }>[] = [
+      // 1. New format: "[source:X]\n..."
+      supabase
+        .from("summaries")
+        .delete({ count: "exact" })
+        .eq("user_id", userId)
+        .like("content", `[source:${source}]%`)
+        .then(({ count, error }) => ({ count, error })),
 
-    // 1. Delete source-tagged rows (new format: "[source:X]\n...")
-    const { count: taggedCount, error: err1 } = await supabase
-      .from("summaries")
-      .delete({ count: "exact" })
-      .eq("user_id", userId)
-      .like("content", `[source:${source}]%`)
+      // 2. LLM summary rows: "[source:X:summary]\n..."
+      supabase
+        .from("summaries")
+        .delete({ count: "exact" })
+        .eq("user_id", userId)
+        .like("content", `[source:${source}:summary]%`)
+        .then(({ count, error }) => ({ count, error })),
 
-    if (!err1) deleted += taggedCount ?? 0
+      // 3. Watermark so next import starts fresh
+      supabase
+        .from("summaries")
+        .delete()
+        .eq("user_id", userId)
+        .like("content", `[chatmemo:watermark:source=${source} ts=%`)
+        .then(() => ({ count: 0, error: null }))
+    ]
 
-    // 1b. Delete LLM summary rows ("[source:X:summary]\n...")
-    const { count: summaryCount, error: err1b } = await supabase
-      .from("summaries")
-      .delete({ count: "exact" })
-      .eq("user_id", userId)
-      .like("content", `[source:${source}:summary]%`)
-
-    if (!err1b) deleted += summaryCount ?? 0
-
-    // 2. Delete legacy date-index rows (old format, no source tag)
+    // 4. Legacy date-index rows (old format, no source tag)
     const legacyPrefix = LEGACY_DATE_INDEX[source]
     if (legacyPrefix) {
-      const { count: legacyCount, error: err2 } = await supabase
-        .from("summaries")
-        .delete({ count: "exact" })
-        .eq("user_id", userId)
-        .like("content", `${legacyPrefix}%`)
-
-      if (!err2) deleted += legacyCount ?? 0
+      deleteOps.push(
+        supabase
+          .from("summaries")
+          .delete({ count: "exact" })
+          .eq("user_id", userId)
+          .like("content", `${legacyPrefix}%`)
+          .then(({ count, error }) => ({ count, error }))
+      )
     }
 
-    // 3. Perplexity-specific: also catch old raw rows that contain
-    //    "Source: Perplexity /" (written by formatConversationFull).
-    //    These were stored without a [source:] tag in the initial import.
+    // 5. Perplexity-specific: catch old raw rows without a [source:] tag
     if (source === "perplexity") {
-      const { count: oldCount, error: err3 } = await supabase
-        .from("summaries")
-        .delete({ count: "exact" })
-        .eq("user_id", userId)
-        .ilike("content", "%Source: Perplexity /%")
-
-      if (!err3) deleted += oldCount ?? 0
+      deleteOps.push(
+        supabase
+          .from("summaries")
+          .delete({ count: "exact" })
+          .eq("user_id", userId)
+          .ilike("content", "%Source: Perplexity /%")
+          .then(({ count, error }) => ({ count, error }))
+      )
     }
 
-    // 4. Delete watermark so next import starts fresh
-    await supabase
-      .from("summaries")
-      .delete()
-      .eq("user_id", userId)
-      .like("content", `[chatmemo:watermark:source=${source} ts=%`)
+    const results = await Promise.all(deleteOps)
+    let deleted = 0
+    for (const { count, error } of results) {
+      if (!error) deleted += count ?? 0
+    }
 
     return NextResponse.json({ success: true, deleted })
   } catch (error) {

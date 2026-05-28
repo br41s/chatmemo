@@ -1,8 +1,16 @@
+import dynamic from "next/dynamic"
 import React, { FC } from "react"
 import remarkGfm from "remark-gfm"
 import remarkMath from "remark-math"
-import { MessageCodeBlock } from "./message-codeblock"
 import { MessageMarkdownMemoized } from "./message-markdown-memoized"
+
+// Lazy-load the syntax highlighter (~200KB Prism bundle) — only needed when a
+// code block actually appears in a message, not on initial page load.
+const MessageCodeBlock = dynamic(
+  () =>
+    import("./message-codeblock").then(m => ({ default: m.MessageCodeBlock })),
+  { ssr: false }
+)
 
 interface MessageMarkdownProps {
   content: string

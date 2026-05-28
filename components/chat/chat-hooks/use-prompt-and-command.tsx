@@ -42,15 +42,19 @@ export const usePromptAndCommand = () => {
     if (atMatch) {
       setIsAssistantPickerOpen(true)
       setAtCommand(atMatch[1])
+      setUserInput(value)
     } else if (slashMatch) {
       setIsPromptPickerOpen(true)
       setSlashCommand(slashMatch[1])
+      setUserInput(value)
     } else if (hashtagMatch) {
       setIsFilePickerOpen(true)
       setHashtagCommand(hashtagMatch[1])
+      setUserInput(value)
     } else if (toolMatch) {
       setIsToolPickerOpen(true)
       setToolCommand(toolMatch[1])
+      setUserInput(value)
     } else {
       setIsPromptPickerOpen(false)
       setIsFilePickerOpen(false)
@@ -60,9 +64,10 @@ export const usePromptAndCommand = () => {
       setHashtagCommand("")
       setToolCommand("")
       setAtCommand("")
+      // No setUserInput here — ChatInput uses local state for normal typing.
+      // Context is synced only when command pickers are active (above) so that
+      // handleSelectPrompt / handleSelectAssistant / etc. see the correct value.
     }
-
-    setUserInput(value)
   }
 
   const handleSelectPrompt = (prompt: Tables<"prompts">) => {

@@ -31,6 +31,10 @@ export const ChatInput: FC<ChatInputProps> = ({}) => {
   })
 
   const [isTyping, setIsTyping] = useState<boolean>(false)
+  // Local state for the textarea — avoids re-rendering 53+ context consumers on every keystroke.
+  // Context `userInput` is only updated when command pickers are active or on send/clear.
+  const [localInput, setLocalInput] = useState("")
+  const prevContextInput = useRef("")
 
   const {
     isAssistantPickerOpen,
@@ -75,17 +79,30 @@ export const ChatInput: FC<ChatInputProps> = ({}) => {
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // Sync local textarea when external code updates userInput (send clear, new chat, prompt/assistant selection).
+  useEffect(() => {
+    if (userInput !== prevContextInput.current) {
+      setLocalInput(userInput)
+      prevContextInput.current = userInput
+    }
+  }, [userInput])
+
   useEffect(() => {
     setTimeout(() => {
       handleFocusChatInput()
     }, 200) // FIX: hacky
   }, [selectedPreset, selectedAssistant])
 
+  const handleLocalInputChange = (value: string) => {
+    setLocalInput(value)
+    handleInputChange(value)
+  }
+
   const handleKeyDown = (event: React.KeyboardEvent) => {
     if (!isTyping && event.key === "Enter" && !event.shiftKey) {
       event.preventDefault()
       setIsPromptPickerOpen(false)
-      handleSendMessage(userInput, chatMessages, false)
+      handleSendMessage(localInput, chatMessages, false)
     }
 
     // Consolidate conditions to avoid TypeScript error
@@ -243,8 +260,8 @@ export const ChatInput: FC<ChatInputProps> = ({}) => {
             // `Ask anything. Type "@" for assistants, "/" for prompts, "#" for files, and "!" for tools.`
             `Ask anything. Type @  /  #  !`
           )}
-          onValueChange={handleInputChange}
-          value={userInput}
+          onValueChange={handleLocalInputChange}
+          value={localInput}
           minRows={1}
           maxRows={18}
           onKeyDown={handleKeyDown}
@@ -264,12 +281,12 @@ export const ChatInput: FC<ChatInputProps> = ({}) => {
             <IconSend
               className={cn(
                 "rounded bg-primary p-1 text-secondary",
-                !userInput && "cursor-not-allowed opacity-50"
+                !localInput && "cursor-not-allowed opacity-50"
               )}
               onClick={() => {
-                if (!userInput) return
+                if (!localInput) return
 
-                handleSendMessage(userInput, chatMessages, false)
+                handleSendMessage(localInput, chatMessages, false)
               }}
               size={30}
             />
