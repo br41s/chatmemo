@@ -34,6 +34,9 @@ function detectExportSource(
   content: string
 ): "claude" | "chatgpt" | "perplexity" | "other" {
   // ── Explicit source tags (new format) ──────────────────────────────────
+  // :summary sub-tags must be checked before the plain [source:X] patterns
+  if (content.startsWith("[source:perplexity:summary]")) return "perplexity"
+  if (content.startsWith("[source:chatgpt:summary]")) return "chatgpt"
   if (content.startsWith("[source:claude]")) return "claude"
   if (content.startsWith("[source:chatgpt]")) return "chatgpt"
   if (content.startsWith("[source:perplexity]")) return "perplexity"

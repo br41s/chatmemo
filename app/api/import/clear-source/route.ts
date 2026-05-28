@@ -45,6 +45,15 @@ export async function DELETE(request: NextRequest) {
 
     if (!err1) deleted += taggedCount ?? 0
 
+    // 1b. Delete LLM summary rows ("[source:X:summary]\n...")
+    const { count: summaryCount, error: err1b } = await supabase
+      .from("summaries")
+      .delete({ count: "exact" })
+      .eq("user_id", userId)
+      .like("content", `[source:${source}:summary]%`)
+
+    if (!err1b) deleted += summaryCount ?? 0
+
     // 2. Delete legacy date-index rows (old format, no source tag)
     const legacyPrefix = LEGACY_DATE_INDEX[source]
     if (legacyPrefix) {

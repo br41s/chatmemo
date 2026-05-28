@@ -5,41 +5,33 @@ import { cookies } from "next/headers"
 // ---------------------------------------------------------------------------
 // Memory budget
 //
-// Personal rows (Claude Code sessions, sync hook, bookmarklet) are compact
-// LLM summaries (~1 500 chars each). We give them a large budget so ALL of
-// them fit regardless of when they were imported — FinView from January is
-// just as accessible as a session from yesterday.
+// "Personal" rows are all Claude-origin content: Claude Code sessions,
+// VS Code sync hook, bookmarklet entries, Claude bulk import LLM summaries,
+// and in-app chat summaries. These are already compact (~400–1 500 chars).
 //
-// Bulk import rows (Perplexity, ChatGPT) store the full raw conversation
-// (~10 k chars each). We include only the opening 400 chars — enough to give
-// the AI topic awareness — so they can't crowd out personal sessions.
+// IMPORTANT: [source:claude] rows ARE personal rows. We only exclude
+// [source:perplexity] and [source:chatgpt] from query A — NOT [source:claude].
+// That was the root bug: Claude Code sessions were invisible to both queries.
 //
-// Total injected: up to ~95 k tokens. Fits comfortably inside the 131 k
-// context window of Llama 3.3 70B (current default free model).
+// "Bulk" rows are Perplexity and ChatGPT imports. Raw conversations can be
+// 10 k chars; we cap them at 400 chars for topic awareness. LLM summaries
+// generated at import time (compact, <800 chars) are also stored with the
+// same source tag and are fully included under the 400-char cap.
+//
+// Total injected: ~100 k chars ≈ 25 k tokens. Fast and safe for all models.
 // ---------------------------------------------------------------------------
 
-const PERSONAL_BUDGET = 320_000 // chars — covers ~200 sessions at 1 600 avg
-const BULK_BUDGET = 40_000 // chars — covers ~100 Perplexity/ChatGPT titles
+const PERSONAL_BUDGET = 80_000 // chars — ~60–80 sessions at 1 000 avg
+const BULK_BUDGET = 20_000 // chars — ~50 Perplexity/ChatGPT topics
 
-const PERSONAL_ROW_MAX = 2_000 // cap per personal row (already compact)
+const PERSONAL_ROW_MAX = 1_500 // cap per personal row
 const BULK_ROW_MAX = 400 // title + opening line only for bulk rows
 
-const MAX_PERSONAL_ROWS = 500 // fetch all personal sessions, no date cutoff
-const MAX_BULK_ROWS = 50 // only recent bulk rows are useful
+const MAX_PERSONAL_ROWS = 150 // enough to cover all personal sessions
+const MAX_BULK_ROWS = 30 // only recent bulk rows are useful
 const MAX_INDEX_ROWS = 5
 
 const INDEX_MARKER = "Conversation Index"
-
-function isBulkRow(content: string): boolean {
-  return (
-    content.startsWith("[source:perplexity]") ||
-    content.startsWith("[source:chatgpt]")
-  )
-}
-
-function isIndexRow(content: string): boolean {
-  return content.includes(INDEX_MARKER)
-}
 
 function cap(content: string, max: number): string {
   return content.length > max ? content.slice(0, max) + "…" : content
@@ -49,12 +41,13 @@ function cap(content: string, max: number): string {
  * Returns memory content to inject into the system prompt.
  *
  * Three parallel queries:
- *   A. Personal rows — no [source:X] tag: Claude Code sessions, VS Code
- *      sync hook, bookmarklet entries. Fetched with a high limit (500) so
- *      every project the user has ever worked on is always in context.
- *   B. Recent bulk rows — Perplexity + ChatGPT. Title-only (400 chars) so
- *      they don't dominate the budget.
- *   C. Index rows — compact conversation lists.
+ *   A. Personal rows — everything EXCEPT [source:perplexity], [source:chatgpt],
+ *      watermarks, and index rows. This includes [source:claude] rows (Claude
+ *      Code sessions, bookmarklet, bulk import LLM summaries) AND untagged
+ *      rows (old in-app chat summaries). Limit 150, budget 80 k chars.
+ *   B. Bulk rows — Perplexity + ChatGPT only. Raw text capped at 400 chars;
+ *      LLM summaries (if present) also fit under 400 chars. Limit 30.
+ *   C. Index rows — compact conversation date lists.
  */
 export async function getLatestSummaryForUser(
   userId: string
@@ -62,18 +55,20 @@ export async function getLatestSummaryForUser(
   const supabase = createClient(cookies())
 
   const [personalResult, bulkResult, indexResult] = await Promise.all([
-    // A. Personal: no source tag, no watermarks, no index rows
+    // A. Personal: exclude Perplexity, ChatGPT, watermarks, and index rows.
+    //    [source:claude] rows ARE included — they are Claude Code sessions.
     supabase
       .from("summaries")
       .select("id, content")
       .eq("user_id", userId)
-      .not("content", "like", "[source:%]%")
+      .not("content", "like", "[source:perplexity]%")
+      .not("content", "like", "[source:chatgpt]%")
       .not("content", "like", "[chatmemo:%]%")
       .not("content", "ilike", `%${INDEX_MARKER}%`)
       .order("created_at", { ascending: false })
       .limit(MAX_PERSONAL_ROWS),
 
-    // B. Bulk imports: only recent, title-only when building context
+    // B. Bulk imports: Perplexity + ChatGPT, title-only when building context
     supabase
       .from("summaries")
       .select("id, content")
@@ -99,17 +94,15 @@ export async function getLatestSummaryForUser(
   if (personalData.length === 0 && bulkData.length === 0) return null
 
   const parts: string[] = []
-  let totalChars = 0
 
   // 1. Index rows (tiny, high-value for history questions)
   for (const row of indexData.slice(0, MAX_INDEX_ROWS)) {
     const content = (row.content ?? "").trim()
     if (!content) continue
     parts.push(content)
-    totalChars += content.length
   }
 
-  // 2. Personal rows — full summaries, large budget
+  // 2. Personal rows — compact summaries, large budget
   let personalChars = 0
   for (const row of personalData) {
     const content = (row.content ?? "").trim()
@@ -118,10 +111,9 @@ export async function getLatestSummaryForUser(
     if (personalChars + capped.length > PERSONAL_BUDGET) break
     parts.push(capped)
     personalChars += capped.length
-    totalChars += capped.length
   }
 
-  // 3. Bulk rows — titles only
+  // 3. Bulk rows — topic excerpts only
   let bulkChars = 0
   for (const row of bulkData) {
     const content = (row.content ?? "").trim()
@@ -130,7 +122,6 @@ export async function getLatestSummaryForUser(
     if (bulkChars + capped.length > BULK_BUDGET) break
     parts.push(capped)
     bulkChars += capped.length
-    totalChars += capped.length
   }
 
   // Lessons (separate from conversation history)

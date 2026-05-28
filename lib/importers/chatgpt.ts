@@ -22,6 +22,18 @@ import {
 export type { ParsedConversation, ParsedMessage }
 export { buildRawRows }
 
+/**
+ * Format a single conversation as a `### [YYYY-MM-DD] Title` section.
+ * Used as LLM input for summarisation.
+ */
+export function formatConversationFull(conv: ParsedConversation): string {
+  const header = `### [${msToDate(conv.updatedAt)}] ${safeTitle(conv.title)}`
+  const body = conv.messages
+    .map(m => `${m.role === "user" ? "User" : "Assistant"}: ${m.text}`)
+    .join("\n\n")
+  return `${header}\n\n${body}`
+}
+
 // ---------------------------------------------------------------------------
 // Raw ChatGPT export types (defensive — all fields optional except essentials)
 // ---------------------------------------------------------------------------
