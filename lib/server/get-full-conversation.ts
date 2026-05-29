@@ -495,8 +495,11 @@ function extractTopicWords(message: string): string[] {
 const MAX_CHATS = 3
 const MAX_MESSAGES_PER_CHAT = 150
 const MAX_SUMMARY_ROWS = 12
-const MAX_ROW_CHARS = 20_000
-const MAX_TOTAL_CHARS = 50_000
+// Per-row cap must fit a whole conversation — when the user asks to recover a
+// FULL conversation, truncating mid-transcript drops the assistant replies and
+// makes the model think only the prompt was stored. 80k chars ≈ 20k tokens.
+const MAX_ROW_CHARS = 80_000
+const MAX_TOTAL_CHARS = 120_000
 
 const INDEX_MARKER = "Conversation Index"
 
