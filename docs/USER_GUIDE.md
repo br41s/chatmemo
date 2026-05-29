@@ -36,6 +36,8 @@ ChatMemo builds a persistent, growing memory of who you are and what you work on
 
 Together they give the AI up to ~48 000 characters of context about you before you type a single word.
 
+**Recovering a full conversation on demand:** the two layers above are *summaries* — compact by design. When you explicitly ask to recover a **full conversation** (in English or Spanish — e.g. *"recover the full conversation about X"*, *"recupera la conversación completa de …"*, or by date *"recupera la conversación del 2026-03-31"*), ChatMemo pulls the **complete, untruncated transcript** instead of the summary. It works best when you quote the conversation title or give a specific date. Recoverable in full: in-app chats, **Perplexity** imports, and **Claude** imports. ChatGPT imports are stored compressed, so they cannot be recovered word-for-word.
+
 Nothing is shared between users. All data is scoped to your account.
 
 ---
@@ -320,6 +322,7 @@ The **Tools** section (⚡ bolt icon in the left sidebar) lets you register exte
 - If the AI doesn't seem to know something you imported, start a **new chat**. Memory and lessons are injected at chat start.
 - Use the Memory History panel to audit what the AI knows. Delete outdated or wrong summaries.
 - Ask the AI directly what it knows: *"What do you know about my projects?"* or *"What was my first ChatGPT conversation?"*
+- To pull a full past conversation verbatim, say *"recover the full conversation"* (or *"recupera la conversación completa"*) and **quote the title or give the date** — e.g. *"recupera la conversación del 2026-03-31"*. A specific date is the most reliable signal.
 - For ChatGPT imports, select all files at once — the importer processes them sequentially and shows per-file progress.
 
 **Limitations:**
@@ -327,3 +330,4 @@ The **Tools** section (⚡ bolt icon in the left sidebar) lets you register exte
 - Free OpenRouter models have rate limits. If you get an "OpenRouter rate limit" error, wait 60 seconds and try again.
 - Memory context is capped at ~48 000 characters per chat. Very old conversation rows may be truncated if you have many; the lessons document and date-index rows are always prioritised.
 - The lessons update (after each chat) adds one extra LLM call to the background summariser. If the OpenRouter key is missing or rate-limited, the lessons update is skipped silently — it never blocks the chat.
+- Full-conversation recall works on the **OpenRouter** chat route. **ChatGPT** imports cannot be recovered word-for-word (they are stored compressed at import time); Perplexity, Claude, and in-app chats can. Title matching is exact and accent-sensitive — quote the title as it appears, or use a date.

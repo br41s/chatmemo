@@ -9,6 +9,7 @@ Built on [Chatbot UI](https://github.com/mckaywrigley/chatbot-ui) (Next.js 14 + 
 ## What it does
 
 - **Persistent memory** — every chat starts with up to ~48 000 characters of context: a structured lessons document about you + recent conversation summaries
+- **Full conversation recall** — ask (in English or Spanish) to recover a full past conversation by title or date and the AI pulls the complete untruncated transcript instead of the summary (in-app, Perplexity, and Claude imports)
 - **Multi-source import** — Claude.ai (bookmarklet + bulk export), Claude Code sessions (VS Code hook + macOS daemon), ChatGPT export, Perplexity export
 - **Self-improving lessons** — after each chat the AI reviews what it learned and updates a knowledge document about your projects, preferences, and patterns
 - **Timeline** — browse all your conversations across all sources, merged by real date, with search and filtering
