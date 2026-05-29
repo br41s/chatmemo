@@ -19,15 +19,23 @@ import { cookies } from "next/headers"
 // ---------------------------------------------------------------------------
 
 const TRIGGERS = [
-  // English
+  // English — conversation/chat variants
   "full conversation",
   "complete conversation",
   "entire conversation",
   "whole conversation",
   "original conversation",
+  "full chat",
+  "complete chat",
+  "entire chat",
+  "whole chat",
+  "full thread",
   "all messages",
+  "full transcript",
   "recover conversation",
   "recover the conversation",
+  "recover chat",
+  "recover the chat",
   "what did we say",
   "what did we discuss",
   "transcript",
@@ -38,6 +46,8 @@ const TRIGGERS = [
   "conversación entera",
   "conversacion original",
   "conversación original",
+  "chat completo",
+  "chat entero",
   "transcripcion",
   "transcripción",
   "que hablamos",
@@ -48,17 +58,26 @@ const TRIGGERS = [
   "recupera la conversación",
   "recuperar la conversacion",
   "recuperar la conversación",
+  "recupera el chat",
+  "recuperar el chat",
   "recupera la primera",
   "recupera la ultima",
-  "recupera la última"
+  "recupera la última",
+  "dame la primera",
+  "dame el chat",
+  "dame la conversacion",
+  "dame la conversación"
 ]
 
 const TRIGGER_PATTERNS = [
-  // English: verb ... conversation
-  /\b(show|find|search|retrieve|get|recover)\b.{0,30}\bconversation/,
-  // Spanish: verb ... conversación
-  /\b(recupera|recuperar|muestra|muestrame|muéstrame|busca|buscar|dame|ensename|enséñame)\b.{0,40}\bconversaci[oó]n/,
-  /\bconversaci[oó]n\b.{0,40}\b(completa|entera|original|integra|íntegra)/
+  // English: verb ... conversation/chat/thread/transcript
+  /\b(show|find|search|retrieve|get|recover|give|fetch|pull|read)\b.{0,40}\b(conversation|chat|thread|transcript)/,
+  // English: full/complete/entire ... chat/conversation/thread
+  /\b(full|complete|entire|whole|original)\b.{0,20}\b(chat|conversation|thread|transcript)/,
+  // Spanish: verb ... conversación/chat
+  /\b(recupera|recuperar|muestra|muestrame|muéstrame|busca|buscar|dame|ensename|enséñame|saca|trae)\b.{0,40}\b(conversaci[oó]n|chat)/,
+  // Spanish: conversación/chat ... completa/entera/original
+  /\b(conversaci[oó]n|chat)\b.{0,40}\b(completa|completo|entera|entero|original|integra|íntegra)/
 ]
 
 export function detectFullConversationIntent(message: string): boolean {
