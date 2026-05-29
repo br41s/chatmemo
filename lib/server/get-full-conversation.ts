@@ -372,6 +372,26 @@ const STOP = new Set([
   "looking",
   "remember",
   "recall",
+  // English ordinals / quantifiers — position words, never topics
+  "first",
+  "last",
+  "second",
+  "third",
+  "fourth",
+  "fifth",
+  "next",
+  "latest",
+  "earliest",
+  "oldest",
+  "newest",
+  "recent",
+  "earlier",
+  "previous",
+  "one",
+  "two",
+  "three",
+  "another",
+  "thread",
   // Spanish stopwords + intent words
   "de",
   "la",
@@ -428,10 +448,18 @@ const STOP = new Set([
   "conversaciones",
   "primera",
   "primero",
+  "primer",
+  "segunda",
+  "segundo",
+  "tercera",
+  "tercero",
   "ultima",
   "última",
   "ultimo",
   "último",
+  "reciente",
+  "anterior",
+  "siguiente",
   "comentas",
   "dijimos",
   "hablamos",
@@ -466,32 +494,34 @@ function extractTopicWords(message: string): string[] {
 
 const MAX_CHATS = 3
 const MAX_MESSAGES_PER_CHAT = 150
-const MAX_SUMMARY_ROWS = 6
+const MAX_SUMMARY_ROWS = 12
 const MAX_ROW_CHARS = 20_000
 const MAX_TOTAL_CHARS = 50_000
 
+const INDEX_MARKER = "Conversation Index"
+
 /**
  * Search the summaries table for imported/full conversation rows matching the
- * given terms (quoted title prefixes or topic words) and/or an explicit date.
+ * given terms, in priority order (caller orders strongest signal first — e.g.
+ * an explicit `[YYYY-MM-DD]` date or a quoted title before loose topic words).
+ *
  * Returns content untruncated — these rows hold the full conversation text for
- * Perplexity and Claude imports. Excludes watermark/index bookkeeping rows.
+ * Perplexity and Claude imports. Excludes watermark rows and title-only
+ * "Conversation Index" rows (they waste budget and carry no transcript).
  */
 async function searchSummaries(
   supabase: ReturnType<typeof createClient>,
   userId: string,
-  terms: string[],
-  isoDate: string | null
+  terms: string[]
 ): Promise<string[]> {
-  const matchTerms = [...terms]
-  if (isoDate) matchTerms.push(`[${isoDate}]`)
-  if (matchTerms.length === 0) return []
+  if (terms.length === 0) return []
 
   const seen = new Set<string>()
   const rows: string[] = []
 
-  // One ILIKE query per term (avoids PostgREST .or() comma-parsing issues with
-  // multi-word phrases). Results are de-duplicated by row id.
-  for (const term of matchTerms.slice(0, 4)) {
+  // One ILIKE query per term, in the given priority order (avoids PostgREST
+  // .or() comma-parsing issues with multi-word phrases). De-duplicated by id.
+  for (const term of terms.slice(0, 4)) {
     const escaped = term.replace(/[%_]/g, " ").trim()
     if (escaped.length < 3) continue
 
@@ -501,6 +531,7 @@ async function searchSummaries(
       .eq("user_id", userId)
       .ilike("content", `%${escaped}%`)
       .not("content", "like", "[chatmemo:%")
+      .not("content", "ilike", `%${INDEX_MARKER}%`)
       .order("created_at", { ascending: false })
       .limit(MAX_SUMMARY_ROWS)
 
@@ -522,13 +553,28 @@ export async function getFullConversationForUser(
   if (!detectFullConversationIntent(userMessage)) return null
 
   const supabase = createClient(cookies())
-  const dateRange = extractDateRange(userMessage)
   const isoDate = extractIsoDate(userMessage)
   const quoted = extractQuotedPhrases(userMessage)
   const topicWords = extractTopicWords(userMessage)
 
-  // Prefer quoted title phrases; fall back to extracted topic words.
-  const summaryTerms = quoted.length > 0 ? quoted : topicWords
+  // Build summary search terms in PRIORITY order: an explicit date and a quoted
+  // title are high-precision signals and must be searched (and budgeted) before
+  // loose topic words, which can match many unrelated rows. Topic words are a
+  // fallback only when no date and no quoted title were given.
+  const summaryTerms: string[] = []
+  if (isoDate) summaryTerms.push(`[${isoDate}]`)
+  summaryTerms.push(...quoted)
+  if (summaryTerms.length === 0) summaryTerms.push(...topicWords)
+
+  // In-app chat search: prefer date, then quoted title, then topic words.
+  const isoDayRange: DateRange | null = isoDate
+    ? {
+        from: new Date(`${isoDate}T00:00:00`),
+        to: new Date(`${isoDate}T23:59:59`)
+      }
+    : null
+  const dateRange = isoDayRange ?? extractDateRange(userMessage)
+  const inAppTerms = quoted.length > 0 ? quoted : topicWords
 
   const parts: string[] = []
   let totalChars = 0
@@ -542,12 +588,7 @@ export async function getFullConversationForUser(
   }
 
   // --- 1. Imported / full-text conversations from summaries -----------------
-  const summaryHits = await searchSummaries(
-    supabase,
-    userId,
-    summaryTerms,
-    isoDate
-  )
+  const summaryHits = await searchSummaries(supabase, userId, summaryTerms)
   for (const hit of summaryHits) {
     if (!pushBlock(hit)) break
   }
@@ -567,7 +608,6 @@ export async function getFullConversationForUser(
           .lte("created_at", dateRange.to.toISOString())
       : base
 
-    const inAppTerms = quoted.length > 0 ? quoted : topicWords
     const withTopic =
       inAppTerms.length > 0
         ? withDate.or(
