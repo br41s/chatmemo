@@ -5,13 +5,21 @@ import { cookies } from "next/headers"
 // Full conversation retrieval
 //
 // Only fires when the user's message contains an explicit "full conversation"
-// intent. Queries chats + messages tables and returns a formatted transcript
-// block for injection into the system prompt.
+// intent (English or Spanish). It then searches BOTH places where full
+// conversation text lives:
 //
-// Zero cost on regular questions — intent detection is pure string matching.
+//   1. summaries table — imported conversations (Perplexity / Claude store the
+//      full text; ChatGPT stores a truncated copy). These rows are normally
+//      capped at 400 chars during regular memory retrieval; here we return
+//      them untruncated.
+//   2. messages table — in-app ChatMemo conversations, full transcript.
+//
+// Zero cost on regular questions — intent detection is pure string matching
+// with no DB call unless triggered.
 // ---------------------------------------------------------------------------
 
 const TRIGGERS = [
+  // English
   "full conversation",
   "complete conversation",
   "entire conversation",
@@ -19,17 +27,38 @@ const TRIGGERS = [
   "original conversation",
   "all messages",
   "recover conversation",
+  "recover the conversation",
   "what did we say",
   "what did we discuss",
-  "transcript"
+  "transcript",
+  // Spanish
+  "conversacion completa",
+  "conversación completa",
+  "conversacion entera",
+  "conversación entera",
+  "conversacion original",
+  "conversación original",
+  "transcripcion",
+  "transcripción",
+  "que hablamos",
+  "qué hablamos",
+  "que dijimos",
+  "qué dijimos",
+  "recupera la conversacion",
+  "recupera la conversación",
+  "recuperar la conversacion",
+  "recuperar la conversación",
+  "recupera la primera",
+  "recupera la ultima",
+  "recupera la última"
 ]
 
 const TRIGGER_PATTERNS = [
-  /show\b.{0,30}\bconversation/,
-  /find\b.{0,30}\bconversation/,
-  /search\b.{0,30}\bconversation/,
-  /retrieve\b.{0,30}\bconversation/,
-  /get\b.{0,30}\bconversation/
+  // English: verb ... conversation
+  /\b(show|find|search|retrieve|get|recover)\b.{0,30}\bconversation/,
+  // Spanish: verb ... conversación
+  /\b(recupera|recuperar|muestra|muestrame|muéstrame|busca|buscar|dame|ensename|enséñame)\b.{0,40}\bconversaci[oó]n/,
+  /\bconversaci[oó]n\b.{0,40}\b(completa|entera|original|integra|íntegra)/
 ]
 
 export function detectFullConversationIntent(message: string): boolean {
@@ -37,6 +66,28 @@ export function detectFullConversationIntent(message: string): boolean {
   if (TRIGGERS.some(t => lower.includes(t))) return true
   if (TRIGGER_PATTERNS.some(p => p.test(lower))) return true
   return false
+}
+
+// ---------------------------------------------------------------------------
+// Quoted-title extraction (strongest signal — user usually quotes the title)
+// ---------------------------------------------------------------------------
+
+/**
+ * Pull quoted phrases from the message. Handles straight and curly quotes.
+ * Each phrase is trimmed at the first comma so it stays safe to use as a
+ * single ILIKE substring (the stored title still contains the full text, and
+ * ILIKE matches the comma-free prefix).
+ */
+function extractQuotedPhrases(message: string): string[] {
+  const phrases: string[] = []
+  const re = /["“”'']([^"“”'']{4,})["“”'']/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(message)) !== null) {
+    const raw = m[1].trim()
+    const prefix = raw.split(",")[0].trim()
+    if (prefix.length >= 4) phrases.push(prefix)
+  }
+  return phrases
 }
 
 // ---------------------------------------------------------------------------
@@ -72,6 +123,13 @@ const MONTHS: Record<string, number> = {
   oct: 10,
   nov: 11,
   dec: 12
+}
+
+/** Extract an explicit ISO date (YYYY-MM-DD) if present — used to match the
+ *  `### [YYYY-MM-DD]` header embedded in imported summary rows. */
+function extractIsoDate(message: string): string | null {
+  const m = message.match(/\b(20\d{2})-(\d{2})-(\d{2})\b/)
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : null
 }
 
 function extractDateRange(message: string): DateRange | null {
@@ -116,7 +174,7 @@ function extractDateRange(message: string): DateRange | null {
   }
 
   // Relative
-  if (lower.includes("yesterday")) {
+  if (lower.includes("yesterday") || lower.includes("ayer")) {
     const from = new Date(now)
     from.setDate(from.getDate() - 1)
     from.setHours(0, 0, 0, 0)
@@ -124,12 +182,12 @@ function extractDateRange(message: string): DateRange | null {
     to.setHours(23, 59, 59, 999)
     return { from, to }
   }
-  if (lower.includes("last week")) {
+  if (lower.includes("last week") || lower.includes("semana pasada")) {
     const from = new Date(now)
     from.setDate(from.getDate() - 7)
     return { from, to: now }
   }
-  if (lower.includes("last month")) {
+  if (lower.includes("last month") || lower.includes("mes pasado")) {
     const from = new Date(now)
     from.setMonth(from.getMonth() - 1)
     return { from, to: now }
@@ -139,10 +197,11 @@ function extractDateRange(message: string): DateRange | null {
 }
 
 // ---------------------------------------------------------------------------
-// Topic extraction
+// Topic extraction (fallback when the user didn't quote a title)
 // ---------------------------------------------------------------------------
 
 const STOP = new Set([
+  // English
   "a",
   "about",
   "after",
@@ -254,7 +313,7 @@ const STOP = new Set([
   "would",
   "you",
   "your",
-  // intent words — strip from topic extraction
+  // English intent words
   "full",
   "complete",
   "entire",
@@ -293,7 +352,76 @@ const STOP = new Set([
   "trying",
   "looking",
   "remember",
-  "recall"
+  "recall",
+  // Spanish stopwords + intent words
+  "de",
+  "la",
+  "el",
+  "los",
+  "las",
+  "un",
+  "una",
+  "unos",
+  "unas",
+  "que",
+  "como",
+  "para",
+  "por",
+  "con",
+  "del",
+  "mi",
+  "tu",
+  "su",
+  "se",
+  "lo",
+  "le",
+  "en",
+  "y",
+  "o",
+  "sobre",
+  "esa",
+  "ese",
+  "esta",
+  "este",
+  "esto",
+  "eso",
+  "mas",
+  "más",
+  "muy",
+  "fue",
+  "era",
+  "recupera",
+  "recuperar",
+  "muestra",
+  "muestrame",
+  "muéstrame",
+  "dame",
+  "quiero",
+  "necesito",
+  "busca",
+  "buscar",
+  "completa",
+  "completo",
+  "entera",
+  "entero",
+  "conversacion",
+  "conversación",
+  "conversaciones",
+  "primera",
+  "primero",
+  "ultima",
+  "última",
+  "ultimo",
+  "último",
+  "comentas",
+  "dijimos",
+  "hablamos",
+  "transcripcion",
+  "transcripción",
+  "mensaje",
+  "mensajes",
+  "fecha",
+  "tema"
 ])
 
 function extractTopicWords(message: string): string[] {
@@ -304,12 +432,13 @@ function extractTopicWords(message: string): string[] {
   const cleaned = message
     .toLowerCase()
     .replace(/\b202\d\b/g, " ")
+    .replace(/\b20\d{2}-\d{2}-\d{2}\b/g, " ")
     .replace(monthPattern, " ")
-    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/[^a-z0-9áéíóúñü\s]/g, " ")
 
   const words = cleaned.split(/\s+/).filter(w => w.length > 3 && !STOP.has(w))
 
-  return [...new Set(words)].slice(0, 3)
+  return [...new Set(words)].slice(0, 4)
 }
 
 // ---------------------------------------------------------------------------
@@ -318,7 +447,54 @@ function extractTopicWords(message: string): string[] {
 
 const MAX_CHATS = 3
 const MAX_MESSAGES_PER_CHAT = 150
+const MAX_SUMMARY_ROWS = 6
+const MAX_ROW_CHARS = 20_000
 const MAX_TOTAL_CHARS = 50_000
+
+/**
+ * Search the summaries table for imported/full conversation rows matching the
+ * given terms (quoted title prefixes or topic words) and/or an explicit date.
+ * Returns content untruncated — these rows hold the full conversation text for
+ * Perplexity and Claude imports. Excludes watermark/index bookkeeping rows.
+ */
+async function searchSummaries(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  terms: string[],
+  isoDate: string | null
+): Promise<string[]> {
+  const matchTerms = [...terms]
+  if (isoDate) matchTerms.push(`[${isoDate}]`)
+  if (matchTerms.length === 0) return []
+
+  const seen = new Set<string>()
+  const rows: string[] = []
+
+  // One ILIKE query per term (avoids PostgREST .or() comma-parsing issues with
+  // multi-word phrases). Results are de-duplicated by row id.
+  for (const term of matchTerms.slice(0, 4)) {
+    const escaped = term.replace(/[%_]/g, " ").trim()
+    if (escaped.length < 3) continue
+
+    const { data } = await supabase
+      .from("summaries")
+      .select("id, content")
+      .eq("user_id", userId)
+      .ilike("content", `%${escaped}%`)
+      .not("content", "like", "[chatmemo:%")
+      .order("created_at", { ascending: false })
+      .limit(MAX_SUMMARY_ROWS)
+
+    for (const r of data ?? []) {
+      if (seen.has(r.id)) continue
+      seen.add(r.id)
+      const content = (r.content ?? "").trim()
+      if (content) rows.push(content.slice(0, MAX_ROW_CHARS))
+    }
+  }
+
+  return rows
+}
 
 export async function getFullConversationForUser(
   userId: string,
@@ -328,81 +504,99 @@ export async function getFullConversationForUser(
 
   const supabase = createClient(cookies())
   const dateRange = extractDateRange(userMessage)
+  const isoDate = extractIsoDate(userMessage)
+  const quoted = extractQuotedPhrases(userMessage)
   const topicWords = extractTopicWords(userMessage)
 
-  // Build the chats query with optional date and topic filters
-  const base = supabase
-    .from("chats")
-    .select("id, name, created_at")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false })
-    .limit(MAX_CHATS * 3)
-
-  const withDate = dateRange
-    ? base
-        .gte("created_at", dateRange.from.toISOString())
-        .lte("created_at", dateRange.to.toISOString())
-    : base
-
-  const withTopic =
-    topicWords.length > 0
-      ? withDate.or(topicWords.map(w => `name.ilike.%${w}%`).join(","))
-      : withDate
-
-  const { data: chats } = await withTopic
-
-  if (!chats || chats.length === 0) {
-    return (
-      "[FULL CONVERSATION RETRIEVAL — no matching in-app chats found]\n" +
-      "No in-app conversations matched the requested topic/date. " +
-      "If the conversation was imported from an external source (ChatGPT, Perplexity, Claude), " +
-      "only summaries are available — check [CONVERSATION HISTORY] above.\n" +
-      "[/FULL CONVERSATION RETRIEVAL]"
-    )
-  }
+  // Prefer quoted title phrases; fall back to extracted topic words.
+  const summaryTerms = quoted.length > 0 ? quoted : topicWords
 
   const parts: string[] = []
   let totalChars = 0
 
-  for (const chat of chats.slice(0, MAX_CHATS)) {
-    const { data: messages } = await supabase
-      .from("messages")
-      .select("role, content, sequence_number")
-      .eq("chat_id", chat.id)
-      .order("sequence_number", { ascending: true })
-      .limit(MAX_MESSAGES_PER_CHAT)
-
-    if (!messages || messages.length === 0) continue
-
-    const date = new Date(chat.created_at).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric"
-    })
-    const lines: string[] = [`--- Chat: "${chat.name}" (${date}) ---`]
-
-    for (const msg of messages) {
-      if (msg.role === "system") continue
-      lines.push(`${msg.role}: ${msg.content}`)
-    }
-
-    const block = lines.join("\n")
-    if (totalChars + block.length > MAX_TOTAL_CHARS) break
-
+  const pushBlock = (block: string): boolean => {
+    if (!block) return true
+    if (totalChars + block.length > MAX_TOTAL_CHARS) return false
     parts.push(block)
     totalChars += block.length
+    return true
+  }
+
+  // --- 1. Imported / full-text conversations from summaries -----------------
+  const summaryHits = await searchSummaries(
+    supabase,
+    userId,
+    summaryTerms,
+    isoDate
+  )
+  for (const hit of summaryHits) {
+    if (!pushBlock(hit)) break
+  }
+
+  // --- 2. In-app conversations from chats + messages ------------------------
+  if (totalChars < MAX_TOTAL_CHARS) {
+    const base = supabase
+      .from("chats")
+      .select("id, name, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(MAX_CHATS * 3)
+
+    const withDate = dateRange
+      ? base
+          .gte("created_at", dateRange.from.toISOString())
+          .lte("created_at", dateRange.to.toISOString())
+      : base
+
+    const inAppTerms = quoted.length > 0 ? quoted : topicWords
+    const withTopic =
+      inAppTerms.length > 0
+        ? withDate.or(
+            inAppTerms
+              .map(w => `name.ilike.%${w.replace(/[%_,]/g, " ")}%`)
+              .join(",")
+          )
+        : withDate
+
+    const { data: chats } = await withTopic
+
+    for (const chat of (chats ?? []).slice(0, MAX_CHATS)) {
+      const { data: messages } = await supabase
+        .from("messages")
+        .select("role, content, sequence_number")
+        .eq("chat_id", chat.id)
+        .order("sequence_number", { ascending: true })
+        .limit(MAX_MESSAGES_PER_CHAT)
+
+      if (!messages || messages.length === 0) continue
+
+      const date = new Date(chat.created_at).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric"
+      })
+      const lines: string[] = [`--- Chat: "${chat.name}" (${date}) ---`]
+      for (const msg of messages) {
+        if (msg.role === "system") continue
+        lines.push(`${msg.role}: ${msg.content}`)
+      }
+
+      if (!pushBlock(lines.join("\n"))) break
+    }
   }
 
   if (parts.length === 0) {
     return (
-      "[FULL CONVERSATION RETRIEVAL — chats found but no messages]\n" +
-      "Matching chats were found but contained no messages.\n" +
+      "[FULL CONVERSATION RETRIEVAL — no matching conversation found]\n" +
+      "No stored conversation matched the requested title/date. Ask the user " +
+      "to confirm the exact title, date, or source (in-app, Perplexity, " +
+      "ChatGPT, Claude). Do not invent content.\n" +
       "[/FULL CONVERSATION RETRIEVAL]"
     )
   }
 
   return (
-    `[FULL CONVERSATION RETRIEVAL — ${parts.length} chat(s) found]\n` +
+    `[FULL CONVERSATION RETRIEVAL — ${parts.length} match(es), verbatim source of truth]\n` +
     parts.join("\n\n") +
     "\n[/FULL CONVERSATION RETRIEVAL]"
   )
