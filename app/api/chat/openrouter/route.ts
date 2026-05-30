@@ -84,6 +84,18 @@ export async function POST(request: Request) {
       getFullConversationForUser(profile.user_id, lastUserText)
     ])
 
+    // TEMP DEBUG — remove after diagnosis
+    console.log(
+      "[CHATMEMO_DEBUG]",
+      JSON.stringify({
+        lastUserText: lastUserText.slice(0, 120),
+        lastUserTextType: typeof lastUserContent?.content,
+        summaryLen: summary?.length ?? 0,
+        fullConvLen: fullConv?.length ?? 0,
+        fullConvHead: fullConv?.slice(0, 80) ?? null
+      })
+    )
+
     // When the user is recovering a specific full conversation, inject ONLY
     // that transcript. Adding the ~100k-char summary blob on top would overflow
     // the model's context window and bury/truncate the very thing they asked
