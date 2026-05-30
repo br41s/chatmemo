@@ -84,9 +84,15 @@ export async function POST(request: Request) {
       getFullConversationForUser(profile.user_id, lastUserText)
     ])
 
+    // When the user is recovering a specific full conversation, inject ONLY
+    // that transcript. Adding the ~100k-char summary blob on top would overflow
+    // the model's context window and bury/truncate the very thing they asked
+    // for. The regular summary returns on the next (non-recovery) turn.
+    const effectiveSummary = fullConv ? null : summary
+
     const augmentedMessages =
-      summary || fullConv
-        ? injectMemoryIntoMessages(messages, summary, fullConv)
+      effectiveSummary || fullConv
+        ? injectMemoryIntoMessages(messages, effectiveSummary, fullConv)
         : messages
 
     const openai = new OpenAI({
