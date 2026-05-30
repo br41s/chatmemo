@@ -87,19 +87,25 @@ export async function POST(request: Request) {
       getFullConversationForUser(profile.user_id, lastUserText)
     ])
 
-    // TEMP DEBUG ESCAPE-HATCH — remove after diagnosis.
-    // Send a message containing "__memdebug__" to get the raw runtime values
-    // returned straight into the chat reply (bypasses the LLM).
-    if (lastUserText.includes("__memdebug__")) {
+    // TEMP DEBUG — UNCONDITIONAL. Returns runtime diagnostics for EVERY chat
+    // request instead of calling the LLM. Remove immediately after diagnosis.
+    {
       const intent = detectFullConversationIntent(lastUserText)
-      const codeUnits = Array.from(lastUserText.slice(0, 60)).map(c =>
-        c.charCodeAt(0)
-      )
       const dbg = {
+        messageCount: messages.length,
+        messageShape: messages.map(m => ({
+          role: m.role,
+          contentType: typeof m.content,
+          isArray: Array.isArray(m.content),
+          preview:
+            typeof m.content === "string"
+              ? m.content.slice(0, 100)
+              : JSON.stringify(m.content).slice(0, 100)
+        })),
         lastUserText,
         lastUserTextType: typeof lastUserContent?.content,
+        lastUserTextLen: lastUserText.length,
         isNFC: lastUserText === lastUserText.normalize("NFC"),
-        first60CharCodes: codeUnits,
         intentFired: intent,
         summaryLen: summary?.length ?? 0,
         fullConvLen: fullConv?.length ?? 0,
