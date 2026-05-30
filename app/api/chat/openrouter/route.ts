@@ -1,6 +1,9 @@
 import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
 import { getLatestSummaryForUser } from "@/lib/server/get-latest-summary"
-import { getFullConversationForUser } from "@/lib/server/get-full-conversation"
+import {
+  getFullConversationForUser,
+  detectFullConversationIntent
+} from "@/lib/server/get-full-conversation"
 import { ChatSettings } from "@/types"
 import { OpenAIStream, StreamingTextResponse } from "ai"
 import { ServerRuntime } from "next"
@@ -84,17 +87,26 @@ export async function POST(request: Request) {
       getFullConversationForUser(profile.user_id, lastUserText)
     ])
 
-    // TEMP DEBUG — remove after diagnosis
-    console.log(
-      "[CHATMEMO_DEBUG]",
-      JSON.stringify({
-        lastUserText: lastUserText.slice(0, 120),
+    // TEMP DEBUG ESCAPE-HATCH — remove after diagnosis.
+    // Send a message containing "__memdebug__" to get the raw runtime values
+    // returned straight into the chat reply (bypasses the LLM).
+    if (lastUserText.includes("__memdebug__")) {
+      const intent = detectFullConversationIntent(lastUserText)
+      const codeUnits = Array.from(lastUserText.slice(0, 60)).map(c =>
+        c.charCodeAt(0)
+      )
+      const dbg = {
+        lastUserText,
         lastUserTextType: typeof lastUserContent?.content,
+        isNFC: lastUserText === lastUserText.normalize("NFC"),
+        first60CharCodes: codeUnits,
+        intentFired: intent,
         summaryLen: summary?.length ?? 0,
         fullConvLen: fullConv?.length ?? 0,
-        fullConvHead: fullConv?.slice(0, 80) ?? null
-      })
-    )
+        fullConvHead: fullConv?.slice(0, 200) ?? null
+      }
+      return new Response("```json\n" + JSON.stringify(dbg, null, 2) + "\n```")
+    }
 
     // When the user is recovering a specific full conversation, inject ONLY
     // that transcript. Adding the ~100k-char summary blob on top would overflow
