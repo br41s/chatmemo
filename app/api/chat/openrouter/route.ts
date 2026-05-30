@@ -1,9 +1,6 @@
 import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
 import { getLatestSummaryForUser } from "@/lib/server/get-latest-summary"
-import {
-  getFullConversationForUser,
-  detectFullConversationIntent
-} from "@/lib/server/get-full-conversation"
+import { getFullConversationForUser } from "@/lib/server/get-full-conversation"
 import { ChatSettings } from "@/types"
 import { OpenAIStream, StreamingTextResponse } from "ai"
 import { ServerRuntime } from "next"
@@ -86,33 +83,6 @@ export async function POST(request: Request) {
       getLatestSummaryForUser(profile.user_id),
       getFullConversationForUser(profile.user_id, lastUserText)
     ])
-
-    // TEMP DEBUG — UNCONDITIONAL. Returns runtime diagnostics for EVERY chat
-    // request instead of calling the LLM. Remove immediately after diagnosis.
-    {
-      const intent = detectFullConversationIntent(lastUserText)
-      const dbg = {
-        messageCount: messages.length,
-        messageShape: messages.map(m => ({
-          role: m.role,
-          contentType: typeof m.content,
-          isArray: Array.isArray(m.content),
-          preview:
-            typeof m.content === "string"
-              ? m.content.slice(0, 100)
-              : JSON.stringify(m.content).slice(0, 100)
-        })),
-        lastUserText,
-        lastUserTextType: typeof lastUserContent?.content,
-        lastUserTextLen: lastUserText.length,
-        isNFC: lastUserText === lastUserText.normalize("NFC"),
-        intentFired: intent,
-        summaryLen: summary?.length ?? 0,
-        fullConvLen: fullConv?.length ?? 0,
-        fullConvHead: fullConv?.slice(0, 200) ?? null
-      }
-      return new Response("```json\n" + JSON.stringify(dbg, null, 2) + "\n```")
-    }
 
     // When the user is recovering a specific full conversation, inject ONLY
     // that transcript. Adding the ~100k-char summary blob on top would overflow
