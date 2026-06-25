@@ -247,20 +247,86 @@ fetch(CHATMEMO+'/api/import/conversation',{
 
 const bookmarkletUrl = "javascript:" + encodeURIComponent(bookmarkletCode)
 
-console.log("\n" + "─".repeat(60))
-console.log("📌  BOOKMARKLET")
-console.log("─".repeat(60))
-console.log("1. Copy the URL below")
-console.log("2. In your browser, show the bookmarks bar (⌘+Shift+B)")
-console.log("3. Right-click the bar → Add page... → paste as URL")
-console.log("   Name it: Save to ChatMemo")
-console.log("─".repeat(60))
-console.log(bookmarkletUrl)
-console.log("─".repeat(60))
+// ---------------------------------------------------------------------------
+// 6b. Gemini bookmarklet (gemini.google.com)
+//
+// Same endpoint, payload and Bearer-token auth as the Claude one — only the
+// DOM extraction differs. Gemini renders turns as Angular custom elements
+// <user-query> / <model-response>; a class-based pass is the fallback.
+// ---------------------------------------------------------------------------
+
+const geminiBookmarkletCode = `(function(){
+var CHATMEMO='${CHATMEMO_URL}';
+var TOKEN='${importToken}';
+var date=new Date().toISOString().slice(0,10);
+function getText(el){return(el?.innerText||'').trim()}
+var title=(document.title||'').replace(/\\s*[-|]\\s*(Google\\s*)?Gemini.*$/i,'').trim();
+var msgs=[];
+
+/* Strategy 1: Angular custom elements (document order is turn order) */
+[...document.querySelectorAll('user-query, model-response')].forEach(function(el){
+  var role=el.tagName.toLowerCase()==='user-query'?'user':'assistant';
+  var tx=getText(el);
+  if(tx.length>2)msgs.push({role:role,text:tx});
+});
+
+/* Strategy 2: class-based fallback, ordered by document position */
+if(msgs.length===0){
+  var all=[];
+  [...document.querySelectorAll('.query-text')].forEach(function(el){all.push({el:el,role:'user'})});
+  [...document.querySelectorAll('.model-response-text,message-content .markdown')].forEach(function(el){all.push({el:el,role:'assistant'})});
+  all.sort(function(a,b){return a.el.compareDocumentPosition(b.el)&4?-1:1});
+  all.forEach(function(t){var tx=getText(t.el);if(tx.length>2)msgs.push({role:t.role,text:tx})});
+}
+
+if(msgs.length===0){
+  alert('ChatMemo: could not find Gemini messages.\\nScroll up to load the full conversation, then click again.');
+  return;
+}
+if(!title){var fm=msgs.find(function(m){return m.role==='user'});title=fm?fm.text.slice(0,60):'Gemini conversation';}
+
+fetch(CHATMEMO+'/api/import/conversation',{
+  method:'POST',
+  headers:{'Content-Type':'application/json','Authorization':'Bearer '+TOKEN},
+  body:JSON.stringify({title:title,date:date,messages:msgs})
+}).then(function(r){return r.json()}).then(function(d){
+  var ok=d.success&&d.inserted>0;
+  var n=document.createElement('div');
+  n.setAttribute('style','position:fixed;top:16px;right:16px;z-index:99999;background:'+(ok?'#16a34a':d.inserted===0?'#ca8a04':'#dc2626')+';color:#fff;padding:10px 18px;border-radius:8px;font:14px/1.4 sans-serif;box-shadow:0 2px 12px rgba(0,0,0,.25);max-width:320px');
+  n.innerText=ok?'✓ Saved to ChatMemo ('+msgs.length+' msgs)':d.inserted===0?'ℹ ChatMemo: nothing new to save':'✗ ChatMemo error: '+(d.reason||d.message||'unknown');
+  document.body.appendChild(n);
+  setTimeout(function(){n.remove()},4000);
+}).catch(function(e){alert('ChatMemo: connection failed.\\nMake sure ChatMemo is running at ${CHATMEMO_URL}.\\nError: '+e.message)});
+})()`
+
+const geminiBookmarkletUrl =
+  "javascript:" + encodeURIComponent(geminiBookmarkletCode)
+
+function printBookmarklet(label, sites, url) {
+  console.log("\n" + "─".repeat(60))
+  console.log(`📌  BOOKMARKLET — ${label}`)
+  console.log(`    Use on: ${sites}`)
+  console.log("─".repeat(60))
+  console.log("1. Copy the URL below")
+  console.log("2. In your browser, show the bookmarks bar (⌘+Shift+B)")
+  console.log("3. Right-click the bar → Add page... → paste as URL")
+  console.log(`   Name it: ${label}`)
+  console.log("─".repeat(60))
+  console.log(url)
+  console.log("─".repeat(60))
+}
+
+printBookmarklet("Save to ChatMemo (Claude)", "claude.ai", bookmarkletUrl)
+printBookmarklet(
+  "Save to ChatMemo (Gemini)",
+  "gemini.google.com",
+  geminiBookmarkletUrl
+)
 
 console.log("\n✅  Setup complete!")
 console.log("\nHow it works:")
 console.log("  • Claude Code sessions → synced automatically after every session")
 console.log("    (fires when Claude stops, imports once per session with ≥3 turns)")
-console.log("  • Claude.ai browser → click the bookmarklet on any conversation")
+console.log("  • Claude.ai browser → click the Claude bookmarklet on a conversation")
+console.log("  • Gemini browser → click the Gemini bookmarklet on a conversation")
 console.log("    (ChatMemo does NOT need to be open — uses Bearer token auth)")

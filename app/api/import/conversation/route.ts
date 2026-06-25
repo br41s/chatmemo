@@ -35,6 +35,7 @@ export const runtime: ServerRuntime = "nodejs"
 // cross-origin abuse from local servers on the same machine as the user.
 const ALLOWED_ORIGINS = [
   "https://claude.ai",
+  "https://gemini.google.com",
   ...(process.env.NODE_ENV === "development" ? ["http://localhost:3000"] : [])
 ]
 
