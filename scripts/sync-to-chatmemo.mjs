@@ -23,8 +23,9 @@ const SESSIONS_FILE = join(CONFIG_DIR, "imported-sessions.json")
 const MIN_USER_MESSAGES = 3
 const MAX_MESSAGES = 200 // cap to avoid huge payloads
 
-// Keep in sync with lib/server/openrouter.ts → SUMMARIZE_MODEL
-const SUMMARIZE_MODEL = "openai/gpt-oss-120b:free"
+// Primary is the free model; fall back to the paid variant on a hard failure
+// (commonly a free-tier 429). Keep in sync with lib/server/openrouter.ts.
+const SUMMARIZE_MODELS = ["openai/gpt-oss-120b:free", "openai/gpt-oss-120b"]
 
 // ---------------------------------------------------------------------------
 // Main
@@ -155,33 +156,45 @@ async function summarize(openrouterKey, title, date, messages) {
     .join("\n\n")
   const input = `## ${title} (${date})\n\n${body}`
 
-  try {
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${openrouterKey}`
-      },
-      body: JSON.stringify({
-        model: SUMMARIZE_MODEL,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: input }
-        ],
-        temperature: 0.3,
-        max_tokens: 700
-      }),
-      signal: AbortSignal.timeout(30_000)
-    })
+  for (const model of SUMMARIZE_MODELS) {
+    try {
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${openrouterKey}`
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            { role: "user", content: input }
+          ],
+          temperature: 0.3,
+          max_tokens: 700
+        }),
+        signal: AbortSignal.timeout(30_000)
+      })
 
-    if (!res.ok) return null
-    const data = await res.json()
-    const text = (data.choices?.[0]?.message?.content ?? "").trim()
-    if (!text || text === "SKIP" || text.split(/\s+/).length < 10) return null
-    return text
-  } catch {
-    return null
+      if (!res.ok) {
+        const errBody = await res.text().catch(() => "")
+        console.error(
+          `summarize: ${model} → HTTP ${res.status} ${errBody.slice(0, 200)}`
+        )
+        continue // try the next model in the fallback chain
+      }
+
+      const data = await res.json()
+      const text = (data.choices?.[0]?.message?.content ?? "").trim()
+      if (!text || text === "SKIP" || text.split(/\s+/).length < 10) return null
+      return text
+    } catch (e) {
+      console.error(`summarize: ${model} → ${e?.message || e}`)
+      // try the next model in the fallback chain
+    }
   }
+
+  return null
 }
 
 async function insertSummary(supabaseUrl, serviceRoleKey, userId, content) {

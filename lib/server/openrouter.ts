@@ -15,7 +15,16 @@ import { checkApiKey } from "@/lib/server/server-chat-helpers"
 // Constants
 // ---------------------------------------------------------------------------
 
-export const SUMMARIZE_MODEL = "openai/gpt-oss-120b:free"
+// Primary is the free model; on a hard failure (commonly a free-tier 429) we
+// fall back to the paid variant so a single summarise call still succeeds
+// instead of failing the whole import. A free-tier rate limit is the most
+// common cause of the daemon's "LLM failed" retry storm.
+export const SUMMARIZE_MODELS = [
+  "openai/gpt-oss-120b:free",
+  "openai/gpt-oss-120b"
+]
+// Kept as an alias for the primary model for backward compatibility.
+export const SUMMARIZE_MODEL = SUMMARIZE_MODELS[0]
 export const MIN_SUMMARY_WORDS = 10
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 const DEFAULT_TIMEOUT_MS = 30_000
@@ -68,26 +77,43 @@ export async function callSummarizer(
   userContent: string,
   maxTokens: number = 700
 ): Promise<string | null> {
-  const completion = await client.chat.completions.create({
-    model: SUMMARIZE_MODEL,
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userContent }
-    ],
-    temperature: 0.3,
-    max_tokens: maxTokens,
-    stream: false
-  })
+  let lastError: unknown
+  for (const model of SUMMARIZE_MODELS) {
+    try {
+      const completion = await client.chat.completions.create({
+        model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userContent }
+        ],
+        temperature: 0.3,
+        max_tokens: maxTokens,
+        stream: false
+      })
 
-  const text = (completion.choices[0]?.message?.content ?? "").trim()
+      const text = (completion.choices[0]?.message?.content ?? "").trim()
 
-  if (
-    !text ||
-    text === "SKIP" ||
-    text.split(/\s+/).length < MIN_SUMMARY_WORDS
-  ) {
-    return null
+      if (
+        !text ||
+        text === "SKIP" ||
+        text.split(/\s+/).length < MIN_SUMMARY_WORDS
+      ) {
+        // Valid empty/SKIP result — not a failure, so don't try the fallback.
+        return null
+      }
+
+      return text
+    } catch (error) {
+      lastError = error
+      console.error(
+        `callSummarizer: model ${model} failed — ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      )
+    }
   }
 
-  return text
+  // Every model failed — rethrow so the caller's error handling (e.g. the
+  // 429 rate-limit messaging in the import route) still applies.
+  throw lastError
 }

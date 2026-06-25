@@ -27,7 +27,14 @@ export const SESSIONS_FILE = join(CONFIG_DIR, "imported-sessions.json")
 
 export const MIN_USER_MESSAGES = 3
 export const MAX_MESSAGES = 200
-export const SUMMARIZE_MODEL = "openai/gpt-oss-120b:free"
+// Primary is the free model; on a hard failure (commonly a free-tier 429) we
+// fall back to the paid variant so the session still imports instead of being
+// retried forever. Keep in sync with lib/server/openrouter.ts.
+export const SUMMARIZE_MODELS = [
+  "openai/gpt-oss-120b:free",
+  "openai/gpt-oss-120b"
+]
+export const SUMMARIZE_MODEL = SUMMARIZE_MODELS[0]
 
 // ---------------------------------------------------------------------------
 // Config
@@ -214,33 +221,46 @@ export async function summarize(openrouterKey, title, date, messages) {
     .join("\n\n")
   const input = `## ${title} (${date})\n\n${body}`
 
-  try {
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${openrouterKey}`
-      },
-      body: JSON.stringify({
-        model: SUMMARIZE_MODEL,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: input }
-        ],
-        temperature: 0.3,
-        max_tokens: 700
-      }),
-      signal: AbortSignal.timeout(60_000)
-    })
+  for (const model of SUMMARIZE_MODELS) {
+    try {
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${openrouterKey}`
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            { role: "user", content: input }
+          ],
+          temperature: 0.3,
+          max_tokens: 700
+        }),
+        signal: AbortSignal.timeout(60_000)
+      })
 
-    if (!res.ok) return null
-    const data = await res.json()
-    const text = (data.choices?.[0]?.message?.content ?? "").trim()
-    if (!text || text === "SKIP" || text.split(/\s+/).length < 10) return null
-    return text
-  } catch {
-    return null
+      if (!res.ok) {
+        const errBody = await res.text().catch(() => "")
+        console.error(
+          `summarize: ${model} → HTTP ${res.status} ${errBody.slice(0, 200)}`
+        )
+        continue // try the next model in the fallback chain
+      }
+
+      const data = await res.json()
+      const text = (data.choices?.[0]?.message?.content ?? "").trim()
+      // Valid empty/SKIP result — not a failure, so stop here (don't fall back).
+      if (!text || text === "SKIP" || text.split(/\s+/).length < 10) return null
+      return text
+    } catch (e) {
+      console.error(`summarize: ${model} → ${e?.message || e}`)
+      // try the next model in the fallback chain
+    }
   }
+
+  return null
 }
 
 // ---------------------------------------------------------------------------
