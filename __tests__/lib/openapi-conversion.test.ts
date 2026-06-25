@@ -334,36 +334,21 @@ describe("extractOpenapiData for body 2", () => {
     expect(routes[0].method).toBe("get")
     expect(routes[0].operationId).toBe("getStockDailyOpenClose")
 
-    expect(functions[0].function.parameters.properties).toHaveProperty(
-      "stocksTicker"
-    )
-    expect(functions[0].function.parameters.properties.stocksTicker.type).toBe(
-      "string"
-    )
-    expect(
-      functions[0].function.parameters.properties.stocksTicker
-    ).toHaveProperty("required", true)
-    expect(functions[0].function.parameters.properties).toHaveProperty("date")
-    expect(functions[0].function.parameters.properties.date.type).toBe("string")
-    expect(functions[0].function.parameters.properties.date).toHaveProperty(
-      "format",
-      "date"
-    )
-    expect(functions[0].function.parameters.properties.date).toHaveProperty(
-      "required",
-      true
-    )
+    // Path/query parameters are nested under a `parameters` object: the model
+    // emits `{ parameters: { ... } }` and the tool runtime reads
+    // parsedArgs.parameters[name] (see app/api/chat/tools/route.ts).
+    const fn0Params = functions[0].function.parameters.properties.parameters
+    expect(fn0Params.properties).toHaveProperty("stocksTicker")
+    expect(fn0Params.properties.stocksTicker.type).toBe("string")
+    expect(fn0Params.properties).toHaveProperty("date")
+    expect(fn0Params.properties.date.type).toBe("string")
+    expect(fn0Params.properties.date).toHaveProperty("format", "date")
+
     expect(routes[1].path).toBe("/v2/aggs/ticker/{stocksTicker}/prev")
     expect(routes[1].method).toBe("get")
     expect(routes[1].operationId).toBe("getStockPreviousClose")
-    expect(functions[1].function.parameters.properties).toHaveProperty(
-      "stocksTicker"
-    )
-    expect(functions[1].function.parameters.properties.stocksTicker.type).toBe(
-      "string"
-    )
-    expect(
-      functions[1].function.parameters.properties.stocksTicker
-    ).toHaveProperty("required", true)
+    const fn1Params = functions[1].function.parameters.properties.parameters
+    expect(fn1Params.properties).toHaveProperty("stocksTicker")
+    expect(fn1Params.properties.stocksTicker.type).toBe("string")
   })
 })

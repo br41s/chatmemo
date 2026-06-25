@@ -1,4 +1,5 @@
 import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
+import { injectMemoryGoogleFormat } from "@/lib/server/inject-memory"
 import { ChatSettings } from "@/types"
 import { GoogleGenerativeAI } from "@google/generative-ai"
 
@@ -19,10 +20,17 @@ export async function POST(request: Request) {
     const genAI = new GoogleGenerativeAI(profile.google_gemini_api_key || "")
     const googleModel = genAI.getGenerativeModel({ model: chatSettings.model })
 
-    const lastMessage = messages.pop()
+    // Inject memory into the first message (adapted system prompt) before the
+    // current turn is popped off for sendMessageStream.
+    const augmentedMessages = await injectMemoryGoogleFormat(
+      messages,
+      profile.user_id
+    )
+
+    const lastMessage = augmentedMessages.pop()
 
     const chat = googleModel.startChat({
-      history: messages,
+      history: augmentedMessages,
       generationConfig: {
         temperature: chatSettings.temperature
       }

@@ -1,4 +1,5 @@
 import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
+import { injectMemoryOpenAIFormat } from "@/lib/server/inject-memory"
 import { ChatSettings } from "@/types"
 import { OpenAIStream, StreamingTextResponse } from "ai"
 import { ServerRuntime } from "next"
@@ -19,6 +20,11 @@ export async function POST(request: Request) {
 
     checkApiKey(profile.openai_api_key, "OpenAI")
 
+    const augmentedMessages = await injectMemoryOpenAIFormat(
+      messages,
+      profile.user_id
+    )
+
     const openai = new OpenAI({
       apiKey: profile.openai_api_key || "",
       organization: profile.openai_organization_id
@@ -26,7 +32,7 @@ export async function POST(request: Request) {
 
     const response = await openai.chat.completions.create({
       model: chatSettings.model as ChatCompletionCreateParamsBase["model"],
-      messages: messages as ChatCompletionCreateParamsBase["messages"],
+      messages: augmentedMessages as ChatCompletionCreateParamsBase["messages"],
       temperature: chatSettings.temperature,
       max_tokens:
         chatSettings.model === "gpt-4-vision-preview" ||

@@ -1,5 +1,6 @@
 import { CHAT_SETTING_LIMITS } from "@/lib/chat-setting-limits"
 import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
+import { injectMemoryOpenAIFormat } from "@/lib/server/inject-memory"
 import { ChatSettings } from "@/types"
 import { OpenAIStream, StreamingTextResponse } from "ai"
 import OpenAI from "openai"
@@ -17,6 +18,11 @@ export async function POST(request: Request) {
 
     checkApiKey(profile.groq_api_key, "G")
 
+    const augmentedMessages = await injectMemoryOpenAIFormat(
+      messages,
+      profile.user_id
+    )
+
     // Groq is compatible with the OpenAI SDK
     const groq = new OpenAI({
       apiKey: profile.groq_api_key || "",
@@ -25,7 +31,7 @@ export async function POST(request: Request) {
 
     const response = await groq.chat.completions.create({
       model: chatSettings.model,
-      messages,
+      messages: augmentedMessages,
       max_tokens:
         CHAT_SETTING_LIMITS[chatSettings.model].MAX_TOKEN_OUTPUT_LENGTH,
       stream: true

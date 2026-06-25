@@ -1,5 +1,6 @@
 import { CHAT_SETTING_LIMITS } from "@/lib/chat-setting-limits"
 import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
+import { injectMemoryOpenAIFormat } from "@/lib/server/inject-memory"
 import { getBase64FromDataURL, getMediaTypeFromDataURL } from "@/lib/utils"
 import { ChatSettings } from "@/types"
 import Anthropic from "@anthropic-ai/sdk"
@@ -20,7 +21,14 @@ export async function POST(request: NextRequest) {
 
     checkApiKey(profile.anthropic_api_key, "Anthropic")
 
-    let ANTHROPIC_FORMATTED_MESSAGES: any = messages.slice(1)
+    // Inject memory into the system message (index 0) before splitting it off
+    // from the conversation messages below.
+    const augmentedMessages = await injectMemoryOpenAIFormat(
+      messages,
+      profile.user_id
+    )
+
+    let ANTHROPIC_FORMATTED_MESSAGES: any = augmentedMessages.slice(1)
 
     ANTHROPIC_FORMATTED_MESSAGES = ANTHROPIC_FORMATTED_MESSAGES?.map(
       (message: any) => {
@@ -64,7 +72,7 @@ export async function POST(request: NextRequest) {
         model: chatSettings.model,
         messages: ANTHROPIC_FORMATTED_MESSAGES,
         temperature: chatSettings.temperature,
-        system: messages[0].content,
+        system: augmentedMessages[0].content,
         max_tokens:
           CHAT_SETTING_LIMITS[chatSettings.model].MAX_TOKEN_OUTPUT_LENGTH,
         stream: true

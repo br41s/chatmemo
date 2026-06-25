@@ -1,4 +1,5 @@
 import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
+import { injectMemoryOpenAIFormat } from "@/lib/server/inject-memory"
 import { ChatSettings } from "@/types"
 import { OpenAIStream, StreamingTextResponse } from "ai"
 import OpenAI from "openai"
@@ -17,6 +18,11 @@ export async function POST(request: Request) {
 
     checkApiKey(profile.perplexity_api_key, "Perplexity")
 
+    const augmentedMessages = await injectMemoryOpenAIFormat(
+      messages,
+      profile.user_id
+    )
+
     // Perplexity is compatible the OpenAI SDK
     const perplexity = new OpenAI({
       apiKey: profile.perplexity_api_key || "",
@@ -25,7 +31,7 @@ export async function POST(request: Request) {
 
     const response = await perplexity.chat.completions.create({
       model: chatSettings.model,
-      messages,
+      messages: augmentedMessages,
       stream: true
     })
 

@@ -1,5 +1,6 @@
 import { CHAT_SETTING_LIMITS } from "@/lib/chat-setting-limits"
 import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
+import { injectMemoryOpenAIFormat } from "@/lib/server/inject-memory"
 import { ChatSettings } from "@/types"
 import { OpenAIStream, StreamingTextResponse } from "ai"
 import OpenAI from "openai"
@@ -18,6 +19,11 @@ export async function POST(request: Request) {
 
     checkApiKey(profile.mistral_api_key, "Mistral")
 
+    const augmentedMessages = await injectMemoryOpenAIFormat(
+      messages,
+      profile.user_id
+    )
+
     // Mistral is compatible the OpenAI SDK
     const mistral = new OpenAI({
       apiKey: profile.mistral_api_key || "",
@@ -26,7 +32,7 @@ export async function POST(request: Request) {
 
     const response = await mistral.chat.completions.create({
       model: chatSettings.model,
-      messages,
+      messages: augmentedMessages,
       max_tokens:
         CHAT_SETTING_LIMITS[chatSettings.model].MAX_TOKEN_OUTPUT_LENGTH,
       stream: true
