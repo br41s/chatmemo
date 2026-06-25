@@ -48,7 +48,9 @@
 │  /api/timeline             ← conversation timeline  │
 │                                                     │
 │  lib/server/openrouter.ts       ← shared LLM helpers│
-│  lib/server/get-latest-summary.ts ← memory inject  │
+│  lib/server/inject-memory.ts    ← central injector  │
+│  lib/server/get-latest-summary.ts ← baseline blob  │
+│  lib/server/get-relevant-memory.ts ← relevance     │
 │  lib/server/get-full-conversation.ts ← full recall │
 │  lib/db/lessons.ts              ← user_lessons DB   │
 │  lib/importers/shared.ts        ← importer utils    │
@@ -75,19 +77,19 @@
 
 All scripts use `~/.chatmemo/config.json` (written by `setup:sync`) and track imported sessions in `~/.chatmemo/imported-sessions.json`.
 
-### Memory retrieval (two modes)
+### Memory retrieval (three layers)
 
-The `/api/chat/openrouter` route injects memory into the system prompt. There are two retrieval paths, both running before the completion call:
+Memory injection is centralised in **`lib/server/inject-memory.ts`** and shared by **every** provider chat route (openrouter, openai, anthropic, mistral, groq, perplexity, azure, google) — so the model knows about the user regardless of which model is selected. The injector handles both message shapes (OpenAI `{ role, content }` and Google Gemini `{ role, parts:[{text}] }`) and fails open: if any retrieval query throws, the chat continues with no memory rather than erroring. The three retrieval layers run in parallel before the completion call:
 
-1. **Default — compact summaries** (`lib/server/get-latest-summary.ts`). Every chat gets up to ~100 k chars of context: the lessons document, personal rows (capped 1 500 chars each), and bulk import rows (Perplexity/ChatGPT, capped **400 chars** each). This is the everyday path and keeps the prompt small.
+1. **Baseline — compact summaries** (`lib/server/get-latest-summary.ts`). Every chat gets up to ~100 k chars of context: the lessons document, personal rows (capped 1 500 chars each), and bulk import rows (Perplexity/ChatGPT, capped **400 chars** each). Keeps the prompt small but bulk rows are title-only.
 
-2. **On-demand — full conversation recall** (`lib/server/get-full-conversation.ts`). Only fires when the user's message contains an explicit "full conversation" intent (English or Spanish — e.g. *"recover the full conversation"*, *"recupera la conversación completa"*, *"transcript"*, *"recupera la primera del 2026-03-31"*). Intent detection is pure string/regex matching with **no DB cost** unless triggered. When it fires it searches, untruncated:
+2. **Always-on — relevance retrieval** (`lib/server/get-relevant-memory.ts`). On **every** turn, searches **all** summaries by the quoted phrases + topic words of the user's latest message, ranks candidates by distinct-term coverage (`rankByTermCoverage`, shared with layer 3), and injects the top matches **untruncated** (per-row cap 2 000 chars, total budget 6 000) as a `[RELEVANT MEMORY]` block. This is what surfaces bulk-import **detail** (flight numbers, dates, prices, decisions) for ordinary questions — the baseline blob only carries titles. **Cost control:** returns immediately with **no DB call** when the message has no meaningful topic words (greetings, acks, and conversational filler like *thanks*/*hola* are filtered). Skipped when layer 3 finds a match (the verbatim transcript already answers).
+
+3. **On-demand — full conversation recall** (`lib/server/get-full-conversation.ts`). Only fires when the user's message contains an explicit "full conversation" intent (English or Spanish — e.g. *"recover the full conversation"*, *"recupera la conversación completa"*, *"transcript"*, *"recupera la primera del 2026-03-31"*). Intent detection is pure string/regex matching with **no DB cost** unless triggered. When it fires it searches, untruncated:
    - the **`summaries`** table — where imported full text lives. Perplexity and Claude store the complete conversation; ChatGPT stores a copy truncated at import time. Matched by quoted title prefix, topic words, or an explicit `YYYY-MM-DD` date (matched against the embedded `### [YYYY-MM-DD]` header).
    - the **`messages`** table — full transcripts of in-app ChatMemo chats, matched by `chats.name` and/or date.
 
-   Results are injected as a `[FULL CONVERSATION RETRIEVAL]` block (per-row cap 20 k chars, total cap 50 k) and the model is told to treat it as the verbatim source of truth. **Caveat:** ChatGPT imports cannot be recovered in full (truncated at import); Perplexity/Claude/in-app can. `ILIKE` matching is accent-sensitive.
-
-> This applies to the OpenRouter route only — memory injection is OpenRouter-only by design.
+   Results are injected as a `[FULL CONVERSATION RETRIEVAL]` block (per-row cap 20 k chars, total cap 50 k) and the model is told to treat it as the verbatim source of truth. On a match the baseline + relevance layers are dropped to avoid overflowing the context window. **Caveat:** ChatGPT imports cannot be recovered in full (truncated at import); Perplexity/Claude/in-app can. `ILIKE` matching is accent-sensitive.
 
 ---
 
