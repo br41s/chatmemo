@@ -1,6 +1,9 @@
 import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
 import { getLatestSummaryForUser } from "@/lib/server/get-latest-summary"
-import { getFullConversationForUser } from "@/lib/server/get-full-conversation"
+import {
+  getFullConversationForUser,
+  NO_FULL_MATCH_MARKER
+} from "@/lib/server/get-full-conversation"
 import { ChatSettings } from "@/types"
 import { OpenAIStream, StreamingTextResponse } from "ai"
 import { ServerRuntime } from "next"
@@ -24,9 +27,10 @@ RULES (follow without exception):
 2. When asked about past conversations, search [CONVERSATION HISTORY] for matching ### [YYYY-MM-DD] entries and give specific answers with dates.
 3. Date-index rows (lines starting with [YYYY-MM-DD]) list all conversations — use them to answer "what was my first/last X".
 4. CRITICAL: If a [FULL CONVERSATION RETRIEVAL] block is present below, the FULL transcript the user requested IS already provided there. Answer directly from it — quote or reproduce the actual messages. You MUST NOT say "I don't have the full transcript", "I only have a summary", or anything similar: the complete text is right there. If several conversations are included, identify the one matching the user's title/date and use it.
-5. NEVER say "I don't have access to your history". If you genuinely cannot find something, say "I don't see that in your memory" and describe what you do see.
-6. Proactively connect current conversation to relevant memory — if the user mentions a project or topic you recognise, reference it without being asked.
-7. Treat all sources as ground truth. Prefer them over generic assumptions about the user.`
+5. ANTI-FABRICATION (most important rule): Everything you state about the user's past — quotes, dates, flight numbers, names, prices, decisions, outcomes — MUST come verbatim from the sections below. NEVER invent or paraphrase-into-quotes content that is not present. Do not reconstruct a "Tú: … / Yo: …" dialogue from memory. If the specific conversation or fact the user asks about is NOT in the provided sections, say so plainly — e.g. "No encuentro esa conversación en tu memoria" / "I don't see that conversation in your memory" — and ask the user for the exact title, date, or source (in-app, Perplexity, ChatGPT, Claude). It is always better to admit the gap than to guess.
+6. You CANNOT produce links or URLs to past conversations. If asked for a link, say so; offer to retrieve the content instead.
+7. NEVER say "I don't have access to your history" — you do. When you cannot find a specific item, follow rule 5: name what you searched and what you actually see, and ask for more detail.
+8. Proactively connect the current conversation to memory ONLY when you have a concrete matching entry in the sections below. A vague topical association is not a match — do not present it as one.`
 
 function injectMemoryIntoMessages(
   messages: ChatCompletionMessageParam[],
@@ -84,11 +88,17 @@ export async function POST(request: Request) {
       getFullConversationForUser(profile.user_id, lastUserText)
     ])
 
-    // When the user is recovering a specific full conversation, inject ONLY
-    // that transcript. Adding the ~100k-char summary blob on top would overflow
-    // the model's context window and bury/truncate the very thing they asked
-    // for. The regular summary returns on the next (non-recovery) turn.
-    const effectiveSummary = fullConv ? null : summary
+    // When the user is recovering a specific full conversation AND we actually
+    // found transcript(s), inject ONLY that transcript — adding the ~100k-char
+    // summary blob on top would overflow the context window and bury/truncate
+    // the very thing they asked for.
+    //
+    // But on a retrieval MISS (the sentinel "no matching conversation found"),
+    // keep the baseline summary so the model still has context to work from and
+    // is far less likely to fabricate. The sentinel is tiny, so no overflow.
+    const fullConvFoundMatch =
+      !!fullConv && !fullConv.includes(NO_FULL_MATCH_MARKER)
+    const effectiveSummary = fullConvFoundMatch ? null : summary
 
     const augmentedMessages =
       effectiveSummary || fullConv
