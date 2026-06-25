@@ -97,7 +97,7 @@ export function detectFullConversationIntent(message: string): boolean {
  * single ILIKE substring (the stored title still contains the full text, and
  * ILIKE matches the comma-free prefix).
  */
-function extractQuotedPhrases(message: string): string[] {
+export function extractQuotedPhrases(message: string): string[] {
   const phrases: string[] = []
   const re = /["“”'']([^"“”'']{4,})["“”'']/g
   let m: RegExpExecArray | null
@@ -471,7 +471,7 @@ const STOP = new Set([
   "tema"
 ])
 
-function extractTopicWords(message: string): string[] {
+export function extractTopicWords(message: string): string[] {
   const monthPattern = new RegExp(
     `\\b(${Object.keys(MONTHS).join("|")})\\b`,
     "g"
