@@ -4,6 +4,7 @@ import {
   getFullConversationForUser,
   NO_FULL_MATCH_MARKER
 } from "@/lib/server/get-full-conversation"
+import { getRelevantMemoryForUser } from "@/lib/server/get-relevant-memory"
 import { ChatSettings } from "@/types"
 import { OpenAIStream, StreamingTextResponse } from "ai"
 import { ServerRuntime } from "next"
@@ -20,6 +21,7 @@ You are a personal AI assistant with access to three persistent knowledge source
 
 [LESSONS] — Accumulated facts learned from past sessions: preferences, projects, working style, personal context. This is the highest-quality signal — always read it first.
 [CONVERSATION HISTORY] — Raw conversation excerpts and summaries with dates. Use for specific past events, decisions, or context that may not be in the lessons yet.
+[RELEVANT MEMORY] — When present, the entries here are the closest matches to the user's CURRENT question, pulled verbatim from their history and shown with more detail than the truncated history blob. Prefer these for specific facts (flight numbers, dates, prices, decisions) before falling back to [CONVERSATION HISTORY].
 [FULL CONVERSATION RETRIEVAL] — Present ONLY when the user asked to recover a full/complete conversation. When present it contains the COMPLETE verbatim transcript(s) the user is asking for, pulled directly from the database.
 
 RULES (follow without exception):
@@ -35,12 +37,15 @@ RULES (follow without exception):
 function injectMemoryIntoMessages(
   messages: ChatCompletionMessageParam[],
   summary: string | null,
-  fullConversation: string | null
+  fullConversation: string | null,
+  relevantMemory: string | null
 ): ChatCompletionMessageParam[] {
-  // The full conversation block goes FIRST (right after the instructions) so a
-  // long summary cannot bury it — the model must see it before anything else.
+  // The full conversation and relevant-memory blocks go FIRST (right after the
+  // instructions) so the long summary blob cannot bury them — the model must
+  // see the targeted matches before the bulk history.
   const sections: string[] = [`${MEMORY_TAG}\n${MEMORY_INSTRUCTIONS}`]
   if (fullConversation) sections.push(fullConversation)
+  if (relevantMemory) sections.push(relevantMemory)
   if (summary)
     sections.push(`[MEMORY CONTENT — newest entries first]\n${summary}`)
   sections.push(`[/CHATMEMO_MEMORY]`)
@@ -83,9 +88,10 @@ export async function POST(request: Request) {
         ? lastUserContent.content
         : ""
 
-    const [summary, fullConv] = await Promise.all([
+    const [summary, fullConv, relevantMemory] = await Promise.all([
       getLatestSummaryForUser(profile.user_id),
-      getFullConversationForUser(profile.user_id, lastUserText)
+      getFullConversationForUser(profile.user_id, lastUserText),
+      getRelevantMemoryForUser(profile.user_id, lastUserText)
     ])
 
     // When the user is recovering a specific full conversation AND we actually
@@ -99,10 +105,18 @@ export async function POST(request: Request) {
     const fullConvFoundMatch =
       !!fullConv && !fullConv.includes(NO_FULL_MATCH_MARKER)
     const effectiveSummary = fullConvFoundMatch ? null : summary
+    // On a full-conversation match the verbatim transcript already answers the
+    // question — skip the relevance section to avoid burying/overflowing it.
+    const effectiveRelevant = fullConvFoundMatch ? null : relevantMemory
 
     const augmentedMessages =
-      effectiveSummary || fullConv
-        ? injectMemoryIntoMessages(messages, effectiveSummary, fullConv)
+      effectiveSummary || fullConv || effectiveRelevant
+        ? injectMemoryIntoMessages(
+            messages,
+            effectiveSummary,
+            fullConv,
+            effectiveRelevant
+          )
         : messages
 
     const openai = new OpenAI({
