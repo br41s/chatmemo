@@ -9,7 +9,13 @@ const createJestConfig = nextJest({
 // Add any custom config to be passed to Jest
 const config: Config = {
   coverageProvider: "v8",
-  testEnvironment: "jsdom"
+  testEnvironment: "jsdom",
+  // The playwright-test folder is a standalone Playwright E2E project with its
+  // own dependencies — it must not be picked up by the Jest (unit) runner.
+  testPathIgnorePatterns: [
+    "<rootDir>/node_modules/",
+    "<rootDir>/__tests__/playwright-test/"
+  ]
   // Add more setup options before each test is run
   // setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
 }

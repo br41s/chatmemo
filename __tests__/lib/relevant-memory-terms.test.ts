@@ -14,9 +14,9 @@ describe("buildRelevantTerms", () => {
   })
 
   it("keeps real topic words even when mixed with filler", () => {
-    expect(buildRelevantTerms("thanks, what about my Phuket flight?")).toContain(
-      "phuket"
-    )
+    expect(
+      buildRelevantTerms("thanks, what about my Phuket flight?")
+    ).toContain("phuket")
   })
 
   it("extracts topic words from a natural recall question", () => {
