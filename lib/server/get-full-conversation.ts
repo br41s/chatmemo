@@ -503,10 +503,20 @@ const MAX_TOTAL_CHARS = 120_000
 
 const INDEX_MARKER = "Conversation Index"
 
+/** Injected when retrieval runs but matches nothing. The chat route detects
+ *  this to decide whether to keep baseline memory (see openrouter/route.ts). */
+export const NO_FULL_MATCH_MARKER = "no matching conversation found"
+
 /**
  * Search the summaries table for imported/full conversation rows matching the
- * given terms, in priority order (caller orders strongest signal first — e.g.
- * an explicit `[YYYY-MM-DD]` date or a quoted title before loose topic words).
+ * given terms, then rank the candidates by RELEVANCE — how many distinct query
+ * terms each row contains — before returning them.
+ *
+ * Why ranking matters: terms like "vuelo"/"madrid"/"cambiar" match dozens of
+ * unrelated rows, while the rare term ("phuket") identifies the one the user
+ * wants. Returning rows in term order let common-word hits flood the budget and
+ * bury the real match. Scoring by distinct-term coverage surfaces the row that
+ * matches the MOST of the user's words first, which is almost always the target.
  *
  * Returns content untruncated — these rows hold the full conversation text for
  * Perplexity and Claude imports. Excludes watermark rows and title-only
@@ -519,34 +529,77 @@ async function searchSummaries(
 ): Promise<string[]> {
   if (terms.length === 0) return []
 
-  const seen = new Set<string>()
-  const rows: string[] = []
+  const usableTerms = terms
+    .slice(0, 4)
+    .map(t => t.replace(/[%_]/g, " ").trim())
+    .filter(t => t.length >= 3)
+  if (usableTerms.length === 0) return []
 
-  // One ILIKE query per term, in the given priority order (avoids PostgREST
-  // .or() comma-parsing issues with multi-word phrases). De-duplicated by id.
-  for (const term of terms.slice(0, 4)) {
-    const escaped = term.replace(/[%_]/g, " ").trim()
-    if (escaped.length < 3) continue
+  interface Candidate {
+    content: string
+    createdAt: string
+  }
+  const candidates = new Map<string, Candidate>()
 
+  // One ILIKE query per term (avoids PostgREST .or() comma-parsing issues with
+  // multi-word phrases). Collect unique candidate rows across all terms.
+  for (const term of usableTerms) {
     const { data } = await supabase
       .from("summaries")
-      .select("id, content")
+      .select("id, content, created_at")
       .eq("user_id", userId)
-      .ilike("content", `%${escaped}%`)
+      .ilike("content", `%${term}%`)
       .not("content", "like", "[chatmemo:%")
       .not("content", "ilike", `%${INDEX_MARKER}%`)
       .order("created_at", { ascending: false })
       .limit(MAX_SUMMARY_ROWS)
 
     for (const r of data ?? []) {
-      if (seen.has(r.id)) continue
-      seen.add(r.id)
+      if (candidates.has(r.id)) continue
       const content = (r.content ?? "").trim()
-      if (content) rows.push(content.slice(0, MAX_ROW_CHARS))
+      if (content) {
+        candidates.set(r.id, { content, createdAt: r.created_at ?? "" })
+      }
     }
   }
 
+  // Rank by relevance (distinct-term coverage), then slice each to the row cap.
+  return rankByTermCoverage([...candidates.values()], usableTerms).map(c =>
+    c.content.slice(0, MAX_ROW_CHARS)
+  )
+}
+
+interface RankableRow {
+  content: string
+  createdAt: string
+}
+
+/**
+ * Order rows by how many DISTINCT query terms each contains (desc), breaking
+ * ties by recency (desc). A row matching phuket + vuelo + madrid + cambiar
+ * ranks above a row matching only the common word cambiar. Pure + exported so
+ * the ranking can be unit-tested without a database.
+ */
+export function rankByTermCoverage<T extends RankableRow>(
+  rows: T[],
+  terms: string[]
+): T[] {
+  const lowerTerms = terms.map(t => t.toLowerCase()).filter(t => t.length > 0)
   return rows
+    .map(r => {
+      const lower = r.content.toLowerCase()
+      const score = lowerTerms.reduce(
+        (n, t) => (lower.includes(t) ? n + 1 : n),
+        0
+      )
+      return { row: r, score }
+    })
+    .sort((a, b) =>
+      b.score !== a.score
+        ? b.score - a.score
+        : b.row.createdAt.localeCompare(a.row.createdAt)
+    )
+    .map(s => s.row)
 }
 
 export async function getFullConversationForUser(
