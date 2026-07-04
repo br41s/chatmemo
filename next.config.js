@@ -2,7 +2,7 @@ const withBundleAnalyzer = require("@next/bundle-analyzer")({
   enabled: process.env.ANALYZE === "true"
 })
 
-const withPWA = require("next-pwa")({
+const withPWA = require("@ducanh2912/next-pwa").default({
   dest: "public"
 })
 
@@ -53,7 +53,13 @@ module.exports = withBundleAnalyzer(
       ]
     },
     experimental: {
-      serverComponentsExternalPackages: ["sharp", "onnxruntime-node"]
+      // @huggingface/transformers must load natively (nested onnxruntime-node
+      // ships .node binaries webpack cannot bundle)
+      serverComponentsExternalPackages: [
+        "sharp",
+        "onnxruntime-node",
+        "@huggingface/transformers"
+      ]
     }
   })
 )
