@@ -22,6 +22,12 @@ module.exports = withBundleAnalyzer(
     reactStrictMode: true,
     compress: true,
     poweredByHeader: false,
+    // Type-check and lint run locally on every push (husky pre-push: tsc +
+    // jest) — repeating tsc here OOM-kills Vercel's 2c/8GB build VM on
+    // @huggingface/transformers' huge type surface. The deploy build only
+    // compiles.
+    typescript: { ignoreBuildErrors: true },
+    eslint: { ignoreDuringBuilds: true },
     async headers() {
       return [
         {
