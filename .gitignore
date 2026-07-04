@@ -44,5 +44,7 @@ sw.js
 sw.js.map
 workbox-*.js
 workbox-*.js.map
+public/worker-*.js
+public/worker-*.js.map
 backups/
 .gstack/
