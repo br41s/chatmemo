@@ -66,8 +66,10 @@ module.exports = withBundleAnalyzer(
       // loaded wasm blobs (native node backend is used instead) are dead
       // weight. onnxruntime-web itself must stay — transformers.node.mjs
       // imports it statically.
+      // Key must be "**": route keys are glob-matched and a bare "*" does
+      // not cross "/" — it silently matches no route.
       outputFileTracingExcludes: {
-        "*": [
+        "**": [
           "**/onnxruntime-node/bin/napi-v6/darwin/**",
           "**/onnxruntime-node/bin/napi-v6/win32/**",
           "**/onnxruntime-web/dist/*.wasm"
