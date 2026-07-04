@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Local CI gate — this account has no GitHub Actions, so pushes are gated
+# here: type-check + unit tests (~15s). The production build is verified by
+# Vercel on deploy; run `npm run build` manually for risky changes.
+npm run type-check && npx jest --silent

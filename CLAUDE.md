@@ -37,8 +37,8 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
 ## Commands
 
 - `npm run chat` — local Supabase + types + dev server
-- `npm run type-check` / `npx jest` / `npm run build` — the CI gate; run all
-  three before declaring any change done
+- `npm run type-check` / `npx jest` / `npm run build` — the verification
+  gate; run all three before declaring any change done
 - `npm run db-migrate` / `db-push` — apply migrations locally / to prod
 
 ## Constraints & gotchas
@@ -59,5 +59,7 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
 
 - Unit tests cover the memory transforms, ranking, term-gating, and streaming
   helpers (`__tests__/lib/`). Add a test when touching any of those.
-- CI (`.github/workflows/ci.yml`) runs type-check + jest + production build
-  on every push to main and on PRs.
+- **No GitHub Actions on this account.** The gate is local: the husky
+  pre-push hook runs type-check + jest on every push, and Vercel's deploy
+  build catches build breakage. Run `npm run build` manually before pushing
+  risky dependency or route changes.
