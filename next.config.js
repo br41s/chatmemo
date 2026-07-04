@@ -59,7 +59,20 @@ module.exports = withBundleAnalyzer(
         "sharp",
         "onnxruntime-node",
         "@huggingface/transformers"
-      ]
+      ],
+      // Externalizing transformers pulls onnxruntime binaries for every
+      // platform into the traced function output (366MB > Vercel's 250MB
+      // limit). Vercel runs linux; darwin/win32 binaries and the lazily
+      // loaded wasm blobs (native node backend is used instead) are dead
+      // weight. onnxruntime-web itself must stay — transformers.node.mjs
+      // imports it statically.
+      outputFileTracingExcludes: {
+        "*": [
+          "**/onnxruntime-node/bin/napi-v6/darwin/**",
+          "**/onnxruntime-node/bin/napi-v6/win32/**",
+          "**/onnxruntime-web/dist/*.wasm"
+        ]
+      }
     }
   })
 )
