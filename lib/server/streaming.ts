@@ -36,7 +36,12 @@ export function textStreamResponse(texts: AsyncIterable<string>): Response {
 // OpenAI-compatible endpoints — anything the openai SDK streams.
 
 interface OpenAIChunkLike {
-  choices?: { delta?: { content?: string | null } }[]
+  // role/tool_calls are declared (as unknown) so both real SDK chunks and
+  // content-less delta literals stay assignable without an index signature,
+  // which interfaces like the SDK's Delta would fail to satisfy.
+  choices?: {
+    delta?: { content?: string | null; role?: unknown; tool_calls?: unknown }
+  }[]
 }
 
 async function* openAIText(

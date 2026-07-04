@@ -1,31 +1,31 @@
 import { FileItemChunk } from "@/types"
+import { csvParse } from "d3-dsv"
 import { encode } from "gpt-tokenizer"
-import { CSVLoader } from "langchain/document_loaders/fs/csv"
-import { RecursiveCharacterTextSplitter } from "langchain/text_splitter"
+import { RecursiveCharacterTextSplitter } from "@/lib/retrieval/text-splitter"
 import { CHUNK_OVERLAP, CHUNK_SIZE } from "."
 
 export const processCSV = async (csv: Blob): Promise<FileItemChunk[]> => {
-  const loader = new CSVLoader(csv)
-  const docs = await loader.load()
-  let completeText = docs.map(doc => doc.pageContent).join("\n\n")
+  const raw = await csv.text()
+
+  // One block per row, "column: value" per line — same shape langchain's
+  // CSVLoader produced, so new chunks match previously stored ones.
+  const rows = csvParse(raw.trim())
+  const completeText = rows
+    .map(row =>
+      Object.keys(row)
+        .map(key => `${key.trim()}: ${row[key]?.trim()}`)
+        .join("\n")
+    )
+    .join("\n\n")
 
   const splitter = new RecursiveCharacterTextSplitter({
     chunkSize: CHUNK_SIZE,
     chunkOverlap: CHUNK_OVERLAP,
     separators: ["\n\n"]
   })
-  const splitDocs = await splitter.createDocuments([completeText])
 
-  let chunks: FileItemChunk[] = []
-
-  for (let i = 0; i < splitDocs.length; i++) {
-    const doc = splitDocs[i]
-
-    chunks.push({
-      content: doc.pageContent,
-      tokens: encode(doc.pageContent).length
-    })
-  }
-
-  return chunks
+  return splitter.splitText(completeText).map(content => ({
+    content,
+    tokens: encode(content).length
+  }))
 }
