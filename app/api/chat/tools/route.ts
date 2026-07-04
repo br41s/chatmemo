@@ -2,7 +2,7 @@ import { openapiToFunctions } from "@/lib/openapi-conversion"
 import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
 import { Tables } from "@/supabase/types"
 import { ChatSettings } from "@/types"
-import { OpenAIStream, StreamingTextResponse } from "ai"
+import { openAIStreamResponse } from "@/lib/server/streaming"
 import OpenAI from "openai"
 import { ChatCompletionCreateParamsBase } from "openai/resources/chat/completions.mjs"
 
@@ -216,9 +216,7 @@ export async function POST(request: Request) {
       stream: true
     })
 
-    const stream = OpenAIStream(secondResponse)
-
-    return new StreamingTextResponse(stream)
+    return openAIStreamResponse(secondResponse)
   } catch (error: any) {
     console.error(error)
     const errorMessage = error.error?.message || "An unexpected error occurred"
