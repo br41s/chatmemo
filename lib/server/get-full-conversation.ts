@@ -542,18 +542,24 @@ async function searchSummaries(
   const candidates = new Map<string, Candidate>()
 
   // One ILIKE query per term (avoids PostgREST .or() comma-parsing issues with
-  // multi-word phrases). Collect unique candidate rows across all terms.
-  for (const term of usableTerms) {
-    const { data } = await supabase
-      .from("summaries")
-      .select("id, content, created_at")
-      .eq("user_id", userId)
-      .ilike("content", `%${term}%`)
-      .not("content", "like", "[chatmemo:%")
-      .not("content", "ilike", `%${INDEX_MARKER}%`)
-      .order("created_at", { ascending: false })
-      .limit(MAX_SUMMARY_ROWS)
+  // multi-word phrases), run in parallel. Collect unique candidate rows across
+  // all terms; results keep term order so dedup behavior matches the previous
+  // sequential loop.
+  const results = await Promise.all(
+    usableTerms.map(term =>
+      supabase
+        .from("summaries")
+        .select("id, content, created_at")
+        .eq("user_id", userId)
+        .ilike("content", `%${term}%`)
+        .not("content", "like", "[chatmemo:%")
+        .not("content", "ilike", `%${INDEX_MARKER}%`)
+        .order("created_at", { ascending: false })
+        .limit(MAX_SUMMARY_ROWS)
+    )
+  )
 
+  for (const { data } of results) {
     for (const r of data ?? []) {
       if (candidates.has(r.id)) continue
       const content = (r.content ?? "").trim()

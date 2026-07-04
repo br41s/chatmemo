@@ -54,7 +54,7 @@ export async function getLatestSummaryForUser(
 ): Promise<string | null> {
   const supabase = createClient(cookies())
 
-  const [personalResult, bulkResult, indexResult] = await Promise.all([
+  const [personalResult, bulkResult, indexResult, lessons] = await Promise.all([
     // A. Personal: exclude Perplexity, ChatGPT, watermarks, and index rows.
     //    [source:claude] rows ARE included — they are Claude Code sessions.
     supabase
@@ -84,7 +84,11 @@ export async function getLatestSummaryForUser(
       .eq("user_id", userId)
       .ilike("content", `%${INDEX_MARKER}%`)
       .order("created_at", { ascending: false })
-      .limit(MAX_INDEX_ROWS)
+      .limit(MAX_INDEX_ROWS),
+
+    // Lessons (separate from conversation history) — fetched in the same
+    // round-trip batch instead of serially after the three queries above.
+    getLessons(supabase, userId)
   ])
 
   const personalData = personalResult.data ?? []
@@ -123,9 +127,6 @@ export async function getLatestSummaryForUser(
     parts.push(capped)
     bulkChars += capped.length
   }
-
-  // Lessons (separate from conversation history)
-  const lessons = await getLessons(supabase, userId)
 
   const sections: string[] = []
 
