@@ -59,28 +59,14 @@ module.exports = withBundleAnalyzer(
       ]
     },
     experimental: {
-      // @huggingface/transformers must load natively (nested onnxruntime-node
-      // ships .node binaries webpack cannot bundle)
-      serverComponentsExternalPackages: [
-        "sharp",
-        "onnxruntime-node",
-        "@huggingface/transformers"
-      ],
-      // Externalizing transformers pulls onnxruntime binaries for every
-      // platform into the traced function output (366MB > Vercel's 250MB
-      // limit). Vercel runs linux; darwin/win32 binaries and the lazily
-      // loaded wasm blobs (native node backend is used instead) are dead
-      // weight. onnxruntime-web itself must stay — transformers.node.mjs
-      // imports it statically.
-      // Key must be "**": route keys are glob-matched and a bare "*" does
-      // not cross "/" — it silently matches no route.
-      outputFileTracingExcludes: {
-        "**": [
-          "**/onnxruntime-node/bin/napi-v6/darwin/**",
-          "**/onnxruntime-node/bin/napi-v6/win32/**",
-          "**/onnxruntime-web/dist/*.wasm"
-        ]
-      }
+      // NEVER externalize or bundle @huggingface/transformers: Vercel
+      // whole-copies externalized packages into functions (356MB > 250MB
+      // limit, proven with a cache-free build), and its pre-bundled dist
+      // breaks webpack on wasm/webgpu refs. It is loaded via an eval-hidden
+      // dynamic import in lib/generate-local-embedding.ts instead, so no
+      // build tool ever sees it. sharp/onnxruntime-node stay external for
+      // self-hosted runtimes where the hidden import resolves them.
+      serverComponentsExternalPackages: ["sharp", "onnxruntime-node"]
     }
   })
 )
