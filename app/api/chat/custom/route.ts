@@ -1,3 +1,4 @@
+import { getServerProfile } from "@/lib/server/server-chat-helpers"
 import { Database } from "@/supabase/types"
 import { ChatSettings } from "@/types"
 import { createClient } from "@supabase/supabase-js"
@@ -17,6 +18,11 @@ export async function POST(request: Request) {
   }
 
   try {
+    // Require an authenticated session before touching the service-role
+    // client — this route reads stored API keys, so it must never be
+    // reachable anonymously (every other chat route already does this).
+    await getServerProfile()
+
     const supabaseAdmin = createClient<Database>(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
