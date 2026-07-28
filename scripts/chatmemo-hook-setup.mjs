@@ -21,7 +21,6 @@ const CONFIG_DIR = join(homedir(), ".chatmemo")
 const CONFIG_FILE = join(CONFIG_DIR, "config.json")
 const CLAUDE_SETTINGS = join(homedir(), ".claude", "settings.json")
 const HOOK_SCRIPT = resolve("scripts/sync-to-chatmemo.mjs")
-const CHATMEMO_URL = "http://localhost:3000"
 const ENV_PATH = resolve(".env.local")
 
 // ---------------------------------------------------------------------------
@@ -47,6 +46,12 @@ const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL
 const serviceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY
 const openrouterKey = env.OPENROUTER_API_KEY
 const importToken = env.CHATMEMO_IMPORT_TOKEN
+
+// Where the bookmarklet POSTs. ChatMemo runs on Vercel in production; override
+// with CHATMEMO_PUBLIC_URL in .env.local for a different deployment or local
+// dev (e.g. http://localhost:3000).
+const CHATMEMO_URL =
+  env.CHATMEMO_PUBLIC_URL || "https://chatmemo-one.vercel.app"
 
 if (!supabaseUrl || !serviceRoleKey || serviceRoleKey === "your-service-role-key") {
   console.error("✗ Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env.local")

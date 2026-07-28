@@ -1,4 +1,5 @@
 import { ChatbotUIContext } from "@/context/context"
+import { MAX_RETRIEVAL_SOURCE_COUNT } from "@/lib/retrieval/limits"
 import { IconAdjustmentsHorizontal } from "@tabler/icons-react"
 import { FC, useContext, useState } from "react"
 import { Button } from "../ui/button"
@@ -49,7 +50,7 @@ export const ChatRetrievalSettings: FC<ChatRetrievalSettingsProps> = ({}) => {
               setSourceCount(values[0])
             }}
             min={1}
-            max={10}
+            max={MAX_RETRIEVAL_SOURCE_COUNT}
             step={1}
           />
         </div>

@@ -24,7 +24,7 @@ export async function consumeReadableStream(
     if (signal.aborted) {
       console.error("Stream reading was aborted:", error)
     } else {
-      console.error("Error consuming stream:", error)
+      throw error
     }
   } finally {
     reader.releaseLock()

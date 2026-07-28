@@ -10,6 +10,10 @@ import {
   adaptMessagesForGoogleGemini
 } from "@/lib/build-prompt"
 import { consumeReadableStream } from "@/lib/consume-stream"
+import {
+  MAX_RETRIEVAL_FILE_IDS,
+  MAX_RETRIEVAL_QUERY_CHARS
+} from "@/lib/retrieval/limits"
 import { Tables, TablesInsert } from "@/supabase/types"
 import {
   ChatFile,
@@ -56,20 +60,37 @@ export const handleRetrieval = async (
   newMessageFiles: ChatFile[],
   chatFiles: ChatFile[],
   embeddingsProvider: "openai" | "local",
-  sourceCount: number
+  sourceCount: number,
+  signal?: AbortSignal
 ) => {
+  const files = [...newMessageFiles, ...chatFiles]
+  if (files.length > MAX_RETRIEVAL_FILE_IDS) {
+    const message = `Retrieval supports up to ${MAX_RETRIEVAL_FILE_IDS} files`
+    toast.error(message)
+    throw new Error(message)
+  }
+  if (userInput.length > MAX_RETRIEVAL_QUERY_CHARS) {
+    const message = `Retrieval queries must be at most ${MAX_RETRIEVAL_QUERY_CHARS} characters`
+    toast.error(message)
+    throw new Error(message)
+  }
+
   const response = await fetch("/api/retrieval/retrieve", {
     method: "POST",
+    signal,
     body: JSON.stringify({
       userInput,
-      fileIds: [...newMessageFiles, ...chatFiles].map(file => file.id),
+      fileIds: files.map(file => file.id),
       embeddingsProvider,
       sourceCount
     })
   })
 
   if (!response.ok) {
-    console.error("Error retrieving:", response)
+    const errorData = await response.json().catch(() => null)
+    const message = errorData?.message || "File retrieval failed"
+    toast.error(message)
+    throw new Error(message)
   }
 
   const { results } = (await response.json()) as {
@@ -221,11 +242,17 @@ export const handleHostedChat = async (
   const apiEndpoint =
     provider === "custom" ? "/api/chat/custom" : `/api/chat/${provider}`
 
-  const requestBody = {
-    chatSettings: payload.chatSettings,
-    messages: formattedMessages,
-    customModelId: provider === "custom" ? modelData.hostedId : ""
-  }
+  const requestBody =
+    provider === "custom"
+      ? {
+          customModelId: modelData.hostedId,
+          temperature: payload.chatSettings.temperature,
+          messages: formattedMessages
+        }
+      : {
+          chatSettings: payload.chatSettings,
+          messages: formattedMessages
+        }
 
   const response = await fetchChatResponse(
     apiEndpoint,
@@ -270,12 +297,14 @@ export const fetchChatResponse = async (
       )
     }
 
-    const errorData = await response.json()
+    const errorData = await response.json().catch(() => null)
+    const errorMessage = errorData?.message || "Chat request failed"
 
-    toast.error(errorData.message)
+    toast.error(errorMessage)
 
     setIsGenerating(false)
     setChatMessages(prevMessages => prevMessages.slice(0, -2))
+    throw new Error(errorMessage)
   }
 
   return response
