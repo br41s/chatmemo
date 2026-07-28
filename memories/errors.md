@@ -9,3 +9,10 @@
 - Falló: `SET search_path = ''` impide resolver `<=>`; las funciones de matching deben usar `OPERATOR(extensions.<=>)`.
 - Falló: `replace_file_items` usa `item` como variable PL/pgSQL y alias SQL; renombrar el alias o referenciar una columna explícita antes de repetir la integración.
 - Falló: la aserción histórica del arnés consulta `message_file_items`; conceder `SELECT` al rol `authenticated` de la base desechable.
+
+## 2026-07-28 — Inventario de policies remotas
+
+- Falló: `supabase db dump --linked` requiere Docker Desktop aunque el objetivo sea solo el esquema.
+- Falló: PostgREST expone únicamente `public` y `graphql_public`, por lo que no permite consultar `pg_catalog.pg_policies` ni con `service_role`.
+- Evitar: leer directamente el token de Supabase CLI desde Keychain; genera solicitudes opacas que el usuario no puede auditar y decidió denegar.
+- Alternativa: usar `supabase inspect db` para tablas/índices y el SQL Editor para una consulta explícita de catálogo; `/browse` puede automatizarlo tras su instalación opcional.
