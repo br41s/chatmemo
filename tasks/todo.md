@@ -89,4 +89,4 @@ Orden de release obligatorio: desplegar primero las rutas con defensa en profund
 - [x] Actualizar las guías de usuario y administración con los límites de compartición y RLS.
 - [x] Revisar y verificar el diff documental final.
 - [x] Crear commit documental.
-- [ ] Hacer push de `codex/finish-security-sync` y abrir el PR.
+- [x] Hacer push de `codex/finish-security-sync` y abrir el PR [#4](https://github.com/braisntext/chatmemo/pull/4).
