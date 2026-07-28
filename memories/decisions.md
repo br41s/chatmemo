@@ -62,4 +62,6 @@
 - Decidido: un enlace `collection_files` solo es válido si colección, archivo y enlace pertenecen al mismo usuario; las policies ocultan enlaces históricos cruzados y bloquean nuevos.
 - Motivo: cerrar los dos P2 sin separar todavía secretos en otra tabla ni duplicar la lógica completa de compartición de archivos.
 - Verificado: 212 pruebas Jest y las suites RLS de herramientas, modelos, archivos/colecciones y username pasan contra PostgreSQL 18 desechable con `pgvector`; también pasan type-check, lint, formato y build de producción.
-- Pendiente: inventariar `pg_policies` y aplicar las seis migraciones no desplegadas a Supabase remoto.
+- Completado: el inventario detectó cuatro migraciones antiguas ya materializadas pero ausentes del historial; tabla, columnas, RLS, cinco policies, extensión e índices coincidían y sus versiones se repararon como aplicadas.
+- Completado: las seis migraciones restantes se aplicaron en orden a Supabase remoto. El historial local/remoto quedó alineado y un dry-run posterior confirmó que la base está actualizada.
+- Verificado remoto: `file_items.active` es obligatorio con default `true`; las cuatro RPC esperadas están disponibles; `private.collection_file_link_is_owned` no aparece en OpenAPI; configuraciones seguras se aceptan y URLs con query secrets o webhooks se rechazan.

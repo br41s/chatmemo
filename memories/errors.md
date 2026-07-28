@@ -16,3 +16,4 @@
 - Falló: PostgREST expone únicamente `public` y `graphql_public`, por lo que no permite consultar `pg_catalog.pg_policies` ni con `service_role`.
 - Evitar: leer directamente el token de Supabase CLI desde Keychain; genera solicitudes opacas que el usuario no puede auditar y decidió denegar.
 - Alternativa: usar `supabase inspect db` para tablas/índices y el SQL Editor para una consulta explícita de catálogo; `/browse` puede automatizarlo tras su instalación opcional.
+- Falló el handoff de `/browse`: compilar gstack no instala automáticamente el Chromium de Playwright; evitar descargar otro navegador si una consulta manual única es más simple.

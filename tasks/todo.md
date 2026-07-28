@@ -73,11 +73,12 @@ Orden de release obligatorio: desplegar primero las rutas con defensa en profund
 
 ## Cierre de sincronización Supabase y hallazgos P2
 
-- [ ] Inventariar migraciones, funciones y policies de la base Supabase remota sin leer datos sensibles.
+- [x] Inventariar migraciones, funciones y policies de la base Supabase remota sin leer datos sensibles.
 - [x] Impedir que una herramienta compartida contenga credenciales en su URL o valores secretos incrustados en el esquema.
 - [x] Alinear la lectura de `file_items` con archivos visibles mediante colecciones compartidas.
 - [x] Añadir pruebas unitarias y de integración RLS para ambos contratos.
 - [x] Ejecutar revisión Staff Engineer, suite completa, type-check, lint y build.
-- [ ] Aplicar en orden las migraciones pendientes a Supabase remoto y verificar funciones, columnas, constraints y policies.
+- [x] Reparar cuatro entradas históricas y aplicar en orden las seis migraciones reales a Supabase remoto.
+- [x] Verificar historial, OpenAPI, RPC, columna `file_items.active`, helper privado y predicados de compartición remotos.
 - [x] Preparar un commit local.
 - [ ] Solicitar autorización antes de push/PR.
