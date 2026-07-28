@@ -96,7 +96,7 @@ Orden de release obligatorio: desplegar primero las rutas con defensa en profund
 - [x] Actualizar y verificar la descripción About de GitHub.
 - [x] Acordar la estructura editorial del README como landing page.
 - [x] Implementar y verificar el README mejorado.
-- [ ] Publicar el cambio mediante una rama y PR independientes.
+- [x] Publicar el cambio mediante una rama y el PR [#5](https://github.com/braisntext/chatmemo/pull/5).
 
 Trabajo futuro fuera de este cambio:
 
