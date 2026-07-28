@@ -42,3 +42,12 @@
 - Decidido: limitar globalmente a dos las inferencias locales y propagar cancelación desde el botón Stop hasta retrieval e embeddings.
 - Verificado: 172 pruebas, type-check, lint, build de producción y las tres integraciones RLS contra PostgreSQL 18 desechable con `pgvector`; revisión adversarial final sin hallazgos críticos.
 - Despliegue obligatorio: aplicar la migración de `file_items` y publicar las rutas como una unidad coordinada, porque las rutas nuevas dependen de `replace_file_items` y de la columna `active`.
+
+## 2026-07-28 — Consultas de username sin exponer perfiles
+
+- Decidido: las rutas de disponibilidad y consulta requieren sesión autenticada.
+- Decidido: RLS no se amplía sobre `profiles`; dos RPCs `SECURITY DEFINER` con `search_path` fijo devuelven únicamente un booleano o un username.
+- Decidido: la disponibilidad excluye el perfil del usuario actual y el índice `UNIQUE` sigue siendo la defensa definitiva frente a carreras.
+- Rechazado: usar `service_role` en las rutas o hacer legibles perfiles completos para resolver una consulta escalar.
+- Verificado: la migración y las consultas pasaron contra PostgreSQL 18 local con casos de propietario, colisión, input inválido, rol anónimo y sesión sin `auth.uid()`.
+- Pendiente: aplicar la migración remota solo con confirmación explícita.
