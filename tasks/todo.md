@@ -70,3 +70,14 @@ Orden de release obligatorio: desplegar primero las rutas con defensa en profund
 - [x] Ejecutar revisión Staff Engineer final sin hallazgos críticos.
 - [x] Ejecutar la suite Jest, type-check, lint y `git diff --check`.
 - [x] No aplicar la migración remota ni desplegar producción.
+
+## Cierre de sincronización Supabase y hallazgos P2
+
+- [ ] Inventariar migraciones, funciones y policies de la base Supabase remota sin leer datos sensibles.
+- [x] Impedir que una herramienta compartida contenga credenciales en su URL o valores secretos incrustados en el esquema.
+- [x] Alinear la lectura de `file_items` con archivos visibles mediante colecciones compartidas.
+- [x] Añadir pruebas unitarias y de integración RLS para ambos contratos.
+- [x] Ejecutar revisión Staff Engineer, suite completa, type-check, lint y build.
+- [ ] Aplicar en orden las migraciones pendientes a Supabase remoto y verificar funciones, columnas, constraints y policies.
+- [x] Preparar un commit local.
+- [ ] Solicitar autorización antes de push/PR.
