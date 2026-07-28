@@ -1,0 +1,3 @@
+- Para reconectar GitHub, no abrir manualmente la GitHub App privada ni limitarse a reinstalar el plugin. Eliminar también la conexión residual de GitHub en ChatGPT, reconectar desde la ficha del plugin y abrir una tarea nueva para cargar las herramientas autorizadas.
+- Antes de iniciar OAuth para GitHub, confirmar qué cuenta está activa en el navegador. Si se inicia con la cuenta equivocada, revocar tanto la autorización como la instalación en esa cuenta y desconectar el conector de ChatGPT antes de reintentarlo con la cuenta correcta.
+- Al validar GitHub, distinguir lectura pública de acceso por instalación: comprobar `list_installations`, `list_installed_accounts` y repositorios instalados; poder leer un archivo público no demuestra que la GitHub App tenga permisos.

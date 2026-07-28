@@ -30,6 +30,7 @@
     "db-types-remote": "npx supabase gen types typescript --linked > supabase/types.ts",
     "db-pull": "supabase db remote commit",
     "db-push": "supabase db push",
+    "test:rls": "test -n \"$CHATMEMO_RLS_TEST_DATABASE_URL\" && psql \"$CHATMEMO_RLS_TEST_DATABASE_URL\" -v chatmemo_rls_test=1 -f __tests__/migrations/tools-shared-without-secrets.integration.sql && psql \"$CHATMEMO_RLS_TEST_DATABASE_URL\" -v chatmemo_rls_test=1 -f __tests__/migrations/models-shared-without-secrets.integration.sql && psql \"$CHATMEMO_RLS_TEST_DATABASE_URL\" -v chatmemo_rls_test=1 -f __tests__/migrations/file-items-rls.integration.sql",
     "test": "jest"
   },
   "dependencies": {

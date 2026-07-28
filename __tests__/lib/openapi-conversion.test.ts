@@ -1,4 +1,54 @@
 import { openapiToFunctions } from "@/lib/openapi-conversion"
+import $RefParser from "@apidevtools/json-schema-ref-parser"
+
+describe("external references", () => {
+  it.each(["http://127.0.0.1/internal.json", "file:///private/etc/passwd"])(
+    "rejects %s before the reference resolver runs",
+    async externalRef => {
+      const dereference = jest.spyOn($RefParser, "dereference")
+      const schema = {
+        openapi: "3.1.0",
+        info: { title: "Unsafe", version: "1.0.0" },
+        servers: [{ url: "https://api.example.com" }],
+        paths: {
+          "/data": {
+            get: {
+              $ref: externalRef
+            }
+          }
+        }
+      }
+
+      await expect(openapiToFunctions(schema)).rejects.toThrow(
+        "External OpenAPI references are not allowed"
+      )
+      expect(dereference).not.toHaveBeenCalled()
+
+      dereference.mockRestore()
+    }
+  )
+
+  it("rejects a string operation before it can be treated as a path", async () => {
+    const dereference = jest.spyOn($RefParser, "dereference")
+    const schema = {
+      openapi: "3.1.0",
+      info: { title: "Unsafe", version: "1.0.0" },
+      servers: [{ url: "https://api.example.com" }],
+      paths: {
+        "/data": {
+          get: "file:///private/etc/passwd"
+        }
+      }
+    }
+
+    await expect(openapiToFunctions(schema)).rejects.toThrow(
+      "OpenAPI operation get must be an object"
+    )
+    expect(dereference).not.toHaveBeenCalled()
+
+    dereference.mockRestore()
+  })
+})
 
 const validSchemaURL = JSON.stringify({
   openapi: "3.1.0",
