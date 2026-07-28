@@ -1373,6 +1373,14 @@ export type Database = {
         Args: { p_name: string }
         Returns: boolean
       }
+      get_username_by_user_id: {
+        Args: { p_user_id: string }
+        Returns: string
+      }
+      is_username_available: {
+        Args: { p_username: string }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never

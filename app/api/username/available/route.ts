@@ -1,38 +1,73 @@
-import { Database } from "@/supabase/types"
-import { createClient } from "@supabase/supabase-js"
+import { PROFILE_USERNAME_MAX, PROFILE_USERNAME_MIN } from "@/db/limits"
+import {
+  LimitedJsonError,
+  readLimitedJson
+} from "@/lib/server/read-limited-json"
+import { createClient } from "@/lib/supabase/server"
+import { cookies } from "next/headers"
+import { z } from "zod"
 
 export const runtime = "edge"
 
+const MAX_REQUEST_BYTES = 1024
+const REQUEST_BODY_TIMEOUT_MS = 5_000
+const requestSchema = z
+  .object({
+    username: z
+      .string()
+      .min(PROFILE_USERNAME_MIN)
+      .max(PROFILE_USERNAME_MAX)
+      .regex(/^[A-Za-z0-9_]+$/)
+  })
+  .strict()
+
+function jsonResponse(body: object, status: number) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      "Cache-Control": "no-store",
+      "Content-Type": "application/json"
+    }
+  })
+}
+
 export async function POST(request: Request) {
-  const json = await request.json()
-  const { username } = json as {
-    username: string
-  }
-
   try {
-    // Use anon key — this is a public read, no need for service role
-    const supabaseAdmin = createClient<Database>(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
-
-    const { data: usernames, error } = await supabaseAdmin
-      .from("profiles")
-      .select("username")
-      .eq("username", username)
-
-    if (!usernames) {
-      throw new Error(error.message)
+    const json = await readLimitedJson(request, {
+      maxBytes: MAX_REQUEST_BYTES,
+      timeoutMs: REQUEST_BODY_TIMEOUT_MS
+    })
+    const parsed = requestSchema.safeParse(json)
+    if (!parsed.success) {
+      return jsonResponse({ message: "Username is invalid" }, 400)
     }
 
-    return new Response(JSON.stringify({ isAvailable: !usernames.length }), {
-      status: 200
-    })
-  } catch (error: any) {
-    const errorMessage = error.error?.message || "An unexpected error occurred"
-    const errorCode = error.status || 500
-    return new Response(JSON.stringify({ message: errorMessage }), {
-      status: errorCode
-    })
+    const supabase = createClient(cookies())
+    const {
+      data: { user },
+      error: authError
+    } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return jsonResponse({ message: "Authentication required" }, 401)
+    }
+
+    const { data: isAvailable, error } = await supabase.rpc(
+      "is_username_available",
+      { p_username: parsed.data.username }
+    )
+
+    if (error || typeof isAvailable !== "boolean") {
+      console.error("Username availability lookup failed", error)
+      return jsonResponse({ message: "Username lookup failed" }, 500)
+    }
+
+    return jsonResponse({ isAvailable }, 200)
+  } catch (error) {
+    if (error instanceof LimitedJsonError) {
+      return jsonResponse({ message: error.message }, error.status)
+    }
+
+    console.error("Username availability request failed", error)
+    return jsonResponse({ message: "An unexpected error occurred" }, 500)
   }
 }
