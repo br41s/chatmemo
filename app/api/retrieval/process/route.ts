@@ -1,4 +1,5 @@
-import { generateLocalEmbedding } from "@/lib/generate-local-embedding"
+import { generateLocalEmbeddings } from "@/lib/generate-local-embedding"
+import { MAX_FILE_ITEM_CHUNKS } from "@/lib/retrieval/limits"
 import {
   processCSV,
   processJSON,
@@ -6,135 +7,179 @@ import {
   processPdf,
   processTxt
 } from "@/lib/retrieval/processing"
-import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
-import { Database } from "@/supabase/types"
+import {
+  EmbeddingRequestError,
+  generateOpenAIEmbeddings
+} from "@/lib/server/openai-embeddings"
+import {
+  LimitedJsonError,
+  readLimitedFormData
+} from "@/lib/server/read-limited-json"
+import { getServerProfile } from "@/lib/server/server-chat-helpers"
+import { createClient as createSessionClient } from "@/lib/supabase/server"
+import { Json } from "@/supabase/types"
 import { FileItemChunk } from "@/types"
-import { createClient } from "@supabase/supabase-js"
+import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
-import OpenAI from "openai"
+import { z } from "zod"
+
+const MAX_FORM_BYTES = 64 * 1024
+const REQUEST_BODY_TIMEOUT_MS = 10_000
+const DEFAULT_FILE_SIZE_LIMIT = 10_000_000
+const MAX_CONFIGURABLE_FILE_SIZE_LIMIT = 50_000_000
+
+const requestSchema = z
+  .object({
+    file_id: z.string().uuid(),
+    embeddingsProvider: z.enum(["openai", "local"])
+  })
+  .strict()
+
+class ProcessRouteError extends Error {
+  status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = "ProcessRouteError"
+    this.status = status
+  }
+}
+
+function fileSizeLimit() {
+  const configured = Number(process.env.NEXT_PUBLIC_USER_FILE_SIZE_LIMIT)
+  if (!Number.isSafeInteger(configured) || configured <= 0) {
+    return DEFAULT_FILE_SIZE_LIMIT
+  }
+  return Math.min(configured, MAX_CONFIGURABLE_FILE_SIZE_LIMIT)
+}
+
+function errorResponse(message: string, status: number) {
+  return new Response(JSON.stringify({ message }), {
+    status,
+    headers: { "Content-Type": "application/json" }
+  })
+}
 
 export async function POST(req: Request) {
   try {
-    const supabaseAdmin = createClient<Database>(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
-
     const profile = await getServerProfile()
+    const supabase = createSessionClient(cookies())
 
-    const formData = await req.formData()
+    const formData = await readLimitedFormData(req, {
+      maxBytes: MAX_FORM_BYTES,
+      timeoutMs: REQUEST_BODY_TIMEOUT_MS
+    })
+    const parsed = requestSchema.safeParse({
+      file_id: formData.get("file_id"),
+      embeddingsProvider: formData.get("embeddingsProvider")
+    })
+    if (!parsed.success) {
+      throw new ProcessRouteError("File processing request is invalid", 400)
+    }
+    const { file_id, embeddingsProvider } = parsed.data
 
-    const file_id = formData.get("file_id") as string
-    const embeddingsProvider = formData.get("embeddingsProvider") as string
-
-    const { data: fileMetadata, error: metadataError } = await supabaseAdmin
+    const { data: fileMetadata, error: metadataError } = await supabase
       .from("files")
-      .select("*")
+      .select("id, user_id, file_path, name, size")
       .eq("id", file_id)
-      .single()
+      .maybeSingle()
 
     if (metadataError) {
-      throw new Error(
-        `Failed to retrieve file metadata: ${metadataError.message}`
-      )
+      throw new ProcessRouteError("File lookup failed", 500)
     }
 
-    if (!fileMetadata) {
-      throw new Error("File not found")
+    if (!fileMetadata || fileMetadata.user_id !== profile.user_id) {
+      throw new ProcessRouteError("File is unavailable", 403)
+    }
+    const maxFileBytes = fileSizeLimit()
+    if (fileMetadata.size > maxFileBytes) {
+      throw new ProcessRouteError("File is too large to process", 413)
     }
 
-    if (fileMetadata.user_id !== profile.user_id) {
-      throw new Error("Unauthorized")
+    const pathSeparator = fileMetadata.file_path.lastIndexOf("/")
+    const storageFolder = fileMetadata.file_path.slice(0, pathSeparator)
+    const storageName = fileMetadata.file_path.slice(pathSeparator + 1)
+    if (
+      pathSeparator <= 0 ||
+      fileMetadata.file_path.split("/", 1)[0] !== profile.user_id ||
+      !storageName
+    ) {
+      throw new ProcessRouteError("File storage path is invalid", 403)
     }
 
-    const { data: file, error: fileError } = await supabaseAdmin.storage
-      .from("files")
-      .download(fileMetadata.file_path)
+    const fileStorage = supabase.storage.from("files")
+    const { data: storedObjects, error: storageMetadataError } =
+      await fileStorage.list(storageFolder, {
+        limit: 100,
+        search: storageName
+      })
+    const storedObject = storedObjects?.find(
+      object => object.name === storageName
+    )
+    const storedSize = Number(storedObject?.metadata?.size)
+    if (
+      storageMetadataError ||
+      !storedObject ||
+      !Number.isSafeInteger(storedSize) ||
+      storedSize < 0
+    ) {
+      throw new ProcessRouteError("File storage metadata is unavailable", 500)
+    }
+    if (storedSize > maxFileBytes) {
+      throw new ProcessRouteError("File is too large to process", 413)
+    }
 
-    if (fileError)
-      throw new Error(`Failed to retrieve file: ${fileError.message}`)
+    const { data: file, error: fileError } = await fileStorage.download(
+      fileMetadata.file_path
+    )
 
-    const fileBuffer = Buffer.from(await file.arrayBuffer())
-    const blob = new Blob([fileBuffer])
+    if (fileError || !file) {
+      throw new ProcessRouteError("File could not be downloaded", 500)
+    }
+    if (file.size > maxFileBytes) {
+      throw new ProcessRouteError("File is too large to process", 413)
+    }
+
     const fileExtension = fileMetadata.name.split(".").pop()?.toLowerCase()
-
-    if (embeddingsProvider === "openai") {
-      try {
-        if (profile.use_azure_openai) {
-          checkApiKey(profile.azure_openai_api_key, "Azure OpenAI")
-        } else {
-          checkApiKey(profile.openai_api_key, "OpenAI")
-        }
-      } catch (error: any) {
-        error.message =
-          error.message +
-          ", make sure it is configured or else use local embeddings"
-        throw error
-      }
-    }
 
     let chunks: FileItemChunk[] = []
 
     switch (fileExtension) {
       case "csv":
-        chunks = await processCSV(blob)
+        chunks = await processCSV(file)
         break
       case "json":
-        chunks = await processJSON(blob)
+        chunks = await processJSON(file)
         break
       case "md":
-        chunks = await processMarkdown(blob)
+        chunks = await processMarkdown(file)
         break
       case "pdf":
-        chunks = await processPdf(blob)
+        chunks = await processPdf(file)
         break
       case "txt":
-        chunks = await processTxt(blob)
+        chunks = await processTxt(file)
         break
       default:
-        return new NextResponse("Unsupported file type", {
-          status: 400
-        })
+        throw new ProcessRouteError("Unsupported file type", 400)
     }
 
-    let embeddings: any = []
-
-    let openai
-    if (profile.use_azure_openai) {
-      openai = new OpenAI({
-        apiKey: profile.azure_openai_api_key || "",
-        baseURL: `${profile.azure_openai_endpoint}/openai/deployments/${profile.azure_openai_embeddings_id}`,
-        defaultQuery: { "api-version": "2023-12-01-preview" },
-        defaultHeaders: { "api-key": profile.azure_openai_api_key }
-      })
-    } else {
-      openai = new OpenAI({
-        apiKey: profile.openai_api_key || "",
-        organization: profile.openai_organization_id
-      })
+    if (chunks.length === 0 || chunks.length > MAX_FILE_ITEM_CHUNKS) {
+      throw new ProcessRouteError("File produced an invalid chunk count", 400)
     }
 
+    let embeddings: unknown[][]
     if (embeddingsProvider === "openai") {
-      const response = await openai.embeddings.create({
-        model: "text-embedding-3-small",
-        input: chunks.map(chunk => chunk.content)
-      })
-
-      embeddings = response.data.map((item: any) => {
-        return item.embedding
-      })
-    } else if (embeddingsProvider === "local") {
-      const embeddingPromises = chunks.map(async chunk => {
-        try {
-          return await generateLocalEmbedding(chunk.content)
-        } catch (error) {
-          console.error(`Error generating embedding for chunk: ${chunk}`, error)
-
-          return null
-        }
-      })
-
-      embeddings = await Promise.all(embeddingPromises)
+      embeddings = await generateOpenAIEmbeddings(
+        profile,
+        chunks.map(chunk => chunk.content),
+        req.signal
+      )
+    } else {
+      embeddings = await generateLocalEmbeddings(
+        chunks.map(chunk => chunk.content),
+        req.signal
+      )
     }
 
     const file_items = chunks.map((chunk, index) => ({
@@ -154,23 +199,28 @@ export async function POST(req: Request) {
 
     const totalTokens = file_items.reduce((acc, item) => acc + item.tokens, 0)
 
-    await Promise.all([
-      supabaseAdmin.from("file_items").upsert(file_items),
-      supabaseAdmin
-        .from("files")
-        .update({ tokens: totalTokens })
-        .eq("id", file_id)
-    ])
+    const { error: replaceError } = await supabase.rpc("replace_file_items", {
+      p_file_id: file_id,
+      p_items: file_items as Json,
+      p_total_tokens: totalTokens
+    })
+    if (replaceError) {
+      throw new ProcessRouteError("File items could not be saved", 500)
+    }
 
     return new NextResponse("Embed Successful", {
       status: 200
     })
-  } catch (error: any) {
-    console.log(`Error in retrieval/process: ${error.stack}`)
-    const errorMessage = error?.message || "An unexpected error occurred"
-    const errorCode = error.status || 500
-    return new Response(JSON.stringify({ message: errorMessage }), {
-      status: errorCode
-    })
+  } catch (error) {
+    if (
+      error instanceof ProcessRouteError ||
+      error instanceof EmbeddingRequestError ||
+      error instanceof LimitedJsonError
+    ) {
+      return errorResponse(error.message, error.status)
+    }
+
+    console.error("File processing failed", error)
+    return errorResponse("An unexpected error occurred", 500)
   }
 }

@@ -15,6 +15,26 @@ interface OpenAPIData {
   functions: any
 }
 
+function assertNoExternalRefs(value: unknown, visited = new WeakSet<object>()) {
+  if (typeof value !== "object" || value === null || visited.has(value)) {
+    return
+  }
+
+  visited.add(value)
+
+  for (const [key, nestedValue] of Object.entries(value)) {
+    if (
+      key === "$ref" &&
+      typeof nestedValue === "string" &&
+      !nestedValue.startsWith("#")
+    ) {
+      throw new Error("External OpenAPI references are not allowed")
+    }
+
+    assertNoExternalRefs(nestedValue, visited)
+  }
+}
+
 export const validateOpenAPI = async (openapiSpec: any) => {
   if (!openapiSpec.info) {
     throw new Error("('info'): field required")
@@ -92,6 +112,8 @@ export const validateOpenAPI = async (openapiSpec: any) => {
 export const openapiToFunctions = async (
   openapiSpec: any
 ): Promise<OpenAPIData> => {
+  assertNoExternalRefs(openapiSpec)
+
   const functions: any[] = [] // Define a proper type for function objects
   const routes: {
     path: string
@@ -108,7 +130,17 @@ export const openapiToFunctions = async (
     for (const [method, specWithRef] of Object.entries(
       methods as Record<string, any>
     )) {
-      const spec: any = await $RefParser.dereference(specWithRef)
+      if (
+        typeof specWithRef !== "object" ||
+        specWithRef === null ||
+        Array.isArray(specWithRef)
+      ) {
+        throw new Error(`OpenAPI operation ${method} must be an object`)
+      }
+
+      const spec: any = await $RefParser.dereference(specWithRef, {
+        resolve: { external: false }
+      })
       const functionName = spec.operationId
       const desc = spec.description || spec.summary || ""
 

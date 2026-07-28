@@ -1,4 +1,8 @@
 import { supabase } from "@/lib/supabase/browser-client"
+import {
+  MAX_DOCX_TEXT_CHARS,
+  MAX_LOCAL_DOCX_TEXT_CHARS
+} from "@/lib/retrieval/limits"
 import { TablesInsert, TablesUpdate } from "@/supabase/types"
 import mammoth from "mammoth"
 import { toast } from "sonner"
@@ -164,6 +168,16 @@ export const createDocXFile = async (
   workspace_id: string,
   embeddingsProvider: "openai" | "local"
 ) => {
+  const maxTextLength =
+    embeddingsProvider === "local"
+      ? MAX_LOCAL_DOCX_TEXT_CHARS
+      : MAX_DOCX_TEXT_CHARS
+  if (text.length > maxTextLength) {
+    throw new Error(
+      `Extracted DOCX text must be at most ${maxTextLength.toLocaleString()} characters for ${embeddingsProvider} embeddings`
+    )
+  }
+
   const { data: createdFile, error } = await supabase
     .from("files")
     .insert([fileRecord])

@@ -194,6 +194,12 @@ export const useChatHandler = () => {
     isRegeneration: boolean
   ) => {
     const startingInput = messageContent
+    const regenerationTarget = isRegeneration
+      ? {
+          id: chatMessages[chatMessages.length - 1]?.message.id,
+          content: chatMessages[chatMessages.length - 1]?.message.content
+        }
+      : null
 
     try {
       setUserInput("")
@@ -244,7 +250,8 @@ export const useChatHandler = () => {
           newMessageFiles,
           chatFiles,
           chatSettings!.embeddingsProvider,
-          sourceCount
+          sourceCount,
+          newAbortController.signal
         )
       }
 
@@ -298,11 +305,37 @@ export const useChatHandler = () => {
           body: JSON.stringify({
             chatSettings: payload.chatSettings,
             messages: formattedMessages,
-            selectedTools
-          })
+            selectedToolIds: selectedTools.map(tool => tool.id)
+          }),
+          signal: newAbortController.signal
         })
 
         setToolInUse("none")
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => null)
+          const errorMessage =
+            errorData?.message || "The selected tool request failed."
+          toast.error(errorMessage)
+          setChatMessages(previousMessages => {
+            if (!regenerationTarget) {
+              return previousMessages.slice(0, -2)
+            }
+
+            return previousMessages.map(chatMessage =>
+              chatMessage.message.id === regenerationTarget.id
+                ? {
+                    ...chatMessage,
+                    message: {
+                      ...chatMessage.message,
+                      content: regenerationTarget.content
+                    }
+                  }
+                : chatMessage
+            )
+          })
+          throw new Error(errorMessage)
+        }
 
         generatedText = await processResponse(
           response,

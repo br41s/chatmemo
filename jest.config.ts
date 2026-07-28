@@ -14,7 +14,8 @@ const config: Config = {
   // own dependencies — it must not be picked up by the Jest (unit) runner.
   testPathIgnorePatterns: [
     "<rootDir>/node_modules/",
-    "<rootDir>/__tests__/playwright-test/"
+    "<rootDir>/__tests__/playwright-test/",
+    "<rootDir>/.claude/worktrees/"
   ]
   // Add more setup options before each test is run
   // setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
