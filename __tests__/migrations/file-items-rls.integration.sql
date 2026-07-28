@@ -14,6 +14,10 @@ SELECT 'CREATE ROLE anon NOLOGIN'
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon')
 \gexec
 
+SELECT 'CREATE ROLE service_role NOLOGIN'
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role')
+\gexec
+
 CREATE SCHEMA IF NOT EXISTS auth;
 CREATE SCHEMA IF NOT EXISTS extensions;
 CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions;
@@ -37,6 +41,19 @@ CREATE TABLE public.files (
     tokens integer NOT NULL DEFAULT 0
 );
 
+CREATE TABLE public.collections (
+    id uuid PRIMARY KEY,
+    user_id uuid NOT NULL,
+    sharing text NOT NULL DEFAULT 'private'
+);
+
+CREATE TABLE public.collection_files (
+    collection_id uuid NOT NULL REFERENCES public.collections(id) ON DELETE CASCADE,
+    file_id uuid NOT NULL REFERENCES public.files(id) ON DELETE CASCADE,
+    user_id uuid NOT NULL,
+    PRIMARY KEY (collection_id, file_id)
+);
+
 CREATE TABLE public.file_items (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     file_id uuid NOT NULL REFERENCES public.files(id) ON DELETE CASCADE,
@@ -53,6 +70,8 @@ CREATE TABLE public.message_file_items (
 );
 
 ALTER TABLE public.files ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.collections ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.collection_files ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.file_items ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Allow full access to own files"
@@ -64,6 +83,43 @@ CREATE POLICY "Allow view access to non-private files"
     ON public.files
     FOR SELECT
     USING (sharing <> 'private');
+
+CREATE POLICY "Allow full access to own collections"
+    ON public.collections
+    USING (user_id = auth.uid())
+    WITH CHECK (user_id = auth.uid());
+
+CREATE POLICY "Allow view access to non-private collections"
+    ON public.collections
+    FOR SELECT
+    USING (sharing <> 'private');
+
+CREATE POLICY "Allow full access to own collection_files"
+    ON public.collection_files
+    USING (user_id = auth.uid())
+    WITH CHECK (user_id = auth.uid());
+
+CREATE POLICY "Allow view access to collection files for non-private collections"
+    ON public.collection_files
+    FOR SELECT
+    USING (
+        collection_id IN (
+            SELECT id FROM public.collections WHERE sharing <> 'private'
+        )
+    );
+
+CREATE POLICY "Allow view access to files for non-private collections"
+    ON public.files
+    FOR SELECT
+    USING (
+        id IN (
+            SELECT file_id
+            FROM public.collection_files
+            WHERE collection_id IN (
+                SELECT id FROM public.collections WHERE sharing <> 'private'
+            )
+        )
+    );
 
 CREATE POLICY "Allow full access to own file items"
     ON public.file_items
@@ -118,9 +174,11 @@ END
 $$;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.files TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.collections TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.collection_files TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.file_items TO authenticated;
 GRANT SELECT ON public.message_file_items TO authenticated;
-GRANT SELECT ON public.files, public.file_items TO anon;
+GRANT SELECT ON public.files, public.collections, public.collection_files, public.file_items TO anon;
 GRANT EXECUTE ON FUNCTION public.match_file_items_local(extensions.vector, integer, uuid[]) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.match_file_items_openai(extensions.vector, integer, uuid[]) TO authenticated;
 
@@ -128,18 +186,36 @@ INSERT INTO public.files (id, user_id, sharing)
 VALUES
     ('40000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'private'),
     ('40000000-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'public'),
-    ('40000000-0000-0000-0000-000000000003', '22222222-2222-2222-2222-222222222222', 'private');
+    ('40000000-0000-0000-0000-000000000003', '22222222-2222-2222-2222-222222222222', 'private'),
+    ('40000000-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', 'private'),
+    ('40000000-0000-0000-0000-000000000005', '11111111-1111-1111-1111-111111111111', 'private');
 
-INSERT INTO public.file_items (id, file_id, user_id, content, tokens)
+INSERT INTO public.collections (id, user_id, sharing)
 VALUES
-    ('50000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'private other chunk', 3),
-    ('50000000-0000-0000-0000-000000000002', '40000000-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'shared chunk', 2),
-    ('50000000-0000-0000-0000-000000000003', '40000000-0000-0000-0000-000000000003', '22222222-2222-2222-2222-222222222222', 'own chunk', 2);
+    ('60000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'public'),
+    ('60000000-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'private'),
+    ('60000000-0000-0000-0000-000000000003', '22222222-2222-2222-2222-222222222222', 'public');
+
+INSERT INTO public.collection_files (collection_id, file_id, user_id)
+VALUES
+    ('60000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111'),
+    ('60000000-0000-0000-0000-000000000002', '40000000-0000-0000-0000-000000000005', '11111111-1111-1111-1111-111111111111'),
+    ('60000000-0000-0000-0000-000000000003', '40000000-0000-0000-0000-000000000001', '22222222-2222-2222-2222-222222222222');
+
+INSERT INTO public.file_items (id, file_id, user_id, content, tokens, active)
+VALUES
+    ('50000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'private other chunk', 3, true),
+    ('50000000-0000-0000-0000-000000000002', '40000000-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'shared chunk', 2, true),
+    ('50000000-0000-0000-0000-000000000003', '40000000-0000-0000-0000-000000000003', '22222222-2222-2222-2222-222222222222', 'own chunk', 2, true),
+    ('50000000-0000-0000-0000-000000000004', '40000000-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', 'collection-shared chunk', 2, true),
+    ('50000000-0000-0000-0000-000000000005', '40000000-0000-0000-0000-000000000005', '11111111-1111-1111-1111-111111111111', 'private collection chunk', 2, true),
+    ('50000000-0000-0000-0000-000000000008', '40000000-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'inactive shared chunk', 2, false);
 
 INSERT INTO public.message_file_items (file_item_id)
 VALUES ('50000000-0000-0000-0000-000000000003');
 
 \ir ../../supabase/migrations/20260726020000_file_items_owner_writes.sql
+\ir ../../supabase/migrations/20260728020000_file_items_visible_through_collections.sql
 
 SET ROLE authenticated;
 SET request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';
@@ -147,16 +223,48 @@ SET request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';
 DO $$
 DECLARE
     visible_file_ids uuid[];
+    visible_item_ids uuid[];
+    invalid_link_count integer;
     local_private_count integer;
     openai_private_count integer;
 BEGIN
     SELECT array_agg(id ORDER BY id) INTO visible_file_ids FROM public.files;
     IF visible_file_ids IS DISTINCT FROM ARRAY[
         '40000000-0000-0000-0000-000000000002'::uuid,
-        '40000000-0000-0000-0000-000000000003'::uuid
+        '40000000-0000-0000-0000-000000000003'::uuid,
+        '40000000-0000-0000-0000-000000000004'::uuid
     ] THEN
         RAISE EXCEPTION 'unexpected visible files: %', visible_file_ids;
     END IF;
+
+    SELECT array_agg(id ORDER BY id) INTO visible_item_ids FROM public.file_items;
+    IF visible_item_ids IS DISTINCT FROM ARRAY[
+        '50000000-0000-0000-0000-000000000002'::uuid,
+        '50000000-0000-0000-0000-000000000003'::uuid,
+        '50000000-0000-0000-0000-000000000004'::uuid
+    ] THEN
+        RAISE EXCEPTION 'unexpected visible file items: %', visible_item_ids;
+    END IF;
+
+    SELECT count(*) INTO invalid_link_count
+    FROM public.collection_files
+    WHERE collection_id = '60000000-0000-0000-0000-000000000003';
+
+    IF invalid_link_count <> 0 THEN
+        RAISE EXCEPTION 'historical cross-owner collection link remained visible';
+    END IF;
+
+    BEGIN
+        INSERT INTO public.collection_files (collection_id, file_id, user_id)
+        VALUES (
+            '60000000-0000-0000-0000-000000000003',
+            '40000000-0000-0000-0000-000000000005',
+            auth.uid()
+        );
+        RAISE EXCEPTION 'cross-owner collection link was inserted';
+    EXCEPTION
+        WHEN insufficient_privilege THEN NULL;
+    END;
 
     SELECT count(*) INTO local_private_count
     FROM public.match_file_items_local(
@@ -179,7 +287,7 @@ BEGIN
     BEGIN
         INSERT INTO public.file_items (id, file_id, user_id, content, tokens)
         VALUES (
-            '50000000-0000-0000-0000-000000000004',
+        '50000000-0000-0000-0000-000000000006',
             '40000000-0000-0000-0000-000000000002',
             auth.uid(),
             'injected shared chunk',
@@ -205,7 +313,7 @@ $$;
 
 INSERT INTO public.file_items (id, file_id, user_id, content, tokens)
 VALUES (
-    '50000000-0000-0000-0000-000000000005',
+    '50000000-0000-0000-0000-000000000007',
     '40000000-0000-0000-0000-000000000003',
     auth.uid(),
     'second own chunk',
@@ -289,7 +397,7 @@ DECLARE
     visible_count integer;
 BEGIN
     SELECT count(*) INTO visible_count FROM public.file_items;
-    IF visible_count <> 1 THEN
+    IF visible_count <> 2 THEN
         RAISE EXCEPTION 'anonymous role saw % file items', visible_count;
     END IF;
 END

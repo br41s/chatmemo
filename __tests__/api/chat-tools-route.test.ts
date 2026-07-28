@@ -56,7 +56,11 @@ function createRequest(body: Record<string, unknown>) {
 }
 
 function mockStoredTools(data: unknown[] | null, error: unknown = null) {
-  const rows = data?.map(row => ({ user_id: OWNER_ID, ...(row as object) }))
+  const rows = data?.map(row => ({
+    user_id: OWNER_ID,
+    url: "",
+    ...(row as object)
+  }))
   const inQuery = jest.fn().mockResolvedValue({ data: rows ?? data, error })
   const select = jest.fn(() => ({ in: inQuery }))
   const from = jest.fn(() => ({ select }))
@@ -191,7 +195,7 @@ describe("POST /api/chat/tools", () => {
     expect(response.status).toBe(200)
     expect(mockOpenapiToFunctions).toHaveBeenCalledWith(storedSchema)
     expect(query.select).toHaveBeenCalledWith(
-      "id, user_id, schema, custom_headers"
+      "id, user_id, schema, url, custom_headers"
     )
     expect(query.inQuery).toHaveBeenCalledWith("id", [TOOL_ID])
     expect(mockCheckApiKey).toHaveBeenCalledWith("server-openai-key", "OpenAI")
@@ -247,6 +251,32 @@ describe("POST /api/chat/tools", () => {
     expect(response.status).toBe(403)
     await expect(response.json()).resolves.toEqual({
       message: "Shared tools cannot expose custom headers"
+    })
+    expect(completionsCreate).not.toHaveBeenCalled()
+    expect(mockSafeToolRequest).not.toHaveBeenCalled()
+  })
+
+  it("rejects embedded credentials in a foreign shared tool", async () => {
+    mockStoredTools([
+      {
+        id: TOOL_ID,
+        user_id: OTHER_USER_ID,
+        schema: { authorization: "Bearer abcdefghijklmnopqrstuvwxyz" },
+        custom_headers: {}
+      }
+    ])
+
+    const response = await POST(
+      createRequest({
+        chatSettings: { model: "gpt-4o" },
+        messages: [],
+        selectedToolIds: [TOOL_ID]
+      })
+    )
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({
+      message: "Shared tools cannot expose embedded credentials"
     })
     expect(completionsCreate).not.toHaveBeenCalled()
     expect(mockSafeToolRequest).not.toHaveBeenCalled()

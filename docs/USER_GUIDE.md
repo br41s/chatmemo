@@ -38,7 +38,7 @@ Together they give the AI up to ~48 000 characters of context about you before y
 
 **Recovering a full conversation on demand:** the two layers above are *summaries* — compact by design. When you explicitly ask to recover a **full conversation** (in English or Spanish — e.g. *"recover the full conversation about X"*, *"recupera la conversación completa de …"*, or by date *"recupera la conversación del 2026-03-31"*), ChatMemo pulls the **complete, untruncated transcript** instead of the summary. It works best when you quote the conversation title or give a specific date. Recoverable in full: in-app chats, **Perplexity** imports, and **Claude** imports. ChatGPT imports are stored compressed, so they cannot be recovered word-for-word.
 
-Nothing is shared between users. All data is scoped to your account.
+Chats, memories, profiles, and private resources are scoped to your account. Only resources you explicitly mark as public or unlisted can be read by another user, and ChatMemo blocks shared models or tools that contain stored credentials.
 
 ---
 
@@ -283,10 +283,11 @@ ChatMemo automatically builds and refines a **User Lessons** document from your 
 
 ## 7. Choosing a Chat Model
 
-ChatMemo supports any model available through OpenRouter or directly via provider APIs.
+ChatMemo supports hosted provider models, OpenRouter, remote OpenAI-compatible models, and local Ollama models running on your Mac.
 
 - Click the model name in the chat header to open the model selector.
 - Your selection persists across page reloads.
+- Use **Hosted** for provider and custom remote models, **Local** for Ollama, and **OpenRouter** for its catalogue.
 - OpenRouter models appear as `provider/model-name` (e.g. `openai/gpt-4o`).
 
 **Recommended models for chat:**
@@ -298,6 +299,18 @@ ChatMemo supports any model available through OpenRouter or directly via provide
 | Free tier | `meta-llama/llama-3.3-70b-instruct:free` |
 
 > The model used for **summarising memories** is separate and configured by the admin. It defaults to `meta-llama/llama-3.3-70b-instruct:free`.
+
+### Using a model locally on macOS
+
+1. Install [Ollama](https://ollama.com/download).
+2. Download a model, for example: `ollama pull llama3.2:3b`.
+3. Confirm it appears in `ollama list`.
+4. Ask the ChatMemo administrator to set `NEXT_PUBLIC_OLLAMA_URL=http://localhost:11434` and restart the app.
+5. Open the model selector, choose **Local**, and select the downloaded model.
+
+Inference requests and responses travel directly between your browser and Ollama on the Mac. They do not pass through the ChatMemo server and require no API key. ChatMemo still saves the conversation and generated memories to Supabase as normal. This works best when ChatMemo itself is opened at `http://localhost:3000`; the production server cannot reach a model on your Mac through `localhost`.
+
+The sidebar **Models** section is different: it registers remote APIs compatible with OpenAI. Those endpoints must use public HTTPS. Models with an API key remain private; only keyless model definitions can be shared.
 
 ---
 
@@ -312,6 +325,8 @@ The **Tools** section (⚡ bolt icon in the left sidebar) lets you register exte
 4. Attach the tool to an **Assistant** — tools are not active in plain chats.
 
 > **Provider limitation:** Tools only work with **OpenAI** and **OpenRouter** models. If you select a tool while using an Anthropic, Google, Groq, or Mistral model directly, you will see an error and the chat will proceed without tool calls. Switch to an OpenAI or OpenRouter model to use tools.
+
+**Sharing safely:** custom headers can contain credentials for a private tool, but a shared tool must have empty headers and credential-free public configuration. Keep a tool private when its URL contains query parameters, a webhook secret, or embedded credentials, or when its OpenAPI schema declares authentication/cookie/secret parameters. ChatMemo enforces the same rule in the execution route and in Supabase RLS.
 
 ---
 
@@ -331,3 +346,5 @@ The **Tools** section (⚡ bolt icon in the left sidebar) lets you register exte
 - Memory context is capped at ~48 000 characters per chat. Very old conversation rows may be truncated if you have many; the lessons document and date-index rows are always prioritised.
 - The lessons update (after each chat) adds one extra LLM call to the background summariser. If the OpenRouter key is missing or rate-limited, the lessons update is skipped silently — it never blocks the chat.
 - Full-conversation recall works on the **OpenRouter** chat route. **ChatGPT** imports cannot be recovered word-for-word (they are stored compressed at import time); Perplexity, Claude, and in-app chats can. Title matching is exact and accent-sensitive — quote the title as it appears, or use a date.
+- Ollama models appear only while the configured local endpoint is reachable from your browser. Restart ChatMemo after changing `NEXT_PUBLIC_OLLAMA_URL`, and do not expose Ollama's port `11434` to the internet.
+- Tools are not currently available with Ollama models; use an OpenAI or OpenRouter model when a chat needs API tools.

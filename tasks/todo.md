@@ -19,8 +19,8 @@ Fuera de alcance: migraciones/RLS, exposición de secretos, otros IDOR y soporte
 - [x] Ejecutar revisión Staff Engineer final.
 - [x] Ejecutar la prueba de integración RLS contra PostgreSQL 18 local.
 - [x] Medir en solo lectura el impacto remoto: 0 herramientas existentes.
-- [ ] Inventariar `pg_policies` remoto con acceso SQL antes del despliegue.
-- [ ] Aplicar la migración a producción solo tras confirmación explícita.
+- [x] Inventariar `pg_policies` remoto con acceso SQL antes del despliegue.
+- [x] Aplicar la migración a producción tras confirmación explícita.
 
 ## Auditoría posterior de credenciales e IDOR
 
@@ -30,8 +30,8 @@ Fuera de alcance: migraciones/RLS, exposición de secretos, otros IDOR y soporte
 - [x] Corregir localmente exposición de `models.api_key`, IDOR y SSRF de modelos personalizados.
 - [x] Corregir localmente lectura/escritura IDOR en recuperación de archivos.
 - [x] Reparar consulta y disponibilidad de username sin exponer `profiles`.
-- [ ] Alinear RLS de `file_items` para archivos compartidos mediante colecciones.
-- [ ] Definir validación de secretos incrustados en `tools.schema` y `tools.url`.
+- [x] Alinear RLS de `file_items` para archivos compartidos mediante colecciones.
+- [x] Definir y aplicar validación de secretos incrustados en `tools.schema` y `tools.url`.
 
 ## Modelos remotos personalizados seguros
 
@@ -44,7 +44,7 @@ Fuera de alcance: migraciones/RLS, exposición de secretos, otros IDOR y soporte
 - [x] Implementar y probar el transporte HTTPS público con DNS fijado y streaming.
 - [x] Actualizar el contrato del cliente y añadir pruebas de ruta, transporte y migración.
 - [x] Ejecutar revisión Staff Engineer y la puerta completa de verificación.
-- [ ] Aplicar la migración o publicar cambios solo con confirmación explícita.
+- [x] Aplicar la migración remota tras confirmación explícita.
 
 Orden de release obligatorio: desplegar primero las rutas con defensa en profundidad, verificar que no usan `service_role` ni aceptan configuración secreta del cliente y aplicar después las migraciones RLS. No hacer rollback a las rutas antiguas tras aplicar las policies.
 
@@ -58,7 +58,7 @@ Orden de release obligatorio: desplegar primero las rutas con defensa en profund
 - [x] Verificar 172 pruebas, `type-check` y lint sin errores nuevos.
 - [x] Ejecutar las tres integraciones RLS juntas contra PostgreSQL 18 desechable con `pgvector`.
 - [x] Completar el build de producción con acceso a Google Fonts.
-- [ ] Aplicar migración/publicar únicamente con confirmación explícita y como una unidad coordinada.
+- [x] Aplicar la migración remota tras confirmación explícita y como una unidad coordinada.
 
 ## Consultas de username autenticadas
 
@@ -69,4 +69,24 @@ Orden de release obligatorio: desplegar primero las rutas con defensa en profund
 - [x] Ejecutar una integración RLS real contra PostgreSQL 18 local desechable.
 - [x] Ejecutar revisión Staff Engineer final sin hallazgos críticos.
 - [x] Ejecutar la suite Jest, type-check, lint y `git diff --check`.
-- [x] No aplicar la migración remota ni desplegar producción.
+- [x] Aplicar posteriormente la migración remota tras confirmación explícita.
+
+## Cierre de sincronización Supabase y hallazgos P2
+
+- [x] Inventariar migraciones, funciones y policies de la base Supabase remota sin leer datos sensibles.
+- [x] Impedir que una herramienta compartida contenga credenciales en su URL o valores secretos incrustados en el esquema.
+- [x] Alinear la lectura de `file_items` con archivos visibles mediante colecciones compartidas.
+- [x] Añadir pruebas unitarias y de integración RLS para ambos contratos.
+- [x] Ejecutar revisión Staff Engineer, suite completa, type-check, lint y build.
+- [x] Reparar cuatro entradas históricas y aplicar en orden las seis migraciones reales a Supabase remoto.
+- [x] Verificar historial, OpenAPI, RPC, columna `file_items.active`, helper privado y predicados de compartición remotos.
+- [x] Preparar un commit local.
+- [x] Recibir autorización explícita para push y PR.
+
+## Documentación y publicación del cierre
+
+- [x] Actualizar README con Ollama, migraciones y arquitectura de ejecución local.
+- [x] Actualizar las guías de usuario y administración con los límites de compartición y RLS.
+- [x] Revisar y verificar el diff documental final.
+- [x] Crear commit documental.
+- [x] Hacer push de `codex/finish-security-sync` y abrir el PR [#4](https://github.com/braisntext/chatmemo/pull/4).

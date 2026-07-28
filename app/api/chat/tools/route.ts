@@ -1,5 +1,6 @@
 import { openapiToFunctions } from "@/lib/openapi-conversion"
 import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
+import { isShareableToolConfig } from "@/lib/tool-sharing"
 import { ChatSettings } from "@/types"
 import { openAIStreamResponse } from "@/lib/server/streaming"
 import {
@@ -144,7 +145,7 @@ export async function POST(request: Request) {
 
     const { data: storedTools, error: toolsError } = await supabase
       .from("tools")
-      .select("id, user_id, schema, custom_headers")
+      .select("id, user_id, schema, url, custom_headers")
       .in("id", toolIds)
 
     if (toolsError) {
@@ -166,6 +167,16 @@ export async function POST(request: Request) {
       if (tool.user_id !== profile.user_id && Object.keys(headers).length > 0) {
         throw new UnsafeToolRequestError(
           "Shared tools cannot expose custom headers",
+          403
+        )
+      }
+
+      if (
+        tool.user_id !== profile.user_id &&
+        !isShareableToolConfig(tool.schema, tool.url)
+      ) {
+        throw new UnsafeToolRequestError(
+          "Shared tools cannot expose embedded credentials",
           403
         )
       }

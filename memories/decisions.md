@@ -51,3 +51,18 @@
 - Rechazado: usar `service_role` en las rutas o hacer legibles perfiles completos para resolver una consulta escalar.
 - Verificado: la migración y las consultas pasaron contra PostgreSQL 18 local con casos de propietario, colisión, input inválido, rol anónimo y sesión sin `auth.uid()`.
 - Pendiente: aplicar la migración remota solo con confirmación explícita.
+
+## 2026-07-28 — Cierre de secretos en herramientas y colecciones compartidas
+
+- Decidido: `tools.schema` y `tools.url` son configuración pública cuando una herramienta se comparte; cualquier herramienta que describa autenticación, parámetros de credenciales o valores con forma de secreto debe permanecer privada.
+- Decidido: aplicar la misma regla en RLS y en un `CHECK ... NOT VALID`; las filas históricas inseguras no se reescriben y solo siguen visibles para su propietario.
+- Decidido: la ruta de ejecución repite la validación para herramientas ajenas como defensa durante despliegues parciales.
+- Decidido: la visibilidad de `file_items` deriva de si la sesión puede leer su fila padre en `files`, incluyendo archivos privados compartidos mediante una colección.
+- Decidido: solo los fragmentos activos se comparten; los históricos inactivos siguen disponibles únicamente para el propietario.
+- Decidido: un enlace `collection_files` solo es válido si colección, archivo y enlace pertenecen al mismo usuario; las policies ocultan enlaces históricos cruzados y bloquean nuevos.
+- Motivo: cerrar los dos P2 sin separar todavía secretos en otra tabla ni duplicar la lógica completa de compartición de archivos.
+- Verificado: 212 pruebas Jest y las suites RLS de herramientas, modelos, archivos/colecciones y username pasan contra PostgreSQL 18 desechable con `pgvector`; también pasan type-check, lint, formato y build de producción.
+- Completado: el inventario detectó cuatro migraciones antiguas ya materializadas pero ausentes del historial; tabla, columnas, RLS, cinco policies, extensión e índices coincidían y sus versiones se repararon como aplicadas.
+- Completado: las seis migraciones restantes se aplicaron en orden a Supabase remoto. El historial local/remoto quedó alineado y un dry-run posterior confirmó que la base está actualizada.
+- Verificado remoto: `file_items.active` es obligatorio con default `true`; las cuatro RPC esperadas están disponibles; `private.collection_file_link_is_owned` no aparece en OpenAPI; configuraciones seguras se aceptan y URLs con query secrets o webhooks se rechazan.
+- Documentado: README y guías distinguen Ollama local browser-to-loopback de modelos remotos HTTPS, sustituyen el SQL manual por migraciones versionadas y explican las garantías de RLS y compartición sin secretos.

@@ -1,5 +1,11 @@
 \set ON_ERROR_STOP on
 
+\if :{?chatmemo_rls_test}
+\else
+    \echo 'Refusing to run: pass -v chatmemo_rls_test=1 and use a disposable database.'
+    \quit 1
+\endif
+
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
@@ -11,9 +17,9 @@ BEGIN
 END
 $$;
 
-CREATE SCHEMA auth;
+CREATE SCHEMA IF NOT EXISTS auth;
 
-CREATE FUNCTION auth.uid()
+CREATE OR REPLACE FUNCTION auth.uid()
 RETURNS uuid
 LANGUAGE sql
 STABLE

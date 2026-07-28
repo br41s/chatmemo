@@ -14,6 +14,10 @@ SELECT 'CREATE ROLE anon NOLOGIN'
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon')
 \gexec
 
+SELECT 'CREATE ROLE service_role NOLOGIN'
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role')
+\gexec
+
 CREATE SCHEMA auth;
 
 CREATE FUNCTION auth.uid()
@@ -31,7 +35,9 @@ CREATE TABLE public.tools (
     id uuid PRIMARY KEY,
     user_id uuid NOT NULL,
     sharing text NOT NULL DEFAULT 'private',
-    custom_headers jsonb NOT NULL DEFAULT '{}'
+    custom_headers jsonb NOT NULL DEFAULT '{}',
+    schema jsonb NOT NULL DEFAULT '{"openapi":"3.1.0"}',
+    url text NOT NULL DEFAULT ''
 );
 
 ALTER TABLE public.tools ENABLE ROW LEVEL SECURITY;
@@ -106,7 +112,83 @@ VALUES
         to_jsonb(E'{\v}'::text)
     );
 
+INSERT INTO public.tools (id, user_id, sharing, custom_headers, schema, url)
+VALUES
+    (
+        '00000000-0000-0000-0000-000000000010',
+        '11111111-1111-1111-1111-111111111111',
+        'public',
+        '{}',
+        '{"openapi":"3.1.0"}',
+        'https://api.example.com?api_key=historical-secret'
+    ),
+    (
+        '00000000-0000-0000-0000-000000000011',
+        '11111111-1111-1111-1111-111111111111',
+        'public',
+        '{}',
+        '{"authorization":"historical-secret"}',
+        ''
+    ),
+    (
+        '00000000-0000-0000-0000-000000000012',
+        '11111111-1111-1111-1111-111111111111',
+        'private',
+        '{}',
+        '{"authorization":"private-secret"}',
+        'https://user:password@api.example.com'
+    ),
+    (
+        '00000000-0000-0000-0000-000000000013',
+        '11111111-1111-1111-1111-111111111111',
+        'public',
+        '{}',
+        to_jsonb('{"authorization":"serialized-secret"}'::text),
+        ''
+    ),
+    (
+        '00000000-0000-0000-0000-000000000014',
+        '11111111-1111-1111-1111-111111111111',
+        'public',
+        '{}',
+        '{"description":"Example: Bearer abcdefghijklmnopqrstuvwxyz=="}',
+        ''
+    ),
+    (
+        '00000000-0000-0000-0000-000000000015',
+        '11111111-1111-1111-1111-111111111111',
+        'public',
+        '{}',
+        '{"openapi":"3.1.0"}',
+        'https://api.example.com?subscription-key=historical-secret'
+    ),
+    (
+        '00000000-0000-0000-0000-000000000016',
+        '11111111-1111-1111-1111-111111111111',
+        'public',
+        '{}',
+        '{"apiKey":{"default":"plain-secret-value","type":"string"}}',
+        ''
+    ),
+    (
+        '00000000-0000-0000-0000-000000000017',
+        '11111111-1111-1111-1111-111111111111',
+        'public',
+        '{}',
+        '{"openapi":"3.1.0"}',
+        'https://api.telegram.org/bot123456:abcdefghijklmnopqrstuvwxyz'
+    ),
+    (
+        '00000000-0000-0000-0000-000000000018',
+        '11111111-1111-1111-1111-111111111111',
+        'public',
+        '{}',
+        '{"servers":[{"url":"https://hooks.zapier.com/hooks/catch/123456/abcdefghijklmnop"}]}',
+        ''
+    );
+
 \ir ../../supabase/migrations/20260726000000_tools_shared_without_secrets.sql
+\ir ../../supabase/migrations/20260728010000_tools_shared_public_config.sql
 
 DO $$
 BEGIN
@@ -135,7 +217,7 @@ BEGIN
         FROM pg_policies
         WHERE schemaname = 'public'
           AND tablename = 'tools'
-          AND policyname = 'Allow authenticated view of shared tools without headers'
+          AND policyname = 'Allow authenticated view of shared tools without secrets'
           AND roles = ARRAY['authenticated'::name]
     ) THEN
         RAISE EXCEPTION 'the authenticated shared-tool policy is missing';
@@ -149,6 +231,16 @@ BEGIN
           AND NOT convalidated
     ) THEN
         RAISE EXCEPTION 'the historical-row constraint is missing or validated';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conrelid = 'public.tools'::regclass
+          AND conname = 'tools_shared_without_embedded_secrets'
+          AND NOT convalidated
+    ) THEN
+        RAISE EXCEPTION 'the embedded-secret constraint is missing or validated';
     END IF;
 END
 $$;
@@ -187,14 +279,14 @@ BEGIN
     INTO visible_count
     FROM public.tools;
 
-    IF visible_count <> 9 THEN
+    IF visible_count <> 18 THEN
         RAISE EXCEPTION 'owner lost access to tools: % visible', visible_count;
     END IF;
 
     BEGIN
         INSERT INTO public.tools (id, user_id, sharing, custom_headers)
         VALUES (
-            '00000000-0000-0000-0000-000000000010',
+            '00000000-0000-0000-0000-000000000020',
             auth.uid(),
             'public',
             '{"Authorization":"new-secret"}'
@@ -219,11 +311,41 @@ BEGIN
 
     INSERT INTO public.tools (id, user_id, sharing, custom_headers)
     VALUES (
-        '00000000-0000-0000-0000-000000000011',
+        '00000000-0000-0000-0000-000000000021',
         auth.uid(),
         'public',
         to_jsonb(E'\n{  }\t'::text)
     );
+
+    BEGIN
+        INSERT INTO public.tools (id, user_id, sharing, custom_headers, schema, url)
+        VALUES (
+            '00000000-0000-0000-0000-000000000022',
+            auth.uid(),
+            'public',
+            '{}',
+            '{"openapi":"3.1.0"}',
+            'https://api.example.com?token=new-secret'
+        );
+        RAISE EXCEPTION 'shared tool with a URL credential was inserted';
+    EXCEPTION
+        WHEN check_violation THEN NULL;
+    END;
+
+    BEGIN
+        INSERT INTO public.tools (id, user_id, sharing, custom_headers, schema, url)
+        VALUES (
+            '00000000-0000-0000-0000-000000000023',
+            auth.uid(),
+            'public',
+            '{}',
+            '{"components":{"securitySchemes":{"BearerAuth":{"type":"http"}}}}',
+            ''
+        );
+        RAISE EXCEPTION 'shared tool with an authenticated schema was inserted';
+    EXCEPTION
+        WHEN check_violation THEN NULL;
+    END;
 END
 $$;
 
