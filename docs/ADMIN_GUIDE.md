@@ -13,7 +13,7 @@
 5. [Database Setup](#5-database-setup)
 6. [Running the App](#6-running-the-app)
 7. [Sync Setup (Bookmarklet + Claude Code Hook)](#7-sync-setup-bookmarklet--claude-code-hook)
-8. [Switching the Summarisation Model](#8-switching-the-summarisation-model)
+8. [Model Configuration](#8-model-configuration)
 9. [Upgrading](#9-upgrading)
 10. [Troubleshooting](#10-troubleshooting)
 11. [Security Notes](#11-security-notes)
@@ -45,6 +45,8 @@
 │  /api/export/summaries     ← export grouped by src  │
 │  /api/memory/summarize     ← auto-summarise + lessons│
 │  /api/chat/openrouter      ← chat completions       │
+│  /api/chat/custom          ← remote custom models   │
+│  /api/retrieval/*          ← authorised file search │
 │  /api/timeline             ← conversation timeline  │
 │                                                     │
 │  lib/server/openrouter.ts       ← shared LLM helpers│
@@ -65,6 +67,8 @@
   (summarisation    (summaries, user_lessons,
    + lessons)        chats, messages)
 ```
+
+Local Ollama models follow a separate path: the browser discovers models at `NEXT_PUBLIC_OLLAMA_URL/api/tags` and streams chat directly from `NEXT_PUBLIC_OLLAMA_URL/api/chat`. The public Next.js server never attempts to reach `localhost` or the Mac's LAN. Remote custom models use `/api/chat/custom`, which reloads the stored model through the user's Supabase session and only connects to validated public HTTPS destinations.
 
 **Claude Code scripts** (run outside the Next.js server, talk to Supabase/OpenRouter directly):
 
@@ -146,6 +150,10 @@ CHATMEMO_IMPORT_USER_ID=<set automatically by npm run setup:sync>
 NEXT_PUBLIC_USER_FILE_SIZE_LIMIT=10485760  # 10 MB (chat file attachments)
 # Note: import routes (ChatGPT/Claude) have their own 100 MB limit in code
 
+# ── Local models via Ollama ─────────────────────────
+# Read by the browser. Intended for ChatMemo running on the same Mac.
+NEXT_PUBLIC_OLLAMA_URL=http://localhost:11434
+
 # ── Optional provider keys ──────────────────────────
 OPENAI_API_KEY=
 ANTHROPIC_API_KEY=
@@ -158,7 +166,7 @@ Find them at **Supabase dashboard → Project Settings → API**.
 
 - `NEXT_PUBLIC_SUPABASE_URL` — the project URL.
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY` — public anon key (safe to expose client-side).
-- `SUPABASE_SERVICE_ROLE_KEY` — **secret**. Never expose in client code. Used by the bookmarklet import endpoint and the sync hook to bypass Row Level Security.
+- `SUPABASE_SERVICE_ROLE_KEY` — **secret**. Never expose in client code. Reserved for explicitly trusted import/sync operations; authenticated chat, custom-model, username, and file-retrieval paths use the user's session and Row Level Security.
 
 ---
 
@@ -173,8 +181,12 @@ npm run db-migrate   # runs all pending migrations
 npm run db-types     # regenerates TypeScript types from schema
 
 # Remote (production)
-npm run db-push      # pushes local migrations to remote Supabase
+npx supabase link --project-ref <your-project-ref>
+npm run db-push          # apply pending versioned migrations
+npm run db-types-remote  # regenerate types from the linked database
 ```
+
+`npm run db-push` should finish with the local and remote migration histories aligned. Use `npx supabase migration list --linked` and `npx supabase db push --linked --dry-run` to verify. Do not paste migration files individually or use `migration repair` unless you have first proven that the corresponding schema objects and policies already exist remotely.
 
 ### Key tables
 
@@ -185,10 +197,14 @@ npm run db-push      # pushes local migrations to remote Supabase
 | `profiles` | User profile (display name, API keys, settings). |
 | `chats` | Chat sessions. |
 | `messages` | Individual messages within a chat. |
+| `models` | Remote OpenAI-compatible model definitions. Shared rows cannot contain API keys. |
+| `tools` | OpenAPI tool definitions. Shared rows must contain public, credential-free configuration. |
+| `files` / `file_items` | Uploaded files and versioned retrieval chunks. Only active chunks are retrieved or shared. |
+| `collections` / `collection_files` | File grouping and the ownership-checked links used for collection sharing. |
 
 ### Performance indexes
 
-Run these once in the Supabase SQL editor. They cover the middleware home-workspace lookup and all memory-retrieval queries:
+These indexes cover the middleware home-workspace lookup and memory-retrieval queries:
 
 ```sql
 CREATE INDEX IF NOT EXISTS idx_workspaces_user_home
@@ -198,26 +214,11 @@ CREATE INDEX IF NOT EXISTS idx_summaries_user_created
   ON summaries (user_id, created_at DESC);
 ```
 
-These are also included in migration `20260520000000_perf_indexes.sql` and will be applied automatically on fresh installs via `supabase db push`.
+They are included in migration `20260520000000_perf_indexes.sql` and are applied automatically by `supabase db push`; the SQL is shown only for diagnostics.
 
-### `user_lessons` migration
+### Migration state
 
-The `supabase db push` CLI command is blocked by a pre-existing policy conflict in an older migration. Run this SQL **once** manually in the Supabase dashboard SQL editor:
-
-```sql
-CREATE TABLE IF NOT EXISTS user_lessons (
-  id          uuid        PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id     uuid        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  content     text        NOT NULL DEFAULT '',
-  updated_at  timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT  user_lessons_user_id_key UNIQUE (user_id)
-);
-ALTER TABLE user_lessons ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users can read own lessons"   ON user_lessons FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Users can insert own lessons" ON user_lessons FOR INSERT WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Users can update own lessons" ON user_lessons FOR UPDATE USING (auth.uid() = user_id);
-CREATE POLICY "Users can delete own lessons" ON user_lessons FOR DELETE USING (auth.uid() = user_id);
-```
+The production project is synchronized through `20260728020000_file_items_visible_through_collections.sql`. That sequence includes `user_lessons`, performance indexes, authenticated username RPCs, credential-free sharing for tools and remote models, transactional file-chunk replacement, and collection-aware file visibility. A fresh project should receive the same state only through the ordered files in `supabase/migrations/`.
 
 ### RLS policies on `summaries`
 
@@ -230,6 +231,13 @@ All operations are scoped to `auth.uid() = user_id`:
 | DELETE | `user_id = auth.uid()` |
 
 The **service role key** bypasses RLS — used by the bookmarklet import and the sync hook.
+
+Additional sharing rules are enforced in the database:
+
+- Shared remote models must have an empty `api_key`; keyed models remain owner-only.
+- Shared tools must have empty custom headers, a public HTTPS URL without query credentials, and a schema without authentication fields or embedded secrets.
+- File chunks can only be written by the file owner. Shared collections expose only active chunks belonging to a valid same-owner collection/file link.
+- Username lookup RPCs require an authenticated session and expose only the requested scalar result, not profile rows.
 
 ---
 
@@ -331,7 +339,9 @@ The daemon polls every 5 minutes and processes sessions idle for 10+ minutes. It
 
 ---
 
-## 8. Switching the Summarisation Model
+## 8. Model Configuration
+
+### Summarisation model
 
 There are two separate model constants to update:
 
@@ -356,6 +366,32 @@ export const SUMMARIZE_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
 | `openai/gpt-oss-120b:free` | medium | high | Can be slow under load |
 
 > **Note:** Free-tier models share a public quota. If you hit rate limits frequently, add credits to your OpenRouter account and remove the `:free` suffix from the model name.
+
+### Local chat models with Ollama
+
+Ollama is optional and independent from the OpenRouter summarisation model. Install the macOS app from [ollama.com](https://ollama.com/download), then download at least one model:
+
+```bash
+ollama pull llama3.2:3b
+ollama list
+curl http://localhost:11434/api/tags
+```
+
+Set the browser-visible endpoint and restart Next.js:
+
+```env
+NEXT_PUBLIC_OLLAMA_URL=http://localhost:11434
+```
+
+```bash
+npm run dev
+```
+
+The selector shows an Ollama-backed **Local** tab when `/api/tags` returns models. Inference streams directly between the browser and Ollama; no Ollama API key is stored in Supabase or sent through the Next.js API. Chat messages and generated memories are still persisted to Supabase through ChatMemo's normal authenticated flow.
+
+Keep this endpoint on loopback. Do not expose port `11434` to the public internet. This design assumes ChatMemo is opened locally on the same Mac; a hosted ChatMemo origin may also require an explicit Ollama origin allowlist and is not proxied through the production server.
+
+Remote OpenAI-compatible servers are configured separately under **Models**. They must use public HTTPS endpoints. A model containing an API key is always private; only keyless definitions can be shared.
 
 ---
 
@@ -430,6 +466,9 @@ Each source stores a watermark row `[chatmemo:watermark:source=X ts=N]` in the s
 ### Timeline shows no Perplexity entries after import
 The timeline parser skips watermark rows and date-index rows automatically. Perplexity entries require either the `[source:perplexity]` prefix or `Source: Perplexity /` text in the content body. If entries still don't appear, check the Memory History panel to confirm the rows were inserted, then reload the timeline.
 
+### Ollama models do not appear in the Local tab
+Confirm that `NEXT_PUBLIC_OLLAMA_URL` is present when Next.js starts and that `curl http://localhost:11434/api/tags` returns the downloaded models. Restart `npm run dev` after changing `.env.local`. If ChatMemo is opened from a different origin, inspect the browser console for an Ollama CORS or private-network error; prefer running ChatMemo on `http://localhost:3000` rather than exposing Ollama beyond loopback.
+
 ---
 
 ## 11. Security Notes
@@ -439,6 +478,10 @@ The timeline parser skips watermark rows and date-index rows automatically. Perp
 - `.env.local` is gitignored. Verify with `git check-ignore -v .env.local`.
 - The bookmarklet URL contains the import token in plain text. Do not share your bookmarks export.
 - CORS on `/api/import/conversation` allows `https://claude.ai` and `http://localhost:3000`. Update `ALLOWED_ORIGINS` in the route if you deploy to a custom domain.
+- Never expose Ollama's port `11434` publicly. Local-model inference is intentionally browser-to-loopback and never passes through the public server; chat history is still stored in Supabase normally.
+- Remote custom-model and tool endpoints are restricted to public HTTPS destinations. Loopback, private-network, DNS-rebinding, cross-origin redirect, oversized-response, and credential-bearing shared configurations are rejected.
+- Treat a tool's URL and OpenAPI schema as public when sharing it. Keep tools private if they need headers, authentication schemes, query credentials, webhook secrets, or embedded tokens.
+- Keep deployments coordinated with migrations: publish the session/RLS-aware routes before or together with their policies, and never roll back to routes that use `service_role` for custom models or file retrieval.
 
 ---
 
