@@ -90,3 +90,15 @@ Orden de release obligatorio: desplegar primero las rutas con defensa en profund
 - [x] Revisar y verificar el diff documental final.
 - [x] Crear commit documental.
 - [x] Hacer push de `codex/finish-security-sync` y abrir el PR [#4](https://github.com/braisntext/chatmemo/pull/4).
+
+## Página pública del repositorio
+
+- [x] Actualizar y verificar la descripción About de GitHub.
+- [x] Acordar la estructura editorial del README como landing page.
+- [x] Implementar y verificar el README mejorado.
+- [ ] Publicar el cambio mediante una rama y PR independientes.
+
+Trabajo futuro fuera de este cambio:
+
+- [ ] Inyectar memoria persistente en Ollama manteniendo la inferencia local.
+- [ ] Inyectar memoria persistente en modelos remotos personalizados.

@@ -66,3 +66,10 @@
 - Completado: las seis migraciones restantes se aplicaron en orden a Supabase remoto. El historial local/remoto quedó alineado y un dry-run posterior confirmó que la base está actualizada.
 - Verificado remoto: `file_items.active` es obligatorio con default `true`; las cuatro RPC esperadas están disponibles; `private.collection_file_link_is_owned` no aparece en OpenAPI; configuraciones seguras se aceptan y URLs con query secrets o webhooks se rechazan.
 - Documentado: README y guías distinguen Ollama local browser-to-loopback de modelos remotos HTTPS, sustituyen el SQL manual por migraciones versionadas y explican las garantías de RLS y compartición sin secretos.
+
+## 2026-07-29 — Página pública y límites de modelos personalizados
+
+- Decidido: el About de GitHub describe ChatMemo como memoria y workspace de chat autoalojado para imports, proveedores cloud y Ollama local.
+- Decidido: el README funciona como landing page con propuesta de valor, flujo, capacidades, límites de privacidad, instalación y rutas de modelo antes del detalle operativo.
+- Decidido: documentar ahora, sin ampliar el alcance, que Ollama y los modelos remotos personalizados todavía no reciben la memoria persistente; Ollama tampoco soporta herramientas.
+- Decidido: conservar sin usar la captura histórica de Chatbot UI hasta disponer de una captura actual de ChatMemo.
