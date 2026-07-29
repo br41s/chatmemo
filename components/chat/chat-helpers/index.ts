@@ -165,12 +165,46 @@ export const createTempMessages = (
   }
 }
 
+// Captured before createTempMessages runs, because that function blanks the
+// last assistant message in place to make room for the regenerated text.
+export interface RegenerationTarget {
+  id: string
+  content: string
+}
+
+// A failed send removes the optimistic user/assistant pair. A failed
+// regeneration must instead put the previous answer back, since the user's
+// message is older history that was never added by this attempt.
+export const rollbackFailedChatMessages = (
+  setChatMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
+  regenerationTarget: RegenerationTarget | null
+) => {
+  setChatMessages(prevMessages => {
+    if (!regenerationTarget) {
+      return prevMessages.slice(0, -2)
+    }
+
+    return prevMessages.map(chatMessage =>
+      chatMessage.message.id === regenerationTarget.id
+        ? {
+            ...chatMessage,
+            message: {
+              ...chatMessage.message,
+              content: regenerationTarget.content
+            }
+          }
+        : chatMessage
+    )
+  })
+}
+
 export const handleLocalChat = async (
   payload: ChatPayload,
   profile: Tables<"profiles">,
   chatSettings: ChatSettings,
   tempAssistantMessage: ChatMessage,
   isRegeneration: boolean,
+  regenerationTarget: RegenerationTarget | null,
   newAbortController: AbortController,
   setIsGenerating: React.Dispatch<React.SetStateAction<boolean>>,
   setFirstTokenReceived: React.Dispatch<React.SetStateAction<boolean>>,
@@ -192,7 +226,8 @@ export const handleLocalChat = async (
     false,
     newAbortController,
     setIsGenerating,
-    setChatMessages
+    setChatMessages,
+    regenerationTarget
   )
 
   return await processResponse(
@@ -214,6 +249,7 @@ export const handleHostedChat = async (
   modelData: LLM,
   tempAssistantChatMessage: ChatMessage,
   isRegeneration: boolean,
+  regenerationTarget: RegenerationTarget | null,
   newAbortController: AbortController,
   newMessageImages: MessageImage[],
   chatImages: MessageImage[],
@@ -260,7 +296,8 @@ export const handleHostedChat = async (
     true,
     newAbortController,
     setIsGenerating,
-    setChatMessages
+    setChatMessages,
+    regenerationTarget
   )
 
   return await processResponse(
@@ -282,7 +319,8 @@ export const fetchChatResponse = async (
   isHosted: boolean,
   controller: AbortController,
   setIsGenerating: React.Dispatch<React.SetStateAction<boolean>>,
-  setChatMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>
+  setChatMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
+  regenerationTarget: RegenerationTarget | null
 ) => {
   const response = await fetch(url, {
     method: "POST",
@@ -303,7 +341,7 @@ export const fetchChatResponse = async (
     toast.error(errorMessage)
 
     setIsGenerating(false)
-    setChatMessages(prevMessages => prevMessages.slice(0, -2))
+    rollbackFailedChatMessages(setChatMessages, regenerationTarget)
     throw new Error(errorMessage)
   }
 
