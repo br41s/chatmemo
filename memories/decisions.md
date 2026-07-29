@@ -73,3 +73,17 @@
 - Decidido: el README funciona como landing page con propuesta de valor, flujo, capacidades, límites de privacidad, instalación y rutas de modelo antes del detalle operativo.
 - Decidido: documentar ahora, sin ampliar el alcance, que Ollama y los modelos remotos personalizados todavía no reciben la memoria persistente; Ollama tampoco soporta herramientas.
 - Decidido: conservar sin usar la captura histórica de Chatbot UI hasta disponer de una captura actual de ChatMemo.
+
+## 2026-07-29 — Revisión de la auditoría y correcciones derivadas
+
+- Revisado: la auditoría de seguridad se sostiene. El fijado de DNS contra rebinding, las redirecciones del mismo origen, las policies RLS y los predicados de compartición se revisaron sin hallazgos críticos.
+- Decidido: cuando falla una regeneración se restaura la respuesta anterior en lugar de eliminar el turno; el mensaje del usuario es historial previo que ese intento nunca añadió.
+- Decidido: `regenerationTarget` se captura en `use-chat-handler` antes de `createTempMessages`, porque esa función vacía en su sitio el último mensaje del asistente y recalcular el objetivo más tarde restauraría una cadena vacía.
+- Decidido: el rollback reconstruye los objetos con spreads en vez de reasignar `.content`; el objeto mutado es idéntico por referencia al de estado y una escritura in situ no volvería a renderizar.
+- Decidido: existe una sola implementación de `readLimitedJson` en `lib/server`; la copia local de la ruta de herramientas aceptaba `NaN` y valores negativos en `Content-Length` y sustituía UTF-8 inválido en silencio.
+- Decidido: `lib/tool-sharing.ts` debe reflejar exactamente los predicados SQL de compartición; cualquier `jsonb` que no sea objeto es no compartible en ambos lados.
+- Motivo: la base de datos era el lado estricto y no hubo fuga, pero la aplicación podía considerar compartible una herramienta que la policy oculta y el `CHECK` rechaza, con un error opaco como único síntoma.
+- Rechazado: recalcular el objetivo de regeneración dentro de `fetchChatResponse`, por la mutación previa en `createTempMessages`.
+- Verificado: `format:check`, `type-check`, 223 pruebas Jest (11 nuevas) y build de producción. La build borra `public/worker-development.js` y se restauró con `git checkout --`.
+- Publicado: tres commits atómicos en `claude/chatmemo-audit-review-60c4f6` y el PR [#6](https://github.com/braisntext/chatmemo/pull/6).
+- Sin cambios: migraciones, módulos SSRF y los cambios de comportamiento deliberados de la auditoría (herramientas y modelos compartidos ya no son visibles para `anon`; un fallo de retrieval aborta el envío en vez de degradar a cero fuentes).

@@ -98,6 +98,17 @@ Orden de release obligatorio: desplegar primero las rutas con defensa en profund
 - [x] Implementar y verificar el README mejorado.
 - [x] Publicar el cambio mediante una rama y el PR [#5](https://github.com/braisntext/chatmemo/pull/5).
 
+## Revisión de la auditoría y correcciones derivadas
+
+- [x] Revisar los tres commits de seguridad, las migraciones RLS y los módulos SSRF.
+- [x] Verificar el estado real: `type-check`, suite Jest, lint y migraciones aplicadas en remoto.
+- [x] Restaurar la respuesta previa cuando falla una regeneración en las rutas hosted y Ollama.
+- [x] Unificar `readLimitedJson` en la ruta de herramientas con el helper compartido.
+- [x] Alinear `isShareableToolSchema` con `tool_schema_contains_credentials` para esquemas que no son objeto.
+- [x] Añadir pruebas de regresión del rollback y de la paridad de esquemas.
+- [x] Ejecutar `format:check`, `type-check`, la suite completa y el build de producción.
+- [x] Publicar tres commits atómicos y abrir el PR [#6](https://github.com/braisntext/chatmemo/pull/6).
+
 Trabajo futuro fuera de este cambio:
 
 - [ ] Inyectar memoria persistente en Ollama manteniendo la inferencia local.
