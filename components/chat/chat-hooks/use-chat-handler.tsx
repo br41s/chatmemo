@@ -20,6 +20,8 @@ import {
   handleLocalChat,
   handleRetrieval,
   processResponse,
+  RegenerationTarget,
+  rollbackFailedChatMessages,
   validateChatSettings
 } from "../chat-helpers"
 
@@ -194,12 +196,14 @@ export const useChatHandler = () => {
     isRegeneration: boolean
   ) => {
     const startingInput = messageContent
-    const regenerationTarget = isRegeneration
-      ? {
-          id: chatMessages[chatMessages.length - 1]?.message.id,
-          content: chatMessages[chatMessages.length - 1]?.message.content
-        }
-      : null
+    const lastChatMessage = chatMessages[chatMessages.length - 1]
+    const regenerationTarget: RegenerationTarget | null =
+      isRegeneration && lastChatMessage
+        ? {
+            id: lastChatMessage.message.id,
+            content: lastChatMessage.message.content
+          }
+        : null
 
     try {
       setUserInput("")
@@ -317,23 +321,7 @@ export const useChatHandler = () => {
           const errorMessage =
             errorData?.message || "The selected tool request failed."
           toast.error(errorMessage)
-          setChatMessages(previousMessages => {
-            if (!regenerationTarget) {
-              return previousMessages.slice(0, -2)
-            }
-
-            return previousMessages.map(chatMessage =>
-              chatMessage.message.id === regenerationTarget.id
-                ? {
-                    ...chatMessage,
-                    message: {
-                      ...chatMessage.message,
-                      content: regenerationTarget.content
-                    }
-                  }
-                : chatMessage
-            )
-          })
+          rollbackFailedChatMessages(setChatMessages, regenerationTarget)
           throw new Error(errorMessage)
         }
 
@@ -356,6 +344,7 @@ export const useChatHandler = () => {
             chatSettings!,
             tempAssistantChatMessage,
             isRegeneration,
+            regenerationTarget,
             newAbortController,
             setIsGenerating,
             setFirstTokenReceived,
@@ -369,6 +358,7 @@ export const useChatHandler = () => {
             modelData!,
             tempAssistantChatMessage,
             isRegeneration,
+            regenerationTarget,
             newAbortController,
             newMessageImages,
             chatImages,

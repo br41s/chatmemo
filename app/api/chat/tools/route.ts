@@ -10,6 +10,10 @@ import {
   sanitizeToolHeaders,
   UnsafeToolRequestError
 } from "@/lib/server/safe-tool-request"
+import {
+  LimitedJsonError,
+  readLimitedJson
+} from "@/lib/server/read-limited-json"
 import { createClient } from "@/lib/supabase/server"
 import { cookies } from "next/headers"
 import OpenAI from "openai"
@@ -59,72 +63,12 @@ function encodePathParameter(value: unknown) {
   return encodeURIComponent(text)
 }
 
-async function readLimitedJson(request: Request) {
-  const contentLength = request.headers.get("content-length")
-  if (contentLength && Number(contentLength) > MAX_REQUEST_BYTES) {
-    throw new UnsafeToolRequestError("Request body is too large", 413)
-  }
-
-  if (!request.body) {
-    throw new UnsafeToolRequestError("Request body is required")
-  }
-
-  const reader = request.body.getReader()
-  const chunks: Uint8Array[] = []
-  let receivedBytes = 0
-  const deadline = Date.now() + REQUEST_BODY_TIMEOUT_MS
-
-  while (true) {
-    const remaining = deadline - Date.now()
-    if (remaining <= 0) {
-      await reader.cancel()
-      throw new UnsafeToolRequestError("Request body timed out", 408)
-    }
-    const { done, value } = await new Promise<
-      ReadableStreamReadResult<Uint8Array>
-    >((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        void reader.cancel()
-        reject(new UnsafeToolRequestError("Request body timed out", 408))
-      }, remaining)
-      reader.read().then(
-        result => {
-          clearTimeout(timeout)
-          resolve(result)
-        },
-        error => {
-          clearTimeout(timeout)
-          reject(error)
-        }
-      )
-    })
-    if (done) break
-
-    receivedBytes += value.byteLength
-    if (receivedBytes > MAX_REQUEST_BYTES) {
-      await reader.cancel()
-      throw new UnsafeToolRequestError("Request body is too large", 413)
-    }
-    chunks.push(value)
-  }
-
-  const body = new Uint8Array(receivedBytes)
-  let offset = 0
-  for (const chunk of chunks) {
-    body.set(chunk, offset)
-    offset += chunk.byteLength
-  }
-
-  try {
-    return JSON.parse(new TextDecoder().decode(body)) as unknown
-  } catch {
-    throw new UnsafeToolRequestError("Request body must be valid JSON")
-  }
-}
-
 export async function POST(request: Request) {
   try {
-    const json = await readLimitedJson(request)
+    const json = await readLimitedJson(request, {
+      maxBytes: MAX_REQUEST_BYTES,
+      timeoutMs: REQUEST_BODY_TIMEOUT_MS
+    })
     const {
       chatSettings,
       messages,
@@ -367,7 +311,9 @@ export async function POST(request: Request) {
     return openAIStreamResponse(secondResponse)
   } catch (error: any) {
     console.error(error)
-    const isExpectedRequestError = error instanceof UnsafeToolRequestError
+    const isExpectedRequestError =
+      error instanceof UnsafeToolRequestError ||
+      error instanceof LimitedJsonError
     const errorMessage = isExpectedRequestError
       ? error.message
       : error.error?.message || "An unexpected error occurred"
