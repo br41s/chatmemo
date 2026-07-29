@@ -78,6 +78,16 @@ describe("shared tool configuration", () => {
     expect(isShareableToolSchema("not-json")).toBe(false)
   })
 
+  // tool_schema_contains_credentials returns true for any non-object jsonb, so
+  // the app must reject the same shapes or it would call a tool shareable that
+  // the CHECK constraint and the RLS policy both refuse.
+  it.each([42, true, null, "42", "[]", [], [{ name: "city", in: "query" }]])(
+    "rejects a schema that is not a JSON object: %p",
+    schema => {
+      expect(isShareableToolSchema(schema)).toBe(false)
+    }
+  )
+
   it("requires both schema and URL to be shareable", () => {
     expect(
       isShareableToolConfig(

@@ -157,6 +157,13 @@ export function isShareableToolSchema(value: unknown) {
     }
   }
 
+  // Mirrors tool_schema_contains_credentials: anything that is not a JSON
+  // object is rejected outright, so the app and the CHECK constraint agree on
+  // which stored schemas may be shared.
+  if (typeof schema !== "object" || schema === null || Array.isArray(schema)) {
+    return false
+  }
+
   return !valueContainsCredentials(schema, new WeakSet())
 }
 
