@@ -6,9 +6,8 @@ with a persistent cross-provider memory system. Deployed on Vercel
 
 ## Session start
 
-1. Read this file.
-2. Check `memories/decisions.md` and `memories/errors.md` at the workspace
-   level (`/Users/brais/VSCODE/memories/`) for recent ChatMemo entries.
+Workspace `memories/decisions/chatmemo.md` holds this project's decision history.
+Paths are workspace-relative — never hardcode an absolute home directory.
 
 ## Stack
 
