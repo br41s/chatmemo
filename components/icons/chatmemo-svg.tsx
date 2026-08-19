@@ -1,11 +1,11 @@
 import { FC } from "react"
 
-interface ChatbotUISVGProps {
+interface ChatMemoSVGProps {
   theme: "dark" | "light"
   scale?: number
 }
 
-export const ChatbotUISVG: FC<ChatbotUISVGProps> = ({ theme, scale = 1 }) => {
+export const ChatMemoSVG: FC<ChatMemoSVGProps> = ({ theme, scale = 1 }) => {
   return (
     <svg
       width={189 * scale}

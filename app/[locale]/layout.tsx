@@ -12,10 +12,11 @@ import { ReactNode } from "react"
 import "./globals.css"
 
 const inter = Inter({ subsets: ["latin"] })
-const APP_NAME = "Chatbot UI"
-const APP_DEFAULT_TITLE = "Chatbot UI"
-const APP_TITLE_TEMPLATE = "%s - Chatbot UI"
-const APP_DESCRIPTION = "Chabot UI PWA!"
+const APP_NAME = "ChatMemo"
+const APP_DEFAULT_TITLE = "ChatMemo"
+const APP_TITLE_TEMPLATE = "%s · ChatMemo"
+const APP_DESCRIPTION =
+  "One memory across your AI conversations. Import from ChatGPT, Claude, Claude Code and Perplexity, then carry that context into every new chat."
 
 interface RootLayoutProps {
   children: ReactNode
