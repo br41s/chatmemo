@@ -104,3 +104,22 @@
 - Verificado: `lint`, `format:write`, type-check en condiciones de clon limpio (sin `next-env.d.ts` generado), 234 pruebas Jest en 27 suites (11 nuevas) y build de producción. La build borró `public/worker-development.js` y se restauró con `git checkout --`.
 - Confirmado: las dos pruebas nuevas de lecciones fallan contra el código anterior y pasan contra el corregido.
 - Sin cambios: seguridad, migraciones y el resto de hallazgos de la auditoría (fases 2 a 4).
+
+## 2026-08-19 — Fase 2: rendimiento percibido y lecturas acotadas
+
+- Decidido: las diez lecturas del workspace salen juntas con `Promise.all` en vez de en cascada de diez niveles detrás del spinner de página completa. Eran independientes entre sí desde el principio.
+- Decidido: un solo `useEffect` con clave `workspaceId`. Había un segundo efecto de montaje que comprobaba la sesión y volvía a lanzar la misma carga, de modo que un primer arranque la ejecutaba dos veces en paralelo.
+- Decidido: `setAssistantImages` reemplaza en lugar de acumular. Al acumular, cada cambio de workspace añadía una entrada duplicada por asistente, y dos en el primer arranque mientras la carga se ejecutaba dos veces.
+- Decidido: `PrismLight` con las gramáticas que la app realmente renderiza, registradas junto a los alias que escriben los modelos. El export `Prism` por defecto de react-syntax-highlighter incluye unas 300 gramáticas y estaba importado estáticamente en la ruta de chat.
+- Límite aceptado: un lenguaje no registrado se muestra sin resaltado en vez de lanzar; el coste de una gramática ausente es estético.
+- Decidido: `gpt-tokenizer` se carga con import dinámico dentro de `buildFinalMessages`, que ya era `async`. El coste pasa del arranque de la ruta al primer envío.
+- Medido: la ruta de chat baja de 1,22 MB a 421 kB de First Load JS (−65 %); `[chatid]`, de 1,21 MB a 406 kB. La base compartida sigue en 90 kB.
+- Decidido: history, timeline y export leen por páginas con `limit`/`offset` acotados en `lib/server/pagination.ts`. Ningún valor del query string puede restablecer una lectura sin límite: lo inservible cae al valor por defecto y lo excesivo se recorta al máximo.
+- Decidido: las rutas piden una fila de más para responder «¿hay más?» sin una segunda consulta de conteo.
+- Decidido: el export sigue siendo completo; el cliente recorre `nextOffset` y fusiona las páginas. Se ordena por `created_at` ascendente para que las filas escritas durante un export solo se añadan después de la última página y el paginado por offset no pueda saltarse filas anteriores.
+- Decidido: `exportedAt` se fija en la primera página y se reutiliza, para que el backup lleve la hora de inicio y no la de cada página.
+- Límite aceptado: en el timeline los filtros y los contadores se aplican a lo ya cargado; el pie lo dice explícitamente para que una búsqueda sin resultados no se confunda con un historial vacío.
+- Decidido: el rail lateral usa `auto-rows` en vez de `grid-rows-7` con altura fija. Hay ocho elementos y el octavo caía en una fila implícita fuera de los 440 px.
+- Decidido: `CHAT_COMPOSER_CONTAINER` centraliza la cadena de breakpoints del compositor, duplicada entre la pantalla de chat vacío y la conversación activa. Se elimina el paso `lg` por ser idéntico a `md`.
+- Verificado: `lint`, `format:write`, type-check en condiciones de clon limpio, 250 pruebas Jest en 28 suites (16 nuevas) y build de producción.
+- Sin cambios: seguridad, migraciones y las fases 3 y 4 de la auditoría.
