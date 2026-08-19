@@ -48,6 +48,8 @@ interface ImportResult {
 export function MemoryHistorySheet() {
   const [open, setOpen] = useState(false)
   const [summaries, setSummaries] = useState<SummaryRow[]>([])
+  const [nextOffset, setNextOffset] = useState<number | null>(null)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [loading, setLoading] = useState(false)
   const [restoringId, setRestoringId] = useState<string | null>(null)
   const [restoredId, setRestoredId] = useState<string | null>(null)
@@ -96,12 +98,30 @@ export function MemoryHistorySheet() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       setSummaries(data.summaries ?? [])
+      setNextOffset(data.nextOffset ?? null)
     } catch (e) {
       setError("Failed to load history")
     } finally {
       setLoading(false)
     }
   }, [])
+
+  const loadMoreHistory = useCallback(async () => {
+    if (nextOffset === null) return
+    setLoadingMore(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/summary/history?offset=${nextOffset}`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      setSummaries(prev => [...prev, ...(data.summaries ?? [])])
+      setNextOffset(data.nextOffset ?? null)
+    } catch (e) {
+      setError("Failed to load more entries")
+    } finally {
+      setLoadingMore(false)
+    }
+  }, [nextOffset])
 
   const handleOpenChange = (next: boolean) => {
     setOpen(next)
@@ -289,14 +309,36 @@ export function MemoryHistorySheet() {
     setBackupError(null)
     setBackupResult(null)
     try {
-      const res = await fetch("/api/export/summaries")
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
-
-      const { sources, exportedAt } = data as {
+      // The route pages so no single response carries the whole table. Follow
+      // nextOffset to the end and merge, so the backup is still complete.
+      type ExportPage = {
         version: number
         exportedAt: string
         sources: Record<string, { content: string; created_at: string }[]>
+        nextOffset: number | null
+      }
+
+      const sources: Record<string, { content: string; created_at: string }[]> =
+        {}
+      let exportedAt = ""
+      let offset: number | null = 0
+
+      while (offset !== null) {
+        const res: Response = await fetch(
+          `/api/export/summaries?offset=${offset}`
+        )
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const pageData: ExportPage = await res.json()
+
+        // Stamp the backup with the time the export started, not each page.
+        if (!exportedAt) exportedAt = pageData.exportedAt
+
+        for (const [key, rows] of Object.entries(pageData.sources ?? {})) {
+          if (rows.length === 0) continue
+          ;(sources[key] ??= []).push(...rows)
+        }
+
+        offset = pageData.nextOffset
       }
 
       const dateStr = exportedAt.slice(0, 10)
@@ -534,6 +576,20 @@ export function MemoryHistorySheet() {
                 )
               })}
             </ul>
+
+            {nextOffset !== null && (
+              <div className="flex justify-center py-3 pr-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  disabled={loadingMore}
+                  onClick={loadMoreHistory}
+                >
+                  {loadingMore ? "Loading…" : "Load more"}
+                </Button>
+              </div>
+            )}
           </ScrollArea>
         )}
 
