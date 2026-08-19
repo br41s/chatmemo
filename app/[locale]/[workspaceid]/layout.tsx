@@ -15,7 +15,9 @@ import { getToolWorkspacesByWorkspaceId } from "@/db/tools"
 import { getWorkspaceById } from "@/db/workspaces"
 import { convertBlobToBase64 } from "@/lib/blob-to-b64"
 import { supabase } from "@/lib/supabase/browser-client"
+import { Tables } from "@/supabase/types"
 import { LLMID } from "@/types"
+import { AssistantImage } from "@/types/images/assistant-image"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { ReactNode, useContext, useEffect, useState } from "react"
 import Loading from "../loading"
@@ -59,21 +61,10 @@ export default function WorkspaceLayout({ children }: WorkspaceLayoutProps) {
 
   const [loading, setLoading] = useState(true)
 
+  // One effect, keyed on the workspace. There used to be a second mount-only
+  // effect that checked the session and then fetched as well, so a first load
+  // ran the whole fetch twice concurrently.
   useEffect(() => {
-    ;(async () => {
-      const session = (await supabase.auth.getSession()).data.session
-
-      if (!session) {
-        return router.push("/login")
-      } else {
-        await fetchWorkspaceData(workspaceId)
-      }
-    })()
-  }, [])
-
-  useEffect(() => {
-    ;(async () => await fetchWorkspaceData(workspaceId))()
-
     setUserInput("")
     setChatMessages([])
     setSelectedChat(null)
@@ -86,75 +77,95 @@ export default function WorkspaceLayout({ children }: WorkspaceLayoutProps) {
     setNewMessageFiles([])
     setNewMessageImages([])
     setShowFilesDisplay(false)
+    ;(async () => {
+      const session = (await supabase.auth.getSession()).data.session
+
+      if (!session) {
+        router.push("/login")
+        return
+      }
+
+      await fetchWorkspaceData(workspaceId)
+    })()
   }, [workspaceId])
+
+  // Load one assistant's avatar. Returns an entry either way so the caller can
+  // replace the whole list in one write — a missing image is still a known
+  // answer for that assistant, not an absence.
+  const loadAssistantImage = async (
+    assistant: Tables<"assistants">
+  ): Promise<AssistantImage> => {
+    const url = assistant.image_path
+      ? (await getAssistantImageFromStorage(assistant.image_path)) || ""
+      : ""
+
+    if (!url) {
+      return {
+        assistantId: assistant.id,
+        path: assistant.image_path,
+        base64: "",
+        url
+      }
+    }
+
+    const response = await fetch(url)
+    const blob = await response.blob()
+    const base64 = await convertBlobToBase64(blob)
+
+    return {
+      assistantId: assistant.id,
+      path: assistant.image_path,
+      base64,
+      url
+    }
+  }
 
   const fetchWorkspaceData = async (workspaceId: string) => {
     setLoading(true)
 
-    const workspace = await getWorkspaceById(workspaceId)
+    // These ten reads are independent of each other, so they go out together
+    // instead of as a ten-deep waterfall behind a full-page spinner.
+    const [
+      workspace,
+      assistantData,
+      chats,
+      collectionData,
+      folders,
+      fileData,
+      presetData,
+      promptData,
+      toolData,
+      modelData
+    ] = await Promise.all([
+      getWorkspaceById(workspaceId),
+      getAssistantWorkspacesByWorkspaceId(workspaceId),
+      getChatsByWorkspaceId(workspaceId),
+      getCollectionWorkspacesByWorkspaceId(workspaceId),
+      getFoldersByWorkspaceId(workspaceId),
+      getFileWorkspacesByWorkspaceId(workspaceId),
+      getPresetWorkspacesByWorkspaceId(workspaceId),
+      getPromptWorkspacesByWorkspaceId(workspaceId),
+      getToolWorkspacesByWorkspaceId(workspaceId),
+      getModelWorkspacesByWorkspaceId(workspaceId)
+    ])
+
     setSelectedWorkspace(workspace)
-
-    const assistantData = await getAssistantWorkspacesByWorkspaceId(workspaceId)
     setAssistants(assistantData.assistants)
-
-    for (const assistant of assistantData.assistants) {
-      let url = ""
-
-      if (assistant.image_path) {
-        url = (await getAssistantImageFromStorage(assistant.image_path)) || ""
-      }
-
-      if (url) {
-        const response = await fetch(url)
-        const blob = await response.blob()
-        const base64 = await convertBlobToBase64(blob)
-
-        setAssistantImages(prev => [
-          ...prev,
-          {
-            assistantId: assistant.id,
-            path: assistant.image_path,
-            base64,
-            url
-          }
-        ])
-      } else {
-        setAssistantImages(prev => [
-          ...prev,
-          {
-            assistantId: assistant.id,
-            path: assistant.image_path,
-            base64: "",
-            url
-          }
-        ])
-      }
-    }
-
-    const chats = await getChatsByWorkspaceId(workspaceId)
     setChats(chats)
-
-    const collectionData =
-      await getCollectionWorkspacesByWorkspaceId(workspaceId)
     setCollections(collectionData.collections)
-
-    const folders = await getFoldersByWorkspaceId(workspaceId)
     setFolders(folders)
-
-    const fileData = await getFileWorkspacesByWorkspaceId(workspaceId)
     setFiles(fileData.files)
-
-    const presetData = await getPresetWorkspacesByWorkspaceId(workspaceId)
     setPresets(presetData.presets)
-
-    const promptData = await getPromptWorkspacesByWorkspaceId(workspaceId)
     setPrompts(promptData.prompts)
-
-    const toolData = await getToolWorkspacesByWorkspaceId(workspaceId)
     setTools(toolData.tools)
-
-    const modelData = await getModelWorkspacesByWorkspaceId(workspaceId)
     setModels(modelData.models)
+
+    // Replace rather than append. Appending accumulated a duplicate entry per
+    // assistant on every workspace switch, and two per assistant on first load
+    // back when the fetch ran twice.
+    setAssistantImages(
+      await Promise.all(assistantData.assistants.map(loadAssistantImage))
+    )
 
     setChatSettings({
       model: (searchParams.get("model") ||

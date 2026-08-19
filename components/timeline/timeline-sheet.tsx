@@ -259,6 +259,8 @@ const LOAD_STEP = 5
 export function TimelineSheet() {
   const [open, setOpen] = useState(false)
   const [entries, setEntries] = useState<TimelineEntry[]>([])
+  const [nextOffset, setNextOffset] = useState<number | null>(null)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -284,12 +286,33 @@ export function TimelineSheet() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       setEntries(data.entries ?? [])
+      setNextOffset(data.nextOffset ?? null)
     } catch {
       setError("Failed to load timeline")
     } finally {
       setLoading(false)
     }
   }, [])
+
+  // Filters and counts below apply to what has been loaded. With more pages
+  // outstanding the footer says so, so a search that finds nothing is not
+  // mistaken for an empty history.
+  const loadMoreEntries = useCallback(async () => {
+    if (nextOffset === null) return
+    setLoadingMore(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/timeline?offset=${nextOffset}`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      setEntries(prev => [...prev, ...(data.entries ?? [])])
+      setNextOffset(data.nextOffset ?? null)
+    } catch {
+      setError("Failed to load more entries")
+    } finally {
+      setLoadingMore(false)
+    }
+  }, [nextOffset])
 
   const handleOpenChange = (next: boolean) => {
     setOpen(next)
@@ -541,6 +564,23 @@ export function TimelineSheet() {
                 </div>
               </div>
             ))}
+
+            {!loading && !error && nextOffset !== null && (
+              <div className="flex flex-col items-center gap-1.5 py-4">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  disabled={loadingMore}
+                  onClick={loadMoreEntries}
+                >
+                  {loadingMore ? "Loading…" : "Load older conversations"}
+                </Button>
+                <p className="text-[10px] text-muted-foreground">
+                  Filters apply to the {entries.length} loaded so far
+                </p>
+              </div>
+            )}
           </ScrollArea>
         </div>
 

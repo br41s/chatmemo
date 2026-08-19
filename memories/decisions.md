@@ -87,3 +87,39 @@
 - Verificado: `format:check`, `type-check`, 223 pruebas Jest (11 nuevas) y build de producción. La build borra `public/worker-development.js` y se restauró con `git checkout --`.
 - Publicado: tres commits atómicos en `claude/chatmemo-audit-review-60c4f6` y el PR [#6](https://github.com/braisntext/chatmemo/pull/6).
 - Sin cambios: migraciones, módulos SSRF y los cambios de comportamiento deliberados de la auditoría (herramientas y modelos compartidos ya no son visibles para `anon`; un fallo de retrieval aborta el envío en vez de degradar a cero fuentes).
+
+## 2026-08-19 — Auditoría de aplicación y fase 1 de correcciones
+
+- Revisado: auditoría completa fuera del alcance de seguridad (arquitectura, UX, diseño, refactorización, tooling). 38 hallazgos registrados en `tasks/app-audit-2026-08-18.md`.
+- Diagnóstico: el sistema de memoria está bien construido; casi todo lo que el usuario toca sigue siendo el fork de Chatbot UI de 2024 sin revisar.
+- Decidido: `types/next-ambient.d.ts` versionado replica las referencias de tipos que Next escribe en `next-env.d.ts`. Ese archivo está en `.gitignore` pero en el `include` de tsconfig, así que en un clon limpio `npm run type-check` fallaba con tres TS2307 sobre imports estáticos de PNG. El hook `pre-push` ejecuta exactamente ese comando, de modo que la única CI del proyecto fallaba para cualquiera que no hubiese compilado antes.
+- Rechazado: dejar de ignorar `next-env.d.ts` y versionarlo. Next lo regenera en cada build y produciría ruido de diff entre versiones; un archivo aparte que Next nunca toca convive sin conflicto.
+- Decidido: la marca del producto es ChatMemo en todas las superficies — título, manifest PWA, OpenGraph, Twitter, landing, asistente de configuración y el nombre del paquete. La descripción `"Chabot UI PWA!"` (con su errata) se sustituye por la propuesta de valor del README.
+- Decidido: el logotipo es identidad, no navegación. Deja de ser un enlace a chatbotui.com — el elemento más prominente de las pantallas de login y de chat vacío enviaba al usuario a otro producto.
+- Decidido: el enlace de ayuda apunta a `br41s/chatmemo`; se elimina el de Twitter `@ChatbotUI` en vez de reapuntarlo, porque el proyecto no tiene esa cuenta.
+- Decidido: se elimina el control «Download Chatbot UI 1.0 data as JSON» y `lib/export-old-data.ts` con él. Renombrar la cadena habría mentido: no existe ChatMemo 1.0 y es una ruta de migración desde un producto que este usuario nunca usó.
+- Decidido: lecciones e historial de conversación son capas independientes. El retorno temprano en `get-latest-summary.ts` descartaba lecciones ya consultadas cuando el usuario no tenía filas personales ni bulk, mientras las instrucciones seguían diciendo al modelo que `[LESSONS]` era la señal de mayor calidad. La decisión de devolver `null` queda solo al final, donde significa lo que dice.
+- Decidido: extraer `buildSummarySections` como función pura exportada, siguiendo la convención ya usada por `buildMemoryBlock` y `rankByTermCoverage`, para poder probar los presupuestos y la independencia de capas sin base de datos.
+- Decidido: `googleStreamResponse` vive en `lib/server/streaming.ts` junto al resto de adaptadores. La ruta de Google construía su propio `ReadableStream` sin captura de errores, así que un `text()` que lanza — lo que hace Gemini al bloquear una respuesta — dejaba el controlador sin cerrar ni marcar error; además omitía `charset=utf-8`.
+- Verificado: `lint`, `format:write`, type-check en condiciones de clon limpio (sin `next-env.d.ts` generado), 234 pruebas Jest en 27 suites (11 nuevas) y build de producción. La build borró `public/worker-development.js` y se restauró con `git checkout --`.
+- Confirmado: las dos pruebas nuevas de lecciones fallan contra el código anterior y pasan contra el corregido.
+- Sin cambios: seguridad, migraciones y el resto de hallazgos de la auditoría (fases 2 a 4).
+
+## 2026-08-19 — Fase 2: rendimiento percibido y lecturas acotadas
+
+- Decidido: las diez lecturas del workspace salen juntas con `Promise.all` en vez de en cascada de diez niveles detrás del spinner de página completa. Eran independientes entre sí desde el principio.
+- Decidido: un solo `useEffect` con clave `workspaceId`. Había un segundo efecto de montaje que comprobaba la sesión y volvía a lanzar la misma carga, de modo que un primer arranque la ejecutaba dos veces en paralelo.
+- Decidido: `setAssistantImages` reemplaza en lugar de acumular. Al acumular, cada cambio de workspace añadía una entrada duplicada por asistente, y dos en el primer arranque mientras la carga se ejecutaba dos veces.
+- Decidido: `PrismLight` con las gramáticas que la app realmente renderiza, registradas junto a los alias que escriben los modelos. El export `Prism` por defecto de react-syntax-highlighter incluye unas 300 gramáticas y estaba importado estáticamente en la ruta de chat.
+- Límite aceptado: un lenguaje no registrado se muestra sin resaltado en vez de lanzar; el coste de una gramática ausente es estético.
+- Decidido: `gpt-tokenizer` se carga con import dinámico dentro de `buildFinalMessages`, que ya era `async`. El coste pasa del arranque de la ruta al primer envío.
+- Medido: la ruta de chat baja de 1,22 MB a 421 kB de First Load JS (−65 %); `[chatid]`, de 1,21 MB a 406 kB. La base compartida sigue en 90 kB.
+- Decidido: history, timeline y export leen por páginas con `limit`/`offset` acotados en `lib/server/pagination.ts`. Ningún valor del query string puede restablecer una lectura sin límite: lo inservible cae al valor por defecto y lo excesivo se recorta al máximo.
+- Decidido: las rutas piden una fila de más para responder «¿hay más?» sin una segunda consulta de conteo.
+- Decidido: el export sigue siendo completo; el cliente recorre `nextOffset` y fusiona las páginas. Se ordena por `created_at` ascendente para que las filas escritas durante un export solo se añadan después de la última página y el paginado por offset no pueda saltarse filas anteriores.
+- Decidido: `exportedAt` se fija en la primera página y se reutiliza, para que el backup lleve la hora de inicio y no la de cada página.
+- Límite aceptado: en el timeline los filtros y los contadores se aplican a lo ya cargado; el pie lo dice explícitamente para que una búsqueda sin resultados no se confunda con un historial vacío.
+- Decidido: el rail lateral usa `auto-rows` en vez de `grid-rows-7` con altura fija. Hay ocho elementos y el octavo caía en una fila implícita fuera de los 440 px.
+- Decidido: `CHAT_COMPOSER_CONTAINER` centraliza la cadena de breakpoints del compositor, duplicada entre la pantalla de chat vacío y la conversación activa. Se elimina el paso `lg` por ser idéntico a `md`.
+- Verificado: `lint`, `format:write`, type-check en condiciones de clon limpio, 250 pruebas Jest en 28 suites (16 nuevas) y build de producción.
+- Sin cambios: seguridad, migraciones y las fases 3 y 4 de la auditoría.

@@ -1,7 +1,17 @@
 import { Tables } from "@/supabase/types"
 import { ChatPayload, MessageImage } from "@/types"
-import { encode } from "gpt-tokenizer"
 import { getBase64FromDataURL, getMediaTypeFromDataURL } from "@/lib/utils"
+
+// gpt-tokenizer carries the full BPE rank tables. buildFinalMessages runs in
+// the browser, and importing it statically pulled all of that into the chat
+// route's initial bundle even though no token is counted until the first send.
+// The function is already async, so the cost moves to that first send instead.
+let encodePromise: Promise<(text: string) => number[]> | null = null
+
+function loadEncoder(): Promise<(text: string) => number[]> {
+  encodePromise ??= import("gpt-tokenizer").then(m => m.encode)
+  return encodePromise
+}
 
 const buildBasePrompt = (
   prompt: string,
@@ -50,6 +60,8 @@ export async function buildFinalMessages(
     chatSettings.includeWorkspaceInstructions ? workspaceInstructions : "",
     assistant
   )
+
+  const encode = await loadEncoder()
 
   const CHUNK_SIZE = chatSettings.contextLength
   const PROMPT_TOKENS = encode(chatSettings.prompt).length

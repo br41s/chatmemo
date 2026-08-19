@@ -28,7 +28,10 @@ export const SidebarSwitcher: FC<SidebarSwitcherProps> = ({
 }) => {
   return (
     <div className="flex flex-col justify-between border-r-2 pb-5">
-      <TabsList className="grid h-[440px] grid-rows-7 bg-background">
+      {/* auto-rows rather than a hardcoded row count: there are eight items,
+          and grid-rows-7 pushed the last one into an implicit row outside the
+          fixed height. */}
+      <TabsList className="grid h-auto auto-rows-[55px] grid-cols-1 bg-background">
         <SidebarSwitchItem
           icon={<IconMessage size={SIDEBAR_ICON_SIZE} />}
           contentType="chats"

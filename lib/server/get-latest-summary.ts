@@ -40,7 +40,11 @@ function cap(content: string, max: number): string {
 /**
  * Returns memory content to inject into the system prompt.
  *
- * Three parallel queries:
+ * Fetches the lessons document alongside three parallel row queries, then hands
+ * everything to buildSummarySections. Lessons are a separate memory layer from
+ * conversation history — either one alone is worth injecting.
+ *
+ * The three row queries:
  *   A. Personal rows — everything EXCEPT [source:perplexity], [source:chatgpt],
  *      watermarks, and index rows. This includes [source:claude] rows (Claude
  *      Code sessions, bookmarklet, bulk import LLM summaries) AND untagged
@@ -91,12 +95,41 @@ export async function getLatestSummaryForUser(
     getLessons(supabase, userId)
   ])
 
-  const personalData = personalResult.data ?? []
-  const bulkData = bulkResult.data ?? []
-  const indexData = indexResult.data ?? []
+  return buildSummarySections(
+    lessons,
+    indexResult.data ?? [],
+    personalResult.data ?? [],
+    bulkResult.data ?? []
+  )
+}
 
-  if (personalData.length === 0 && bulkData.length === 0) return null
+interface SummaryRow {
+  content: string | null
+}
 
+/**
+ * Assemble the injectable memory sections from already-fetched rows.
+ *
+ * Lessons and conversation history are INDEPENDENT layers: a user with a
+ * populated lessons document but no summary rows — or one who cleared their
+ * summaries from the memory panel — must still get their lessons. This used to
+ * bail out early on `personalData.length === 0 && bulkData.length === 0`,
+ * which discarded lessons that had already been fetched successfully, while
+ * the instructions block kept telling the model [LESSONS] was the highest
+ * quality signal and to read it first.
+ *
+ * Returning null is decided at the end instead, where it means what it says:
+ * nothing at all to inject.
+ *
+ * Pure + exported so the budgets and the layer independence can be unit-tested
+ * without a database.
+ */
+export function buildSummarySections(
+  lessons: string | null,
+  indexData: SummaryRow[],
+  personalData: SummaryRow[],
+  bulkData: SummaryRow[]
+): string | null {
   const parts: string[] = []
 
   // 1. Index rows (tiny, high-value for history questions)

@@ -2,8 +2,8 @@ import { Button } from "@/components/ui/button"
 import { useCopyToClipboard } from "@/lib/hooks/use-copy-to-clipboard"
 import { IconCheck, IconCopy, IconDownload } from "@tabler/icons-react"
 import { FC, memo } from "react"
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
-import { oneDark } from "react-syntax-highlighter/dist/cjs/styles/prism"
+import oneDark from "react-syntax-highlighter/dist/esm/styles/prism/one-dark"
+import { SyntaxHighlighter } from "./message-syntax-highlighter"
 
 interface MessageCodeBlockProps {
   language: string
