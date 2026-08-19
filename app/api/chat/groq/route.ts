@@ -16,7 +16,7 @@ export async function POST(request: Request) {
   try {
     const profile = await getServerProfile()
 
-    checkApiKey(profile.groq_api_key, "G")
+    checkApiKey(profile.groq_api_key, "Groq")
 
     const augmentedMessages = await injectMemoryOpenAIFormat(
       messages,

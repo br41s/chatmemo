@@ -1,6 +1,7 @@
 import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
 import { injectMemoryGoogleFormat } from "@/lib/server/inject-memory"
 import { ChatSettings } from "@/types"
+import { googleStreamResponse } from "@/lib/server/streaming"
 import { GoogleGenerativeAI } from "@google/generative-ai"
 
 export const runtime = "edge"
@@ -38,20 +39,7 @@ export async function POST(request: Request) {
 
     const response = await chat.sendMessageStream(lastMessage.parts)
 
-    const encoder = new TextEncoder()
-    const readableStream = new ReadableStream({
-      async start(controller) {
-        for await (const chunk of response.stream) {
-          const chunkText = chunk.text()
-          controller.enqueue(encoder.encode(chunkText))
-        }
-        controller.close()
-      }
-    })
-
-    return new Response(readableStream, {
-      headers: { "Content-Type": "text/plain" }
-    })
+    return googleStreamResponse(response.stream)
   } catch (error: any) {
     let errorMessage = error.message || "An unexpected error occurred"
     const errorCode = error.status || 500

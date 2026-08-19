@@ -84,3 +84,23 @@ export function anthropicStreamResponse(
 ): Response {
   return textStreamResponse(anthropicText(events))
 }
+
+// --- Google Gemini content chunks ------------------------------------------
+
+interface GoogleChunkLike {
+  text: () => string
+}
+
+async function* googleText(
+  chunks: AsyncIterable<GoogleChunkLike>
+): AsyncGenerator<string> {
+  for await (const chunk of chunks) {
+    yield chunk.text()
+  }
+}
+
+export function googleStreamResponse(
+  chunks: AsyncIterable<GoogleChunkLike>
+): Response {
+  return textStreamResponse(googleText(chunks))
+}

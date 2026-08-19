@@ -8,6 +8,7 @@
  */
 import {
   anthropicStreamResponse,
+  googleStreamResponse,
   openAIStreamResponse,
   textStreamResponse
 } from "@/lib/server/streaming"
@@ -71,5 +72,34 @@ describe("anthropicStreamResponse", () => {
     ]
     const res = anthropicStreamResponse(fromArray(events))
     expect(await res.text()).toBe("Hola")
+  })
+})
+
+describe("googleStreamResponse", () => {
+  it("concatenates text() from Gemini content chunks", async () => {
+    const chunks = [
+      { text: () => "Bon" },
+      { text: () => "jour" },
+      { text: () => "" }
+    ]
+    const res = googleStreamResponse(fromArray(chunks))
+    expect(res.headers.get("Content-Type")).toBe("text/plain; charset=utf-8")
+    expect(await res.text()).toBe("Bonjour")
+  })
+
+  it("propagates a throwing chunk instead of hanging the stream", async () => {
+    // Gemini throws from text() when a response is blocked mid-stream. The
+    // hand-rolled ReadableStream this replaced had no catch, so the controller
+    // was never closed or errored.
+    const chunks = [
+      { text: () => "partial" },
+      {
+        text: () => {
+          throw new Error("response blocked")
+        }
+      }
+    ]
+    const res = googleStreamResponse(fromArray(chunks))
+    await expect(res.text()).rejects.toThrow("response blocked")
   })
 })
