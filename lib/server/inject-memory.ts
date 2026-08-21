@@ -4,6 +4,11 @@ import {
   NO_FULL_MATCH_MARKER
 } from "@/lib/server/get-full-conversation"
 import { getRelevantMemoryForUser } from "@/lib/server/get-relevant-memory"
+import {
+  ContextBudget,
+  ContextBudgetHint,
+  resolveContextBudget
+} from "@/lib/context-budget"
 
 // ---------------------------------------------------------------------------
 // Shared memory injection
@@ -76,13 +81,14 @@ export function buildMemoryBlock(
  */
 async function fetchMemoryBlock(
   userId: string,
-  lastUserText: string
+  lastUserText: string,
+  budget: ContextBudget
 ): Promise<string | null> {
   try {
     const [summary, fullConv, relevantMemory] = await Promise.all([
-      getLatestSummaryForUser(userId),
-      getFullConversationForUser(userId, lastUserText),
-      getRelevantMemoryForUser(userId, lastUserText)
+      getLatestSummaryForUser(userId, budget),
+      getFullConversationForUser(userId, lastUserText, budget),
+      getRelevantMemoryForUser(userId, lastUserText, budget)
     ])
 
     // When the user is recovering a specific full conversation AND we actually
@@ -181,13 +187,17 @@ export function buildAugmentedGoogleMessages(
  */
 export async function injectMemoryOpenAIFormat(
   messages: any[],
-  userId: string
+  userId: string,
+  budgetHint?: ContextBudgetHint
 ): Promise<any[]> {
   const lastUser = [...messages].reverse().find(m => m.role === "user")
   const lastUserText =
     typeof lastUser?.content === "string" ? lastUser.content : ""
 
-  const memoryBlock = await fetchMemoryBlock(userId, lastUserText)
+  // Re-resolved here rather than taken from the client: the hint describes the
+  // model, the split is the server's to decide.
+  const budget = resolveContextBudget(budgetHint)
+  const memoryBlock = await fetchMemoryBlock(userId, lastUserText, budget)
   if (!memoryBlock) return messages
 
   return buildAugmentedOpenAIMessages(messages, memoryBlock)
@@ -202,14 +212,16 @@ export async function injectMemoryOpenAIFormat(
  */
 export async function injectMemoryGoogleFormat(
   messages: any[],
-  userId: string
+  userId: string,
+  budgetHint?: ContextBudgetHint
 ): Promise<any[]> {
   const last = messages[messages.length - 1]
   const lastUserText = Array.isArray(last?.parts)
     ? last.parts.map((p: any) => p?.text ?? "").join(" ")
     : ""
 
-  const memoryBlock = await fetchMemoryBlock(userId, lastUserText)
+  const budget = resolveContextBudget(budgetHint)
+  const memoryBlock = await fetchMemoryBlock(userId, lastUserText, budget)
   if (!memoryBlock) return messages
 
   return buildAugmentedGoogleMessages(messages, memoryBlock)

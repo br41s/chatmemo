@@ -9,7 +9,7 @@ export const runtime = "edge"
 
 export async function POST(request: Request) {
   const json = await request.json()
-  const { chatSettings, messages } = json as ChatAPIPayload
+  const { chatSettings, messages, contextBudget } = json as ChatAPIPayload
 
   try {
     const profile = await getServerProfile()
@@ -47,7 +47,8 @@ export async function POST(request: Request) {
 
     const augmentedMessages = await injectMemoryOpenAIFormat(
       messages,
-      profile.user_id
+      profile.user_id,
+      contextBudget
     )
 
     const azureOpenai = new OpenAI({

@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { getLessons } from "@/lib/db/lessons"
 import { VersionedCache } from "@/lib/server/versioned-cache"
+import { ContextBudget, resolveContextBudget } from "@/lib/context-budget"
 import { cookies } from "next/headers"
 
 // ---------------------------------------------------------------------------
@@ -21,9 +22,6 @@ import { cookies } from "next/headers"
 //
 // Total injected: ~100 k chars ≈ 25 k tokens. Fast and safe for all models.
 // ---------------------------------------------------------------------------
-
-const PERSONAL_BUDGET = 80_000 // chars — ~60–80 sessions at 1 000 avg
-const BULK_BUDGET = 20_000 // chars — ~50 Perplexity/ChatGPT topics
 
 const PERSONAL_ROW_MAX = 1_500 // cap per personal row
 const BULK_ROW_MAX = 400 // title + opening line only for bulk rows
@@ -94,11 +92,15 @@ async function readMemoryVersion(
 }
 
 export async function getLatestSummaryForUser(
-  userId: string
+  userId: string,
+  budget: ContextBudget = resolveContextBudget()
 ): Promise<string | null> {
   const supabase = createClient(cookies())
 
-  const version = await readMemoryVersion(supabase, userId)
+  // The budget is part of the cache key, not just the query: the same rows
+  // assembled under a different allowance are a different blob, so switching
+  // to a smaller-window model must not serve the larger model's block.
+  const version = `${await readMemoryVersion(supabase, userId)}|${budget.personalChars}|${budget.bulkChars}`
   const cached = baselineCache.get(userId, version)
   // A cached null is a real answer — "this user has no memory yet" is worth
   // not recomputing — so only undefined counts as a miss.
@@ -154,7 +156,8 @@ export async function getLatestSummaryForUser(
     lessons,
     indexResult.data ?? [],
     personalResult.data ?? [],
-    bulkResult.data ?? []
+    bulkResult.data ?? [],
+    budget
   )
 
   baselineCache.set(userId, version, sections)
@@ -192,7 +195,8 @@ export function buildSummarySections(
   lessons: string | null,
   indexData: SummaryRow[],
   personalData: SummaryRow[],
-  bulkData: SummaryRow[]
+  bulkData: SummaryRow[],
+  budget: ContextBudget = resolveContextBudget()
 ): string | null {
   const parts: string[] = []
 
@@ -209,7 +213,7 @@ export function buildSummarySections(
     const content = (row.content ?? "").trim()
     if (!content) continue
     const capped = cap(content, PERSONAL_ROW_MAX)
-    if (personalChars + capped.length > PERSONAL_BUDGET) break
+    if (personalChars + capped.length > budget.personalChars) break
     parts.push(capped)
     personalChars += capped.length
   }
@@ -220,7 +224,7 @@ export function buildSummarySections(
     const content = (row.content ?? "").trim()
     if (!content) continue
     const capped = cap(content, BULK_ROW_MAX)
-    if (bulkChars + capped.length > BULK_BUDGET) break
+    if (bulkChars + capped.length > budget.bulkChars) break
     parts.push(capped)
     bulkChars += capped.length
   }

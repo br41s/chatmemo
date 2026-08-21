@@ -9,6 +9,7 @@ import {
   buildFinalMessages,
   adaptMessagesForGoogleGemini
 } from "@/lib/build-prompt"
+import { ContextBudget, ContextBudgetHint } from "@/lib/context-budget"
 import { consumeReadableStream } from "@/lib/consume-stream"
 import {
   MAX_RETRIEVAL_FILE_IDS,
@@ -206,12 +207,18 @@ export const handleLocalChat = async (
   isRegeneration: boolean,
   regenerationTarget: RegenerationTarget | null,
   newAbortController: AbortController,
+  budget: ContextBudget,
   setIsGenerating: React.Dispatch<React.SetStateAction<boolean>>,
   setFirstTokenReceived: React.Dispatch<React.SetStateAction<boolean>>,
   setChatMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
   setToolInUse: React.Dispatch<React.SetStateAction<string>>
 ) => {
-  const formattedMessages = await buildFinalMessages(payload, profile, [])
+  const formattedMessages = await buildFinalMessages(
+    payload,
+    profile,
+    [],
+    budget
+  )
 
   // Ollama API: https://github.com/jmorganca/ollama/blob/main/docs/api.md
   const response = await fetchChatResponse(
@@ -253,6 +260,8 @@ export const handleHostedChat = async (
   newAbortController: AbortController,
   newMessageImages: MessageImage[],
   chatImages: MessageImage[],
+  budget: ContextBudget,
+  budgetHint: ContextBudgetHint,
   setIsGenerating: React.Dispatch<React.SetStateAction<boolean>>,
   setFirstTokenReceived: React.Dispatch<React.SetStateAction<boolean>>,
   setChatMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
@@ -263,7 +272,12 @@ export const handleHostedChat = async (
       ? "azure"
       : modelData.provider
 
-  let draftMessages = await buildFinalMessages(payload, profile, chatImages)
+  let draftMessages = await buildFinalMessages(
+    payload,
+    profile,
+    chatImages,
+    budget
+  )
 
   let formattedMessages: any[] = []
   if (provider === "google") {
@@ -287,7 +301,8 @@ export const handleHostedChat = async (
         }
       : {
           chatSettings: payload.chatSettings,
-          messages: formattedMessages
+          messages: formattedMessages,
+          contextBudget: budgetHint
         }
 
   const response = await fetchChatResponse(
