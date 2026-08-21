@@ -1,12 +1,25 @@
 import { SupabaseClient } from "@supabase/supabase-js"
 import { Database, TablesInsert } from "@/supabase/types"
+import { summaryMetadataColumns } from "@/lib/summary-metadata"
 
+/**
+ * Insert a summary row, deriving its typed metadata from the content.
+ *
+ * The prefixes stay in `content` — the injected memory block quotes them and
+ * the backup format depends on them — but source, kind, title and the
+ * conversation's own date are also written to columns, so readers filter on
+ * indexed values instead of each re-deriving them from the text.
+ */
 export async function insertSummary(
   supabase: SupabaseClient<Database>,
   userId: string,
   content: string
 ): Promise<void> {
-  const row: TablesInsert<"summaries"> = { user_id: userId, content }
+  const row: TablesInsert<"summaries"> = {
+    user_id: userId,
+    content,
+    ...summaryMetadataColumns(content)
+  }
 
   const { error } = await supabase.from("summaries").insert(row)
 
@@ -36,7 +49,8 @@ export async function getWatermark(
     .from("summaries")
     .select("content")
     .eq("user_id", userId)
-    .like("content", `[chatmemo:watermark:source=${source} ts=%`)
+    .eq("kind", "watermark")
+    .eq("source", source)
     .maybeSingle()
 
   if (!data?.content) return 0
@@ -58,12 +72,12 @@ export async function setWatermark(
     .from("summaries")
     .delete()
     .eq("user_id", userId)
-    .like("content", `[chatmemo:watermark:source=${source} ts=%`)
+    .eq("kind", "watermark")
+    .eq("source", source)
 
-  const { error } = await supabase.from("summaries").insert({
-    user_id: userId,
-    content: `[chatmemo:watermark:source=${source} ts=${ts}]`
-  })
-
-  if (error) throw new Error(`[setWatermark] ${error.message}`)
+  await insertSummary(
+    supabase,
+    userId,
+    `[chatmemo:watermark:source=${source} ts=${ts}]`
+  )
 }

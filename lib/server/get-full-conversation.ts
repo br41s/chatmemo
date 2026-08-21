@@ -501,8 +501,6 @@ const MAX_SUMMARY_ROWS = 12
 const MAX_ROW_CHARS = 80_000
 const MAX_TOTAL_CHARS = 120_000
 
-const INDEX_MARKER = "Conversation Index"
-
 /** Injected when retrieval runs but matches nothing. The chat route detects
  *  this to decide whether to keep baseline memory (see openrouter/route.ts). */
 export const NO_FULL_MATCH_MARKER = "no matching conversation found"
@@ -552,8 +550,7 @@ async function searchSummaries(
         .select("id, content, created_at")
         .eq("user_id", userId)
         .ilike("content", `%${term}%`)
-        .not("content", "like", "[chatmemo:%")
-        .not("content", "ilike", `%${INDEX_MARKER}%`)
+        .in("kind", ["conversation", "summary"])
         .order("created_at", { ascending: false })
         .limit(MAX_SUMMARY_ROWS)
     )

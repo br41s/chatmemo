@@ -31,8 +31,6 @@ const MAX_PERSONAL_ROWS = 150 // enough to cover all personal sessions
 const MAX_BULK_ROWS = 30 // only recent bulk rows are useful
 const MAX_INDEX_ROWS = 5
 
-const INDEX_MARKER = "Conversation Index"
-
 function cap(content: string, max: number): string {
   return content.length > max ? content.slice(0, max) + "…" : content
 }
@@ -59,25 +57,34 @@ export async function getLatestSummaryForUser(
   const supabase = createClient(cookies())
 
   const [personalResult, bulkResult, indexResult, lessons] = await Promise.all([
-    // A. Personal: exclude Perplexity, ChatGPT, watermarks, and index rows.
-    //    [source:claude] rows ARE included — they are Claude Code sessions.
+    // A. Personal: everything narrative except raw Perplexity/ChatGPT imports.
+    //    [source:claude] rows ARE included — they are Claude Code sessions, and
+    //    so are the import-time LLM summaries of bulk sources: the old
+    //    `[source:chatgpt]%` predicate did not match `[source:chatgpt:summary]`,
+    //    so those landed here, under the 1 500-char cap rather than the 400-char
+    //    bulk one. Keeping them here preserves that.
+    //
+    //    The source list is positive rather than a negation because the CHECK
+    //    constraint added with these columns closes the set to exactly four
+    //    values, so (claude, other) is the complement of (perplexity, chatgpt).
     supabase
       .from("summaries")
       .select("id, content")
       .eq("user_id", userId)
-      .not("content", "like", "[source:perplexity]%")
-      .not("content", "like", "[source:chatgpt]%")
-      .not("content", "like", "[chatmemo:%]%")
-      .not("content", "ilike", `%${INDEX_MARKER}%`)
+      .in("kind", ["conversation", "summary"])
+      .or("kind.eq.summary,source.in.(claude,other)")
       .order("created_at", { ascending: false })
       .limit(MAX_PERSONAL_ROWS),
 
-    // B. Bulk imports: Perplexity + ChatGPT, title-only when building context
+    // B. Bulk imports: raw Perplexity + ChatGPT conversations, title-only when
+    //    building context. Their LLM summaries are kind "summary" and belong to
+    //    query A, which is where the previous predicates put them.
     supabase
       .from("summaries")
       .select("id, content")
       .eq("user_id", userId)
-      .or("content.like.[source:perplexity]%,content.like.[source:chatgpt]%")
+      .eq("kind", "conversation")
+      .in("source", ["perplexity", "chatgpt"])
       .order("created_at", { ascending: false })
       .limit(MAX_BULK_ROWS),
 
@@ -86,7 +93,7 @@ export async function getLatestSummaryForUser(
       .from("summaries")
       .select("id, content")
       .eq("user_id", userId)
-      .ilike("content", `%${INDEX_MARKER}%`)
+      .eq("kind", "index")
       .order("created_at", { ascending: false })
       .limit(MAX_INDEX_ROWS),
 
