@@ -1,5 +1,6 @@
 import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
 import { ContextBudgetHint } from "@/lib/context-budget"
+import { memoryReportHeaders } from "@/lib/server/memory-report-headers"
 import { injectMemoryGoogleFormat } from "@/lib/server/inject-memory"
 import { ChatSettings } from "@/types"
 import { googleStreamResponse } from "@/lib/server/streaming"
@@ -25,11 +26,8 @@ export async function POST(request: Request) {
 
     // Inject memory into the first message (adapted system prompt) before the
     // current turn is popped off for sendMessageStream.
-    const augmentedMessages = await injectMemoryGoogleFormat(
-      messages,
-      profile.user_id,
-      contextBudget
-    )
+    const { messages: augmentedMessages, report: memoryReport } =
+      await injectMemoryGoogleFormat(messages, profile.user_id, contextBudget)
 
     const lastMessage = augmentedMessages.pop()
 
@@ -42,7 +40,10 @@ export async function POST(request: Request) {
 
     const response = await chat.sendMessageStream(lastMessage.parts)
 
-    return googleStreamResponse(response.stream)
+    return googleStreamResponse(
+      response.stream,
+      memoryReportHeaders(memoryReport)
+    )
   } catch (error: any) {
     let errorMessage = error.message || "An unexpected error occurred"
     const errorCode = error.status || 500

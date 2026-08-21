@@ -1,3 +1,4 @@
+import { MemoryReport } from "@/lib/memory-report"
 import { Tables } from "@/supabase/types"
 import {
   ChatFile,
@@ -136,6 +137,11 @@ interface ChatbotUIContext {
   setSelectedTools: Dispatch<SetStateAction<Tables<"tools">[]>>
   toolInUse: string
   setToolInUse: Dispatch<SetStateAction<string>>
+
+  // MEMORY STORE
+  // What memory each assistant turn was given, keyed by message id.
+  memoryReports: Record<string, MemoryReport>
+  setMemoryReports: Dispatch<SetStateAction<Record<string, MemoryReport>>>
 }
 
 export const ChatbotUIContext = createContext<ChatbotUIContext>({
@@ -261,5 +267,9 @@ export const ChatbotUIContext = createContext<ChatbotUIContext>({
   selectedTools: [],
   setSelectedTools: () => {},
   toolInUse: "none",
-  setToolInUse: () => {}
+  setToolInUse: () => {},
+
+  // MEMORY STORE
+  memoryReports: {},
+  setMemoryReports: () => {}
 })

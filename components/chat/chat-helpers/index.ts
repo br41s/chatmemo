@@ -10,6 +10,11 @@ import {
   adaptMessagesForGoogleGemini
 } from "@/lib/build-prompt"
 import { ContextBudget, ContextBudgetHint } from "@/lib/context-budget"
+import {
+  decodeMemoryReport,
+  MEMORY_REPORT_HEADER,
+  MemoryReport
+} from "@/lib/memory-report"
 import { consumeReadableStream } from "@/lib/consume-stream"
 import {
   MAX_RETRIEVAL_FILE_IDS,
@@ -211,7 +216,8 @@ export const handleLocalChat = async (
   setIsGenerating: React.Dispatch<React.SetStateAction<boolean>>,
   setFirstTokenReceived: React.Dispatch<React.SetStateAction<boolean>>,
   setChatMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
-  setToolInUse: React.Dispatch<React.SetStateAction<string>>
+  setToolInUse: React.Dispatch<React.SetStateAction<string>>,
+  onMemoryReport?: (report: MemoryReport) => void
 ) => {
   const formattedMessages = await buildFinalMessages(
     payload,
@@ -246,7 +252,8 @@ export const handleLocalChat = async (
     newAbortController,
     setFirstTokenReceived,
     setChatMessages,
-    setToolInUse
+    setToolInUse,
+    onMemoryReport
   )
 }
 
@@ -265,7 +272,8 @@ export const handleHostedChat = async (
   setIsGenerating: React.Dispatch<React.SetStateAction<boolean>>,
   setFirstTokenReceived: React.Dispatch<React.SetStateAction<boolean>>,
   setChatMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
-  setToolInUse: React.Dispatch<React.SetStateAction<string>>
+  setToolInUse: React.Dispatch<React.SetStateAction<string>>,
+  onMemoryReport?: (report: MemoryReport) => void
 ) => {
   const provider =
     modelData.provider === "openai" && profile.use_azure_openai
@@ -324,7 +332,8 @@ export const handleHostedChat = async (
     newAbortController,
     setFirstTokenReceived,
     setChatMessages,
-    setToolInUse
+    setToolInUse,
+    onMemoryReport
   )
 }
 
@@ -370,8 +379,14 @@ export const processResponse = async (
   controller: AbortController,
   setFirstTokenReceived: React.Dispatch<React.SetStateAction<boolean>>,
   setChatMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
-  setToolInUse: React.Dispatch<React.SetStateAction<string>>
+  setToolInUse: React.Dispatch<React.SetStateAction<string>>,
+  onMemoryReport?: (report: MemoryReport) => void
 ) => {
+  // Read before the body, so the indicator can appear with the first token
+  // rather than after the stream finishes.
+  const report = decodeMemoryReport(response.headers.get(MEMORY_REPORT_HEADER))
+  if (report && onMemoryReport) onMemoryReport(report)
+
   let fullText = ""
   let contentToAdd = ""
 
@@ -523,6 +538,9 @@ export const handleCreateMessages = async (
     finalChatMessages = [...chatMessages]
 
     setChatMessages(finalChatMessages)
+
+    // Already the persisted id on a regeneration.
+    return updatedMessage.id
   } else {
     const createdMessages = await createMessages([
       finalUserMessage,
@@ -592,5 +610,8 @@ export const handleCreateMessages = async (
     })
 
     setChatMessages(finalChatMessages)
+
+    // The optimistic id the memory report was filed under is replaced here.
+    return createdMessages[1].id
   }
 }
