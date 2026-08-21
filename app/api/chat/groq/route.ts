@@ -1,5 +1,6 @@
 import { CHAT_SETTING_LIMITS } from "@/lib/chat-setting-limits"
 import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
+import { ContextBudgetHint } from "@/lib/context-budget"
 import { injectMemoryOpenAIFormat } from "@/lib/server/inject-memory"
 import { ChatSettings } from "@/types"
 import { openAIStreamResponse } from "@/lib/server/streaming"
@@ -8,9 +9,10 @@ import OpenAI from "openai"
 export const runtime = "edge"
 export async function POST(request: Request) {
   const json = await request.json()
-  const { chatSettings, messages } = json as {
+  const { chatSettings, messages, contextBudget } = json as {
     chatSettings: ChatSettings
     messages: any[]
+    contextBudget?: ContextBudgetHint
   }
 
   try {
@@ -20,7 +22,8 @@ export async function POST(request: Request) {
 
     const augmentedMessages = await injectMemoryOpenAIFormat(
       messages,
-      profile.user_id
+      profile.user_id,
+      contextBudget
     )
 
     // Groq is compatible with the OpenAI SDK

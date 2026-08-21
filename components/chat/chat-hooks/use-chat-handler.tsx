@@ -6,6 +6,8 @@ import { updateChat } from "@/db/chats"
 import { getCollectionFilesByCollectionId } from "@/db/collection-files"
 import { deleteMessagesIncludingAndAfter } from "@/db/messages"
 import { buildFinalMessages } from "@/lib/build-prompt"
+import { resolveContextBudget } from "@/lib/context-budget"
+import { resolveModelWindow } from "@/lib/models/model-window"
 import { Tables } from "@/supabase/types"
 import { ChatMessage, ChatPayload, LLMID, ModelProvider } from "@/types"
 import { useRouter } from "next/navigation"
@@ -237,6 +239,15 @@ export const useChatHandler = () => {
         messageContent
       )
 
+      // One budget for the turn. The client trims history to its share; the
+      // server sizes the memory block to the rest of the same window.
+      const budgetHint = resolveModelWindow(
+        chatSettings!.model,
+        availableOpenRouterModels,
+        chatSettings!.contextLength
+      )
+      const budget = resolveContextBudget(budgetHint)
+
       let currentChat = selectedChat ? { ...selectedChat } : null
 
       const b64Images = newMessageImages.map(image => image.base64)
@@ -295,10 +306,14 @@ export const useChatHandler = () => {
       if (selectedTools.length > 0 && isToolsCompatible) {
         setToolInUse("Tools")
 
+        // History is trimmed to the same budget, but no hint is sent: the
+        // tools route injects no memory, so there is no memory block for the
+        // server to size.
         const formattedMessages = await buildFinalMessages(
           payload,
           profile!,
-          chatImages
+          chatImages,
+          budget
         )
 
         const response = await fetch("/api/chat/tools", {
@@ -346,6 +361,7 @@ export const useChatHandler = () => {
             isRegeneration,
             regenerationTarget,
             newAbortController,
+            budget,
             setIsGenerating,
             setFirstTokenReceived,
             setChatMessages,
@@ -362,6 +378,8 @@ export const useChatHandler = () => {
             newAbortController,
             newMessageImages,
             chatImages,
+            budget,
+            budgetHint,
             setIsGenerating,
             setFirstTokenReceived,
             setChatMessages,
