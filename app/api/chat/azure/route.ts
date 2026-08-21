@@ -1,4 +1,5 @@
 import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
+import { memoryReportHeaders } from "@/lib/server/memory-report-headers"
 import { injectMemoryOpenAIFormat } from "@/lib/server/inject-memory"
 import { ChatAPIPayload } from "@/types"
 import { openAIStreamResponse } from "@/lib/server/streaming"
@@ -45,11 +46,8 @@ export async function POST(request: Request) {
       )
     }
 
-    const augmentedMessages = await injectMemoryOpenAIFormat(
-      messages,
-      profile.user_id,
-      contextBudget
-    )
+    const { messages: augmentedMessages, report: memoryReport } =
+      await injectMemoryOpenAIFormat(messages, profile.user_id, contextBudget)
 
     const azureOpenai = new OpenAI({
       apiKey: KEY,
@@ -66,7 +64,7 @@ export async function POST(request: Request) {
       stream: true
     })
 
-    return openAIStreamResponse(response)
+    return openAIStreamResponse(response, memoryReportHeaders(memoryReport))
   } catch (error: any) {
     const errorMessage = error.error?.message || "An unexpected error occurred"
     const errorCode = error.status || 500

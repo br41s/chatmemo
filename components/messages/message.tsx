@@ -23,6 +23,7 @@ import { TextareaAutosize } from "../ui/textarea-autosize"
 import { WithTooltip } from "../ui/with-tooltip"
 import { MessageActions } from "./message-actions"
 import { MessageMarkdown } from "./message-markdown"
+import { MessageMemory } from "./message-memory"
 
 const ICON_SIZE = 32
 
@@ -59,7 +60,8 @@ export const Message: FC<MessageProps> = ({
     assistantImages,
     toolInUse,
     files,
-    models
+    models,
+    memoryReports
   } = useContext(ChatbotUIContext)
 
   const { handleSendMessage } = useChatHandler()
@@ -306,6 +308,10 @@ export const Message: FC<MessageProps> = ({
             />
           ) : (
             <MessageMarkdown content={message.content} />
+          )}
+
+          {message.role === "assistant" && memoryReports[message.id] && (
+            <MessageMemory report={memoryReports[message.id]} />
           )}
         </div>
 

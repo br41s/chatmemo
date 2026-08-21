@@ -11,8 +11,13 @@
 // Works on both the edge and nodejs runtimes.
 // ---------------------------------------------------------------------------
 
-/** Wrap an async iterable of text fragments in a streamed text Response. */
-export function textStreamResponse(texts: AsyncIterable<string>): Response {
+/** Wrap an async iterable of text fragments in a streamed text Response.
+ *  `extraHeaders` carries out-of-band metadata about the turn — the memory
+ *  report — which cannot ride in a plain text body. */
+export function textStreamResponse(
+  texts: AsyncIterable<string>,
+  extraHeaders?: Record<string, string>
+): Response {
   const encoder = new TextEncoder()
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -27,7 +32,10 @@ export function textStreamResponse(texts: AsyncIterable<string>): Response {
     }
   })
   return new Response(stream, {
-    headers: { "Content-Type": "text/plain; charset=utf-8" }
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      ...extraHeaders
+    }
   })
 }
 
@@ -53,9 +61,10 @@ async function* openAIText(
 }
 
 export function openAIStreamResponse(
-  chunks: AsyncIterable<OpenAIChunkLike>
+  chunks: AsyncIterable<OpenAIChunkLike>,
+  extraHeaders?: Record<string, string>
 ): Response {
-  return textStreamResponse(openAIText(chunks))
+  return textStreamResponse(openAIText(chunks), extraHeaders)
 }
 
 // --- Anthropic message stream events ---------------------------------------
@@ -80,9 +89,10 @@ async function* anthropicText(
 }
 
 export function anthropicStreamResponse(
-  events: AsyncIterable<AnthropicEventLike>
+  events: AsyncIterable<AnthropicEventLike>,
+  extraHeaders?: Record<string, string>
 ): Response {
-  return textStreamResponse(anthropicText(events))
+  return textStreamResponse(anthropicText(events), extraHeaders)
 }
 
 // --- Google Gemini content chunks ------------------------------------------
@@ -100,7 +110,8 @@ async function* googleText(
 }
 
 export function googleStreamResponse(
-  chunks: AsyncIterable<GoogleChunkLike>
+  chunks: AsyncIterable<GoogleChunkLike>,
+  extraHeaders?: Record<string, string>
 ): Response {
-  return textStreamResponse(googleText(chunks))
+  return textStreamResponse(googleText(chunks), extraHeaders)
 }
