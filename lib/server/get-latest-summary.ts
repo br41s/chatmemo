@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { getLessons } from "@/lib/db/lessons"
+import { VersionedCache } from "@/lib/server/versioned-cache"
 import { cookies } from "next/headers"
 
 // ---------------------------------------------------------------------------
@@ -51,10 +52,57 @@ function cap(content: string, max: number): string {
  *      LLM summaries (if present) also fit under 400 chars. Limit 30.
  *   C. Index rows — compact conversation date lists.
  */
+// Keyed by user, versioned by the state of their memory. Module scope, so a
+// warm server instance reuses it across requests; a cold one simply misses.
+// Bounded because a shared instance must not grow with the number of users it
+// happens to serve.
+const baselineCache = new VersionedCache<string | null>(50)
+
+/**
+ * A token that changes whenever anything the baseline blob is built from
+ * changes: a summary inserted, a summary deleted, or the lessons document
+ * rewritten.
+ *
+ * Count matters as much as the newest timestamp — deleting an older row from
+ * the memory panel leaves the newest one untouched, and versioning on the
+ * timestamp alone would keep serving the deleted content. PostgREST returns
+ * the exact count alongside the row, so this stays two small queries.
+ */
+async function readMemoryVersion(
+  supabase: ReturnType<typeof createClient>,
+  userId: string
+): Promise<string> {
+  const [summaries, lessons] = await Promise.all([
+    supabase
+      .from("summaries")
+      .select("created_at", { count: "exact" })
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1),
+    supabase
+      .from("user_lessons")
+      .select("updated_at")
+      .eq("user_id", userId)
+      .maybeSingle()
+  ])
+
+  const newest = summaries.data?.[0]?.created_at ?? "none"
+  const count = summaries.count ?? -1
+  const lessonsAt = lessons.data?.updated_at ?? "none"
+
+  return `${count}|${newest}|${lessonsAt}`
+}
+
 export async function getLatestSummaryForUser(
   userId: string
 ): Promise<string | null> {
   const supabase = createClient(cookies())
+
+  const version = await readMemoryVersion(supabase, userId)
+  const cached = baselineCache.get(userId, version)
+  // A cached null is a real answer — "this user has no memory yet" is worth
+  // not recomputing — so only undefined counts as a miss.
+  if (cached !== undefined) return cached
 
   const [personalResult, bulkResult, indexResult, lessons] = await Promise.all([
     // A. Personal: everything narrative except raw Perplexity/ChatGPT imports.
@@ -102,12 +150,21 @@ export async function getLatestSummaryForUser(
     getLessons(supabase, userId)
   ])
 
-  return buildSummarySections(
+  const sections = buildSummarySections(
     lessons,
     indexResult.data ?? [],
     personalResult.data ?? [],
     bulkResult.data ?? []
   )
+
+  baselineCache.set(userId, version, sections)
+
+  return sections
+}
+
+/** Test seam — lets a suite start from a known-cold cache. */
+export function __clearBaselineCache(): void {
+  baselineCache.clear()
 }
 
 interface SummaryRow {
