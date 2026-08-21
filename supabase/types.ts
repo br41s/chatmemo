@@ -1141,18 +1141,30 @@ export type Database = {
           content: string
           created_at: string
           id: string
+          kind: string | null
+          occurred_at: string | null
+          source: string | null
+          title: string | null
           user_id: string
         }
         Insert: {
           content: string
           created_at?: string
           id?: string
+          kind?: string | null
+          occurred_at?: string | null
+          source?: string | null
+          title?: string | null
           user_id: string
         }
         Update: {
           content?: string
           created_at?: string
           id?: string
+          kind?: string | null
+          occurred_at?: string | null
+          source?: string | null
+          title?: string | null
           user_id?: string
         }
         Relationships: []

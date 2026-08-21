@@ -34,8 +34,6 @@ const MAX_RELEVANT_ROWS = 4 // top-ranked rows injected
 const RELEVANT_ROW_MAX = 2_000 // per-row excerpt cap (vs 400 in baseline)
 const RELEVANT_BUDGET = 6_000 // total char budget for the section (~1.5k tokens)
 
-const INDEX_MARKER = "Conversation Index"
-
 // Conversational filler that survives the shared STOP list (>3 chars, not a
 // stopword) but carries no recall signal. Searching for these would run a DB
 // query on greetings and acknowledgements ("thanks", "hola") with no chance of
@@ -123,8 +121,7 @@ export async function getRelevantMemoryForUser(
         .select("id, content, created_at")
         .eq("user_id", userId)
         .ilike("content", `%${term}%`)
-        .not("content", "like", "[chatmemo:%")
-        .not("content", "ilike", `%${INDEX_MARKER}%`)
+        .in("kind", ["conversation", "summary"])
         .order("created_at", { ascending: false })
         .limit(ROWS_PER_TERM)
     )

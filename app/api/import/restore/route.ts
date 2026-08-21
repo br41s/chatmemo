@@ -11,6 +11,7 @@
 
 import { getServerProfile } from "@/lib/server/server-chat-helpers"
 import { createClient } from "@/lib/supabase/server"
+import { summaryMetadataColumns } from "@/lib/summary-metadata"
 import { cookies } from "next/headers"
 import { NextRequest, NextResponse } from "next/server"
 import { ServerRuntime } from "next"
@@ -86,6 +87,10 @@ export async function POST(request: NextRequest) {
       const batch = toInsert.slice(i, i + BATCH).map(r => ({
         user_id: userId,
         content: r.content,
+        // Derived here rather than left to the backfill: a restored row must
+        // arrive already classified, or the memory queries — which filter on
+        // these columns — would not see it.
+        ...summaryMetadataColumns(r.content),
         // Preserve original timestamp if valid; fall back to now()
         ...(r.created_at && !isNaN(Date.parse(r.created_at))
           ? { created_at: r.created_at }

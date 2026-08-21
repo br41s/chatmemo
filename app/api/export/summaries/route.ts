@@ -20,6 +20,7 @@
  */
 
 import { getServerProfile } from "@/lib/server/server-chat-helpers"
+import { classifySummaryContent } from "@/lib/summary-metadata"
 import { EXPORT_PAGE, parsePageParams, takePage } from "@/lib/server/pagination"
 import { createClient } from "@/lib/supabase/server"
 import { cookies } from "next/headers"
@@ -29,43 +30,6 @@ import { ServerRuntime } from "next"
 export const runtime: ServerRuntime = "nodejs"
 
 type Row = { content: string; created_at: string }
-
-// Header pattern: ### [YYYY-MM-DD] anything
-const HEADER_RE = /^\s*###\s+\[\d{4}-\d{2}-\d{2}\]/
-
-function detectExportSource(
-  content: string
-): "claude" | "chatgpt" | "perplexity" | "other" {
-  // ── Explicit source tags (new format) ──────────────────────────────────
-  // :summary sub-tags must be checked before the plain [source:X] patterns
-  if (content.startsWith("[source:perplexity:summary]")) return "perplexity"
-  if (content.startsWith("[source:chatgpt:summary]")) return "chatgpt"
-  if (content.startsWith("[source:claude]")) return "claude"
-  if (content.startsWith("[source:chatgpt]")) return "chatgpt"
-  if (content.startsWith("[source:perplexity]")) return "perplexity"
-
-  // ── Watermark rows — route to the matching source ──────────────────────
-  const wmMatch = content.match(/^\[chatmemo:watermark:source=(\w+)/)
-  if (wmMatch) {
-    const s = wmMatch[1]
-    if (s === "claude") return "claude"
-    if (s === "chatgpt") return "chatgpt"
-    if (s === "perplexity") return "perplexity"
-  }
-
-  // ── Legacy index rows ──────────────────────────────────────────────────
-  if (content.startsWith("[Claude Conversation Index")) return "claude"
-  if (content.startsWith("[ChatGPT Conversation Index")) return "chatgpt"
-  if (content.startsWith("[Perplexity Conversation Index")) return "perplexity"
-
-  // ── Untagged rows with ### [date] headers ─────────────────────────────
-  // Created by import-claude-sessions.mjs (bulk import) or the bookmarklet.
-  // Both are Claude-origin entries stored before source tagging was added.
-  if (HEADER_RE.test(content)) return "claude"
-
-  // ── Everything else (sync-hook bullets, in-app summaries) ─────────────
-  return "other"
-}
 
 export async function GET(request: NextRequest) {
   try {
@@ -83,7 +47,7 @@ export async function GET(request: NextRequest) {
     // One row past the page, so hasMore needs no second query.
     const { data, error } = await supabase
       .from("summaries")
-      .select("content, created_at")
+      .select("content, created_at, source")
       .eq("user_id", userId)
       .order("created_at", { ascending: true })
       .range(offset, offset + limit)
@@ -102,8 +66,12 @@ export async function GET(request: NextRequest) {
     }
 
     for (const row of page) {
-      const src = detectExportSource(row.content ?? "")
-      grouped[src].push({ content: row.content, created_at: row.created_at })
+      // The stored column is the same classification detectExportSource used to
+      // re-derive per row; fall back to deriving it for any row written before
+      // the typed-metadata migration backfilled them.
+      const src = row.source ?? classifySummaryContent(row.content ?? "").source
+      const bucket = grouped[src] ?? grouped.other
+      bucket.push({ content: row.content, created_at: row.created_at })
     }
 
     return NextResponse.json({
