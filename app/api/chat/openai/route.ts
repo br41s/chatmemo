@@ -1,8 +1,4 @@
-import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
-import { ContextBudgetHint } from "@/lib/context-budget"
-import { memoryReportHeaders } from "@/lib/server/memory-report-headers"
-import { injectMemoryOpenAIFormat } from "@/lib/server/inject-memory"
-import { ChatSettings } from "@/types"
+import { createChatRoute } from "@/lib/server/chat-route"
 import { openAIStreamResponse } from "@/lib/server/streaming"
 import { ServerRuntime } from "next"
 import OpenAI from "openai"
@@ -10,22 +6,12 @@ import { ChatCompletionCreateParamsBase } from "openai/resources/chat/completion
 
 export const runtime: ServerRuntime = "edge"
 
-export async function POST(request: Request) {
-  const json = await request.json()
-  const { chatSettings, messages, contextBudget } = json as {
-    chatSettings: ChatSettings
-    messages: any[]
-    contextBudget?: ContextBudgetHint
-  }
-
-  try {
-    const profile = await getServerProfile()
-
-    checkApiKey(profile.openai_api_key, "OpenAI")
-
-    const { messages: augmentedMessages, report: memoryReport } =
-      await injectMemoryOpenAIFormat(messages, profile.user_id, contextBudget)
-
+export const POST = createChatRoute({
+  provider: "OpenAI",
+  apiKey: profile => profile.openai_api_key,
+  // OpenAI says so in the message rather than only in the status.
+  incorrectKey: { kind: "message", contains: "incorrect api key" },
+  respond: async ({ profile, chatSettings, messages, headers }) => {
     const openai = new OpenAI({
       apiKey: profile.openai_api_key || "",
       organization: profile.openai_organization_id
@@ -33,7 +19,7 @@ export async function POST(request: Request) {
 
     const response = await openai.chat.completions.create({
       model: chatSettings.model as ChatCompletionCreateParamsBase["model"],
-      messages: augmentedMessages as ChatCompletionCreateParamsBase["messages"],
+      messages: messages as ChatCompletionCreateParamsBase["messages"],
       temperature: chatSettings.temperature,
       max_tokens:
         chatSettings.model === "gpt-4-vision-preview" ||
@@ -43,21 +29,6 @@ export async function POST(request: Request) {
       stream: true
     })
 
-    return openAIStreamResponse(response, memoryReportHeaders(memoryReport))
-  } catch (error: any) {
-    let errorMessage = error.message || "An unexpected error occurred"
-    const errorCode = error.status || 500
-
-    if (errorMessage.toLowerCase().includes("api key not found")) {
-      errorMessage =
-        "OpenAI API Key not found. Please set it in your profile settings."
-    } else if (errorMessage.toLowerCase().includes("incorrect api key")) {
-      errorMessage =
-        "OpenAI API Key is incorrect. Please fix it in your profile settings."
-    }
-
-    return new Response(JSON.stringify({ message: errorMessage }), {
-      status: errorCode
-    })
+    return openAIStreamResponse(response, headers)
   }
-}
+})

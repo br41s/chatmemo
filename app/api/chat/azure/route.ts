@@ -1,75 +1,75 @@
-import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
-import { memoryReportHeaders } from "@/lib/server/memory-report-headers"
-import { injectMemoryOpenAIFormat } from "@/lib/server/inject-memory"
-import { ChatAPIPayload } from "@/types"
+import { ChatProfile, createChatRoute } from "@/lib/server/chat-route"
 import { openAIStreamResponse } from "@/lib/server/streaming"
+import { ChatSettings } from "@/types"
 import OpenAI from "openai"
 import { ChatCompletionCreateParamsBase } from "openai/resources/chat/completions.mjs"
 
 export const runtime = "edge"
 
-export async function POST(request: Request) {
-  const json = await request.json()
-  const { chatSettings, messages, contextBudget } = json as ChatAPIPayload
+/** Azure addresses a deployment, not a model, and the mapping lives on the
+ *  profile — a model with no deployment configured cannot be called at all. */
+function deploymentId(profile: ChatProfile, chatSettings: ChatSettings) {
+  switch (chatSettings.model) {
+    case "gpt-3.5-turbo":
+      return profile.azure_openai_35_turbo_id || ""
+    case "gpt-4-turbo-preview":
+      return profile.azure_openai_45_turbo_id || ""
+    case "gpt-4-vision-preview":
+      return profile.azure_openai_45_vision_id || ""
+    default:
+      return null
+  }
+}
 
-  try {
-    const profile = await getServerProfile()
+export const POST = createChatRoute({
+  provider: "Azure OpenAI",
+  apiKey: profile => profile.azure_openai_api_key,
+  // Runs before the memory lookup, so a misconfigured deployment fails without
+  // a round-trip to the database first.
+  validate: (profile, chatSettings) => {
+    const deployment = deploymentId(profile, chatSettings)
 
-    checkApiKey(profile.azure_openai_api_key, "Azure OpenAI")
-
-    const ENDPOINT = profile.azure_openai_endpoint
-    const KEY = profile.azure_openai_api_key
-
-    let DEPLOYMENT_ID = ""
-    switch (chatSettings.model) {
-      case "gpt-3.5-turbo":
-        DEPLOYMENT_ID = profile.azure_openai_35_turbo_id || ""
-        break
-      case "gpt-4-turbo-preview":
-        DEPLOYMENT_ID = profile.azure_openai_45_turbo_id || ""
-        break
-      case "gpt-4-vision-preview":
-        DEPLOYMENT_ID = profile.azure_openai_45_vision_id || ""
-        break
-      default:
-        return new Response(JSON.stringify({ message: "Model not found" }), {
-          status: 400
-        })
+    if (deployment === null) {
+      return new Response(JSON.stringify({ message: "Model not found" }), {
+        status: 400
+      })
     }
 
-    if (!ENDPOINT || !KEY || !DEPLOYMENT_ID) {
+    if (!profile.azure_openai_endpoint || !profile.azure_openai_api_key) {
       return new Response(
         JSON.stringify({ message: "Azure resources not found" }),
-        {
-          status: 400
-        }
+        { status: 400 }
       )
     }
 
-    const { messages: augmentedMessages, report: memoryReport } =
-      await injectMemoryOpenAIFormat(messages, profile.user_id, contextBudget)
+    if (!deployment) {
+      return new Response(
+        JSON.stringify({ message: "Azure resources not found" }),
+        { status: 400 }
+      )
+    }
+
+    return undefined
+  },
+  respond: async ({ profile, chatSettings, messages, headers }) => {
+    const key = profile.azure_openai_api_key || ""
+    const deployment = deploymentId(profile, chatSettings) || ""
 
     const azureOpenai = new OpenAI({
-      apiKey: KEY,
-      baseURL: `${ENDPOINT}/openai/deployments/${DEPLOYMENT_ID}`,
+      apiKey: key,
+      baseURL: `${profile.azure_openai_endpoint}/openai/deployments/${deployment}`,
       defaultQuery: { "api-version": "2023-12-01-preview" },
-      defaultHeaders: { "api-key": KEY }
+      defaultHeaders: { "api-key": key }
     })
 
     const response = await azureOpenai.chat.completions.create({
-      model: DEPLOYMENT_ID as ChatCompletionCreateParamsBase["model"],
-      messages: augmentedMessages as ChatCompletionCreateParamsBase["messages"],
+      model: deployment as ChatCompletionCreateParamsBase["model"],
+      messages: messages as ChatCompletionCreateParamsBase["messages"],
       temperature: chatSettings.temperature,
       max_tokens: chatSettings.model === "gpt-4-vision-preview" ? 4096 : null, // TODO: Fix
       stream: true
     })
 
-    return openAIStreamResponse(response, memoryReportHeaders(memoryReport))
-  } catch (error: any) {
-    const errorMessage = error.error?.message || "An unexpected error occurred"
-    const errorCode = error.status || 500
-    return new Response(JSON.stringify({ message: errorMessage }), {
-      status: errorCode
-    })
+    return openAIStreamResponse(response, headers)
   }
-}
+})

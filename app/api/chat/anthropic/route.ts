@@ -1,121 +1,67 @@
 import { maxTokenOutputFor } from "@/lib/chat-setting-limits"
-import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
-import { ContextBudgetHint } from "@/lib/context-budget"
-import { memoryReportHeaders } from "@/lib/server/memory-report-headers"
-import { injectMemoryOpenAIFormat } from "@/lib/server/inject-memory"
-import { getBase64FromDataURL, getMediaTypeFromDataURL } from "@/lib/utils"
-import { ChatSettings } from "@/types"
-import Anthropic from "@anthropic-ai/sdk"
+import { createChatRoute } from "@/lib/server/chat-route"
 import { anthropicStreamResponse } from "@/lib/server/streaming"
-import { NextRequest, NextResponse } from "next/server"
+import { getBase64FromDataURL, getMediaTypeFromDataURL } from "@/lib/utils"
+import Anthropic from "@anthropic-ai/sdk"
 
 export const runtime = "edge"
 
-export async function POST(request: NextRequest) {
-  const json = await request.json()
-  const { chatSettings, messages, contextBudget } = json as {
-    chatSettings: ChatSettings
-    messages: any[]
-    contextBudget?: ContextBudgetHint
-  }
+/**
+ * OpenAI content blocks to Anthropic ones.
+ *
+ * Anthropic wants every message's content as an array of typed blocks, and
+ * images as base64 with an explicit media type rather than a data URL.
+ */
+function toAnthropicMessages(messages: any[]) {
+  return messages.map((message: any) => {
+    const content =
+      typeof message?.content === "string"
+        ? [message.content]
+        : message?.content
 
-  try {
-    const profile = await getServerProfile()
-
-    checkApiKey(profile.anthropic_api_key, "Anthropic")
-
-    // Inject memory into the system message (index 0) before splitting it off
-    // from the conversation messages below.
-    const { messages: augmentedMessages, report: memoryReport } =
-      await injectMemoryOpenAIFormat(messages, profile.user_id, contextBudget)
-
-    let ANTHROPIC_FORMATTED_MESSAGES: any = augmentedMessages.slice(1)
-
-    ANTHROPIC_FORMATTED_MESSAGES = ANTHROPIC_FORMATTED_MESSAGES?.map(
-      (message: any) => {
-        const messageContent =
-          typeof message?.content === "string"
-            ? [message.content]
-            : message?.content
-
-        return {
-          ...message,
-          content: messageContent.map((content: any) => {
-            if (typeof content === "string") {
-              // Handle the case where content is a string
-              return { type: "text", text: content }
-            } else if (
-              content?.type === "image_url" &&
-              content?.image_url?.url?.length
-            ) {
-              return {
-                type: "image",
-                source: {
-                  type: "base64",
-                  media_type: getMediaTypeFromDataURL(content.image_url.url),
-                  data: getBase64FromDataURL(content.image_url.url)
-                }
-              }
-            } else {
-              return content
-            }
-          })
+    return {
+      ...message,
+      content: content.map((block: any) => {
+        if (typeof block === "string") {
+          return { type: "text", text: block }
         }
-      }
-    )
 
+        if (block?.type === "image_url" && block?.image_url?.url?.length) {
+          return {
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: getMediaTypeFromDataURL(block.image_url.url),
+              data: getBase64FromDataURL(block.image_url.url)
+            }
+          }
+        }
+
+        return block
+      })
+    }
+  })
+}
+
+export const POST = createChatRoute({
+  provider: "Anthropic",
+  apiKey: profile => profile.anthropic_api_key,
+  respond: async ({ profile, chatSettings, messages, headers }) => {
     const anthropic = new Anthropic({
       apiKey: profile.anthropic_api_key || ""
     })
 
-    try {
-      const response = await anthropic.messages.create({
-        model: chatSettings.model,
-        messages: ANTHROPIC_FORMATTED_MESSAGES,
-        temperature: chatSettings.temperature,
-        system: augmentedMessages[0].content,
-        max_tokens: maxTokenOutputFor(chatSettings.model),
-        stream: true
-      })
-
-      try {
-        return anthropicStreamResponse(
-          response,
-          memoryReportHeaders(memoryReport)
-        )
-      } catch (error: any) {
-        console.error("Error parsing Anthropic API response:", error)
-        return new NextResponse(
-          JSON.stringify({
-            message:
-              "An error occurred while parsing the Anthropic API response"
-          }),
-          { status: 500 }
-        )
-      }
-    } catch (error: any) {
-      console.error("Error calling Anthropic API:", error)
-      return new NextResponse(
-        JSON.stringify({
-          message: "An error occurred while calling the Anthropic API"
-        }),
-        { status: 500 }
-      )
-    }
-  } catch (error: any) {
-    let errorMessage = error.message || "An unexpected error occurred"
-    const errorCode = error.status || 500
-
-    if (errorMessage.toLowerCase().includes("api key not found")) {
-      errorMessage =
-        "Anthropic API Key not found. Please set it in your profile settings."
-    } else if (errorCode === 401) {
-      errorMessage =
-        "Anthropic API Key is incorrect. Please fix it in your profile settings."
-    }
-
-    return new NextResponse(JSON.stringify({ message: errorMessage }), {
-      status: errorCode
+    // Memory was injected into the system message, which Anthropic takes as its
+    // own field rather than as the first message.
+    const response = await anthropic.messages.create({
+      model: chatSettings.model,
+      messages: toAnthropicMessages(messages.slice(1)),
+      temperature: chatSettings.temperature,
+      system: messages[0].content,
+      max_tokens: maxTokenOutputFor(chatSettings.model),
+      stream: true
     })
+
+    return anthropicStreamResponse(response, headers)
   }
-}
+})
