@@ -2,4 +2,7 @@
 
 . "$(dirname -- "$0")/_/husky.sh"
 
-npm run lint:fix && npm run format:write && git add .
+# lint-staged formats only what is already staged. This used to end in
+# `git add .`, which swept every unrelated working-tree change into the commit
+# and made `--no-verify` the only way to commit one thing at a time.
+npx lint-staged
