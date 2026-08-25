@@ -62,13 +62,14 @@ export const ChatSecondaryButtons: FC<ChatSecondaryButtonsProps> = ({}) => {
             delayDuration={200}
             display={<div>Start a new chat</div>}
             trigger={
-              <div className="mt-1">
-                <IconMessagePlus
-                  className="cursor-pointer hover:opacity-50"
-                  size={24}
-                  onClick={handleNewChat}
-                />
-              </div>
+              <button
+                type="button"
+                aria-label="Start a new chat"
+                className="mt-1 cursor-pointer rounded hover:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                onClick={handleNewChat}
+              >
+                <IconMessagePlus size={24} />
+              </button>
             }
           />
         </>

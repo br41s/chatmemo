@@ -456,7 +456,10 @@ export function MemoryHistorySheet() {
         </Button>
       </SheetTrigger>
 
-      <SheetContent side="left" className="flex w-[380px] flex-col gap-4 p-4">
+      <SheetContent
+        side="left"
+        className="flex w-full flex-col gap-4 p-4 sm:w-[380px]"
+      >
         <SheetHeader className="pb-2">
           <div className="flex items-center justify-between">
             <SheetTitle className="flex items-center gap-2 text-base">
