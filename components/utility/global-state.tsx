@@ -2,6 +2,7 @@
 
 "use client"
 
+import { MemoryReport } from "@/lib/memory-report"
 import { ChatbotUIContext } from "@/context/context"
 import { getProfileByUserId } from "@/db/profile"
 import { getWorkspaceImageFromStorage } from "@/db/storage/workspace-images"
@@ -131,6 +132,11 @@ export const GlobalState: FC<GlobalStateProps> = ({ children }) => {
   // TOOL STORE
   const [selectedTools, setSelectedTools] = useState<Tables<"tools">[]>([])
   const [toolInUse, setToolInUse] = useState<string>("none")
+
+  // MEMORY STORE
+  const [memoryReports, setMemoryReports] = useState<
+    Record<string, MemoryReport>
+  >({})
 
   useEffect(() => {
     ;(async () => {
@@ -331,7 +337,11 @@ export const GlobalState: FC<GlobalStateProps> = ({ children }) => {
         selectedTools,
         setSelectedTools,
         toolInUse,
-        setToolInUse
+        setToolInUse,
+
+        // MEMORY STORE
+        memoryReports,
+        setMemoryReports
       }}
     >
       {children}

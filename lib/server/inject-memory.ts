@@ -4,6 +4,12 @@ import {
   NO_FULL_MATCH_MARKER
 } from "@/lib/server/get-full-conversation"
 import { getRelevantMemoryForUser } from "@/lib/server/get-relevant-memory"
+import {
+  ContextBudget,
+  ContextBudgetHint,
+  resolveContextBudget
+} from "@/lib/context-budget"
+import { buildMemoryReport, MemoryReport } from "@/lib/memory-report"
 
 // ---------------------------------------------------------------------------
 // Shared memory injection
@@ -74,15 +80,29 @@ export function buildMemoryBlock(
  * A failure here must never break the chat — if memory retrieval throws, we log
  * and degrade to no memory rather than returning a 500 to the user.
  */
+export interface MemoryInjection {
+  /** The block to prepend, or null when there is nothing to inject. */
+  block: string | null
+  /** What was injected, for the client to show the reader. */
+  report: MemoryReport
+}
+
+const EMPTY_REPORT = (budgetChars: number): MemoryReport => ({
+  injected: false,
+  totalChars: 0,
+  budgetChars
+})
+
 async function fetchMemoryBlock(
   userId: string,
-  lastUserText: string
-): Promise<string | null> {
+  lastUserText: string,
+  budget: ContextBudget
+): Promise<MemoryInjection> {
   try {
     const [summary, fullConv, relevantMemory] = await Promise.all([
-      getLatestSummaryForUser(userId),
-      getFullConversationForUser(userId, lastUserText),
-      getRelevantMemoryForUser(userId, lastUserText)
+      getLatestSummaryForUser(userId, budget),
+      getFullConversationForUser(userId, lastUserText, budget),
+      getRelevantMemoryForUser(userId, lastUserText, budget)
     ])
 
     // When the user is recovering a specific full conversation AND we actually
@@ -100,12 +120,30 @@ async function fetchMemoryBlock(
     // question — skip the relevance section to avoid burying/overflowing it.
     const effectiveRelevant = fullConvFoundMatch ? null : relevantMemory
 
-    if (!effectiveSummary && !fullConv && !effectiveRelevant) return null
+    if (!effectiveSummary && !fullConv && !effectiveRelevant) {
+      return { block: null, report: EMPTY_REPORT(budget.memoryChars) }
+    }
 
-    return buildMemoryBlock(effectiveSummary, fullConv, effectiveRelevant)
+    const block = buildMemoryBlock(
+      effectiveSummary,
+      fullConv,
+      effectiveRelevant
+    )
+
+    return {
+      block,
+      report: buildMemoryReport({
+        summary: effectiveSummary,
+        relevant: effectiveRelevant,
+        fullConversation: fullConv,
+        fullConversationMissed: !!fullConv && !fullConvFoundMatch,
+        totalChars: block.length,
+        budgetChars: budget.memoryChars
+      })
+    }
   } catch (error) {
     console.error("Memory injection failed; continuing without memory:", error)
-    return null
+    return { block: null, report: EMPTY_REPORT(budget.memoryChars) }
   }
 }
 
@@ -179,18 +217,27 @@ export function buildAugmentedGoogleMessages(
  * Inject memory into OpenAI-format messages ({ role, content }). Used by
  * openrouter/openai/anthropic/mistral/groq/perplexity/azure routes.
  */
+export interface InjectedMessages {
+  messages: any[]
+  report: MemoryReport
+}
+
 export async function injectMemoryOpenAIFormat(
   messages: any[],
-  userId: string
-): Promise<any[]> {
+  userId: string,
+  budgetHint?: ContextBudgetHint
+): Promise<InjectedMessages> {
   const lastUser = [...messages].reverse().find(m => m.role === "user")
   const lastUserText =
     typeof lastUser?.content === "string" ? lastUser.content : ""
 
-  const memoryBlock = await fetchMemoryBlock(userId, lastUserText)
-  if (!memoryBlock) return messages
+  // Re-resolved here rather than taken from the client: the hint describes the
+  // model, the split is the server's to decide.
+  const budget = resolveContextBudget(budgetHint)
+  const { block, report } = await fetchMemoryBlock(userId, lastUserText, budget)
+  if (!block) return { messages, report }
 
-  return buildAugmentedOpenAIMessages(messages, memoryBlock)
+  return { messages: buildAugmentedOpenAIMessages(messages, block), report }
 }
 
 // ---------------------------------------------------------------------------
@@ -202,15 +249,17 @@ export async function injectMemoryOpenAIFormat(
  */
 export async function injectMemoryGoogleFormat(
   messages: any[],
-  userId: string
-): Promise<any[]> {
+  userId: string,
+  budgetHint?: ContextBudgetHint
+): Promise<InjectedMessages> {
   const last = messages[messages.length - 1]
   const lastUserText = Array.isArray(last?.parts)
     ? last.parts.map((p: any) => p?.text ?? "").join(" ")
     : ""
 
-  const memoryBlock = await fetchMemoryBlock(userId, lastUserText)
-  if (!memoryBlock) return messages
+  const budget = resolveContextBudget(budgetHint)
+  const { block, report } = await fetchMemoryBlock(userId, lastUserText, budget)
+  if (!block) return { messages, report }
 
-  return buildAugmentedGoogleMessages(messages, memoryBlock)
+  return { messages: buildAugmentedGoogleMessages(messages, block), report }
 }

@@ -1,5 +1,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { getLessons } from "@/lib/db/lessons"
+import { VersionedCache } from "@/lib/server/versioned-cache"
+import { ContextBudget, resolveContextBudget } from "@/lib/context-budget"
 import { cookies } from "next/headers"
 
 // ---------------------------------------------------------------------------
@@ -21,17 +23,12 @@ import { cookies } from "next/headers"
 // Total injected: ~100 k chars ≈ 25 k tokens. Fast and safe for all models.
 // ---------------------------------------------------------------------------
 
-const PERSONAL_BUDGET = 80_000 // chars — ~60–80 sessions at 1 000 avg
-const BULK_BUDGET = 20_000 // chars — ~50 Perplexity/ChatGPT topics
-
 const PERSONAL_ROW_MAX = 1_500 // cap per personal row
 const BULK_ROW_MAX = 400 // title + opening line only for bulk rows
 
 const MAX_PERSONAL_ROWS = 150 // enough to cover all personal sessions
 const MAX_BULK_ROWS = 30 // only recent bulk rows are useful
 const MAX_INDEX_ROWS = 5
-
-const INDEX_MARKER = "Conversation Index"
 
 function cap(content: string, max: number): string {
   return content.length > max ? content.slice(0, max) + "…" : content
@@ -53,31 +50,91 @@ function cap(content: string, max: number): string {
  *      LLM summaries (if present) also fit under 400 chars. Limit 30.
  *   C. Index rows — compact conversation date lists.
  */
-export async function getLatestSummaryForUser(
+// Keyed by user, versioned by the state of their memory. Module scope, so a
+// warm server instance reuses it across requests; a cold one simply misses.
+// Bounded because a shared instance must not grow with the number of users it
+// happens to serve.
+const baselineCache = new VersionedCache<string | null>(50)
+
+/**
+ * A token that changes whenever anything the baseline blob is built from
+ * changes: a summary inserted, a summary deleted, or the lessons document
+ * rewritten.
+ *
+ * Count matters as much as the newest timestamp — deleting an older row from
+ * the memory panel leaves the newest one untouched, and versioning on the
+ * timestamp alone would keep serving the deleted content. PostgREST returns
+ * the exact count alongside the row, so this stays two small queries.
+ */
+async function readMemoryVersion(
+  supabase: ReturnType<typeof createClient>,
   userId: string
+): Promise<string> {
+  const [summaries, lessons] = await Promise.all([
+    supabase
+      .from("summaries")
+      .select("created_at", { count: "exact" })
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1),
+    supabase
+      .from("user_lessons")
+      .select("updated_at")
+      .eq("user_id", userId)
+      .maybeSingle()
+  ])
+
+  const newest = summaries.data?.[0]?.created_at ?? "none"
+  const count = summaries.count ?? -1
+  const lessonsAt = lessons.data?.updated_at ?? "none"
+
+  return `${count}|${newest}|${lessonsAt}`
+}
+
+export async function getLatestSummaryForUser(
+  userId: string,
+  budget: ContextBudget = resolveContextBudget()
 ): Promise<string | null> {
   const supabase = createClient(cookies())
 
+  // The budget is part of the cache key, not just the query: the same rows
+  // assembled under a different allowance are a different blob, so switching
+  // to a smaller-window model must not serve the larger model's block.
+  const version = `${await readMemoryVersion(supabase, userId)}|${budget.personalChars}|${budget.bulkChars}`
+  const cached = baselineCache.get(userId, version)
+  // A cached null is a real answer — "this user has no memory yet" is worth
+  // not recomputing — so only undefined counts as a miss.
+  if (cached !== undefined) return cached
+
   const [personalResult, bulkResult, indexResult, lessons] = await Promise.all([
-    // A. Personal: exclude Perplexity, ChatGPT, watermarks, and index rows.
-    //    [source:claude] rows ARE included — they are Claude Code sessions.
+    // A. Personal: everything narrative except raw Perplexity/ChatGPT imports.
+    //    [source:claude] rows ARE included — they are Claude Code sessions, and
+    //    so are the import-time LLM summaries of bulk sources: the old
+    //    `[source:chatgpt]%` predicate did not match `[source:chatgpt:summary]`,
+    //    so those landed here, under the 1 500-char cap rather than the 400-char
+    //    bulk one. Keeping them here preserves that.
+    //
+    //    The source list is positive rather than a negation because the CHECK
+    //    constraint added with these columns closes the set to exactly four
+    //    values, so (claude, other) is the complement of (perplexity, chatgpt).
     supabase
       .from("summaries")
       .select("id, content")
       .eq("user_id", userId)
-      .not("content", "like", "[source:perplexity]%")
-      .not("content", "like", "[source:chatgpt]%")
-      .not("content", "like", "[chatmemo:%]%")
-      .not("content", "ilike", `%${INDEX_MARKER}%`)
+      .in("kind", ["conversation", "summary"])
+      .or("kind.eq.summary,source.in.(claude,other)")
       .order("created_at", { ascending: false })
       .limit(MAX_PERSONAL_ROWS),
 
-    // B. Bulk imports: Perplexity + ChatGPT, title-only when building context
+    // B. Bulk imports: raw Perplexity + ChatGPT conversations, title-only when
+    //    building context. Their LLM summaries are kind "summary" and belong to
+    //    query A, which is where the previous predicates put them.
     supabase
       .from("summaries")
       .select("id, content")
       .eq("user_id", userId)
-      .or("content.like.[source:perplexity]%,content.like.[source:chatgpt]%")
+      .eq("kind", "conversation")
+      .in("source", ["perplexity", "chatgpt"])
       .order("created_at", { ascending: false })
       .limit(MAX_BULK_ROWS),
 
@@ -86,7 +143,7 @@ export async function getLatestSummaryForUser(
       .from("summaries")
       .select("id, content")
       .eq("user_id", userId)
-      .ilike("content", `%${INDEX_MARKER}%`)
+      .eq("kind", "index")
       .order("created_at", { ascending: false })
       .limit(MAX_INDEX_ROWS),
 
@@ -95,12 +152,22 @@ export async function getLatestSummaryForUser(
     getLessons(supabase, userId)
   ])
 
-  return buildSummarySections(
+  const sections = buildSummarySections(
     lessons,
     indexResult.data ?? [],
     personalResult.data ?? [],
-    bulkResult.data ?? []
+    bulkResult.data ?? [],
+    budget
   )
+
+  baselineCache.set(userId, version, sections)
+
+  return sections
+}
+
+/** Test seam — lets a suite start from a known-cold cache. */
+export function __clearBaselineCache(): void {
+  baselineCache.clear()
 }
 
 interface SummaryRow {
@@ -128,7 +195,8 @@ export function buildSummarySections(
   lessons: string | null,
   indexData: SummaryRow[],
   personalData: SummaryRow[],
-  bulkData: SummaryRow[]
+  bulkData: SummaryRow[],
+  budget: ContextBudget = resolveContextBudget()
 ): string | null {
   const parts: string[] = []
 
@@ -145,7 +213,7 @@ export function buildSummarySections(
     const content = (row.content ?? "").trim()
     if (!content) continue
     const capped = cap(content, PERSONAL_ROW_MAX)
-    if (personalChars + capped.length > PERSONAL_BUDGET) break
+    if (personalChars + capped.length > budget.personalChars) break
     parts.push(capped)
     personalChars += capped.length
   }
@@ -156,7 +224,7 @@ export function buildSummarySections(
     const content = (row.content ?? "").trim()
     if (!content) continue
     const capped = cap(content, BULK_ROW_MAX)
-    if (bulkChars + capped.length > BULK_BUDGET) break
+    if (bulkChars + capped.length > budget.bulkChars) break
     parts.push(capped)
     bulkChars += capped.length
   }

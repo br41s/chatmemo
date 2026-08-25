@@ -123,3 +123,41 @@
 - Decidido: `CHAT_COMPOSER_CONTAINER` centraliza la cadena de breakpoints del compositor, duplicada entre la pantalla de chat vacío y la conversación activa. Se elimina el paso `lg` por ser idéntico a `md`.
 - Verificado: `lint`, `format:write`, type-check en condiciones de clon limpio, 250 pruebas Jest en 28 suites (16 nuevas) y build de producción.
 - Sin cambios: seguridad, migraciones y las fases 3 y 4 de la auditoría.
+
+## 2026-08-19 — Fase 3: memoria tipada, cacheada, presupuestada y visible
+
+Cuatro PRs apilados sobre la rama de auditoría, uno por hallazgo, en orden de dependencia.
+
+### ARCH-04 — metadatos tipados en `summaries` (PR #9)
+
+- Decidido: añadir `source`, `kind`, `title` y `occurred_at`, rellenados por la propia migración para que la tabla quede consistente en cuanto termina.
+- Decidido: los prefijos siguen en `content`. El bloque de memoria inyectado los cita y el formato de backup depende de ellos; mantenerlos también deja seguro un rollback de código.
+- Decidido: un único clasificador (`lib/summary-metadata.ts`) los produce y el backfill de la migración lo replica en SQL. Ambos lados se fijan a las mismas 20 fixtures, porque dos implementaciones de una regla solo se mantienen honestas si se comprueban contra la misma tabla de casos.
+- Preservado a propósito: `[source:chatgpt]%` nunca casaba con `[source:chatgpt:summary]`, así que los resúmenes LLM de importaciones caían en el bucket personal (tope 1500) y no en el bulk (tope 400). El comportamiento gana al comentario: un tope de 400 los truncaría a media frase.
+- Decidido: el `CHECK` cierra el conjunto de fuentes, y eso es lo que permite enumerar `(claude, other)` en positivo en vez de negar.
+- Verificado: contra PostgreSQL 16 desechable, el backfill y el clasificador TypeScript producen salida idéntica en las 20 fixtures; los constraints rechazan valores desconocidos.
+- Despliegue obligatorio: aplicar la migración ANTES de publicar el código. Al revés, las consultas de memoria filtran por columnas inexistentes; el chat sigue funcionando porque las rutas degradan a sin-memoria, pero la memoria desaparece hasta que la migración llegue.
+- Pendiente: aplicar la migración remota solo con confirmación explícita, y regenerar `supabase/types.ts` después (ahora está editado a mano para igualar lo que emitirá el generador).
+
+### ARCH-03 — caché del blob base (PR #10)
+
+- Rechazado: caché por TTL. Serviría memoria a sabiendas desactualizada — el resumen escrito tras el turno anterior faltaría en el siguiente.
+- Decidido: clave de versión leída de la base de datos, de modo que una entrada está vigente o se falla, nunca obsoleta. Además no requiere coordinación entre instancias.
+- Decidido: la versión incluye el recuento de filas, no solo el `created_at` más reciente. Borrar una fila antigua desde el panel deja intacta la más nueva, y una versión basada solo en la marca de tiempo seguiría sirviendo lo borrado.
+- Decidido: caché acotada y LRU; un `null` cacheado es una respuesta real y se distingue de un fallo de caché.
+
+### ARCH-01 — un solo presupuesto de contexto (PR #11)
+
+- Decidido: `resolveContextBudget` reparte la ventana real del modelo entre respuesta, historial y memoria; el cliente recorta a su parte y el servidor vuelve a resolver el reparto en vez de fiarse del enviado.
+- Verificado: con ventana de 128k y ajustes por defecto, el reparto da exactamente las constantes anteriores (80k personal, 20k bulk, 6k relevante, 120k conversación completa). Acotar la petición no encoge lo que recibe un modelo capaz.
+- Decidido: un modelo desconocido cae a una suposición conservadora de 8k en vez de suponer alto. Suponer alto para un modelo desconocido es justo lo que producía peticiones fuera de límite.
+- Decidido: el presupuesto forma parte de la clave de caché del blob base; las mismas filas bajo otra asignación son otro blob.
+
+### ID-02 — memoria visible en el chat (PR #12)
+
+- Decidido: el servidor informa de lo que inyectó mediante una cabecera de respuesta, porque el cuerpo es un stream de texto plano.
+- Decidido: el informe se deriva de las propias secciones del bloque ya ensamblado, no de contadores nuevos en cada capa; el constructor ya delimita cada sección, así que no se crea una segunda fuente de verdad.
+- Decidido: una cabecera ausente o ilegible degrada a «sin indicador», nunca a un turno fallido.
+- Decidido: una recuperación que no encuentra nada también se muestra. Al modelo se le dijo que lo admitiera en vez de reconstruir la conversación, y quien lee merece saberlo.
+- Decidido: el informe se re-indexa del id optimista al id persistido cuando se guarda el turno.
+- Verificado: 327 pruebas Jest en 33 suites, type-check en condiciones de clon limpio y build de producción en las cuatro ramas.

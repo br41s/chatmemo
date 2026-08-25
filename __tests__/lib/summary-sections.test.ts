@@ -9,6 +9,7 @@
  * highest-quality signal.
  */
 import { buildSummarySections } from "@/lib/server/get-latest-summary"
+import { resolveContextBudget } from "@/lib/context-budget"
 
 const row = (content: string | null) => ({ content })
 
@@ -65,7 +66,8 @@ describe("buildSummarySections — budgets", () => {
       null,
       [],
       [row("p".repeat(2_000))],
-      [row("b".repeat(1_000))]
+      [row("b".repeat(1_000))],
+      resolveContextBudget({ windowTokens: 128_000, outputTokens: 4_096 })
     )!
 
     expect(out).toContain("p".repeat(1_500) + "…")
@@ -74,12 +76,18 @@ describe("buildSummarySections — budgets", () => {
     expect(out).not.toContain("b".repeat(401))
   })
 
-  it("stops adding personal rows once the 80k budget is spent", () => {
-    // 60 rows × 1500 chars = 90k, so the 80k budget cuts the tail off.
+  it("stops adding personal rows once the budget is spent", () => {
+    // 60 rows x 1500 chars = 90k, past the 80k personal budget a large model
+    // resolves to, so the tail is cut off.
+    const large = resolveContextBudget({
+      windowTokens: 128_000,
+      requestedHistoryTokens: 4_096,
+      outputTokens: 4_096
+    })
     const rows = Array.from({ length: 60 }, (_, i) =>
       row(`${i}`.padEnd(1_500, "x"))
     )
-    const out = buildSummarySections(null, [], rows, [])!
+    const out = buildSummarySections(null, [], rows, [], large)!
 
     expect(out).toContain("0".padEnd(1_500, "x"))
     expect(out).not.toContain("59".padEnd(1_500, "x"))
@@ -87,14 +95,76 @@ describe("buildSummarySections — budgets", () => {
 
   it("keeps the bulk budget separate from the personal one", () => {
     // A full personal budget must not starve bulk rows — they are billed apart.
+    const large = resolveContextBudget({
+      windowTokens: 128_000,
+      requestedHistoryTokens: 4_096,
+      outputTokens: 4_096
+    })
     const personal = Array.from({ length: 60 }, () => row("x".repeat(1_500)))
     const out = buildSummarySections(
       null,
       [],
       personal,
-      [row("BULK_MARKER conversation")]
+      [row("BULK_MARKER conversation")],
+      large
     )!
 
     expect(out).toContain("BULK_MARKER")
+  })
+})
+
+describe("buildSummarySections — honours the resolved context budget", () => {
+  const rows = (n: number, char: string) =>
+    Array.from({ length: n }, () => row(char.repeat(1_500)))
+
+  it("shrinks the blob for a small model instead of overflowing it", () => {
+    // The same rows, assembled under an 8k-window budget and a 128k one. The
+    // small model must get materially less, or the request that used to
+    // overflow still overflows.
+    const small = resolveContextBudget({
+      windowTokens: 8_192,
+      requestedHistoryTokens: 4_096
+    })
+    const large = resolveContextBudget({
+      windowTokens: 128_000,
+      requestedHistoryTokens: 4_096,
+      outputTokens: 4_096
+    })
+
+    const underSmall = buildSummarySections(null, [], rows(80, "p"), [], small)!
+    const underLarge = buildSummarySections(null, [], rows(80, "p"), [], large)!
+
+    expect(underSmall.length).toBeLessThan(underLarge.length)
+    expect(underSmall.length).toBeLessThanOrEqual(
+      small.personalChars + small.bulkChars + 200 // section wrappers
+    )
+  })
+
+  it("defaults to the conservative window when no budget is passed", () => {
+    // The no-argument default is deliberately the 8k assumption, not an
+    // unbounded one: an unknown model is exactly the case that used to produce
+    // over-limit requests.
+    const out = buildSummarySections(null, [], rows(80, "p"), [])!
+    const fallback = resolveContextBudget()
+
+    expect(out.length).toBeLessThanOrEqual(
+      fallback.personalChars + fallback.bulkChars + 200
+    )
+  })
+
+  it("gives a large model the same allowance it had before", () => {
+    const large = resolveContextBudget({
+      windowTokens: 128_000,
+      requestedHistoryTokens: 4_096,
+      outputTokens: 4_096
+    })
+
+    expect(large.personalChars).toBe(80_000)
+    expect(large.bulkChars).toBe(20_000)
+
+    const out = buildSummarySections(null, [], rows(80, "p"), [], large)!
+    // 80 rows x 1500 chars = 120k, trimmed to the 80k personal budget.
+    expect(out.length).toBeGreaterThan(70_000)
+    expect(out.length).toBeLessThan(85_000)
   })
 })

@@ -7,12 +7,6 @@ import { ServerRuntime } from "next"
 export const runtime: ServerRuntime = "nodejs"
 
 // Old date-index first-line patterns (for rows imported before source tagging)
-const LEGACY_DATE_INDEX: Record<string, string> = {
-  chatgpt: "[ChatGPT Conversation Index",
-  claude: "[Claude Conversation Index",
-  perplexity: "[Perplexity Conversation Index"
-}
-
 const VALID_SOURCES = ["chatgpt", "claude", "perplexity"] as const
 type Source = (typeof VALID_SOURCES)[number]
 
@@ -34,47 +28,21 @@ export async function DELETE(request: NextRequest) {
     const userId = profile.user_id
     const supabase = createClient(cookies())
 
-    // Run all delete operations in parallel — they target non-overlapping content patterns.
+    // One predicate replaces the four content patterns this used to sweep for.
+    // The typed source column already covers the tagged rows, their `:summary`
+    // variants, the watermark and the legacy date-index rows, because all four
+    // classify to the same source.
     const deleteOps = [
-      // 1. New format: "[source:X]\n..."
       supabase
         .from("summaries")
         .delete({ count: "exact" })
         .eq("user_id", userId)
-        .like("content", `[source:${source}]%`)
-        .then(({ count, error }) => ({ count, error })),
-
-      // 2. LLM summary rows: "[source:X:summary]\n..."
-      supabase
-        .from("summaries")
-        .delete({ count: "exact" })
-        .eq("user_id", userId)
-        .like("content", `[source:${source}:summary]%`)
-        .then(({ count, error }) => ({ count, error })),
-
-      // 3. Watermark so next import starts fresh
-      supabase
-        .from("summaries")
-        .delete()
-        .eq("user_id", userId)
-        .like("content", `[chatmemo:watermark:source=${source} ts=%`)
-        .then(() => ({ count: 0, error: null }))
+        .eq("source", source)
+        .then(({ count, error }) => ({ count, error }))
     ]
 
-    // 4. Legacy date-index rows (old format, no source tag)
-    const legacyPrefix = LEGACY_DATE_INDEX[source]
-    if (legacyPrefix) {
-      deleteOps.push(
-        supabase
-          .from("summaries")
-          .delete({ count: "exact" })
-          .eq("user_id", userId)
-          .like("content", `${legacyPrefix}%`)
-          .then(({ count, error }) => ({ count, error }))
-      )
-    }
-
-    // 5. Perplexity-specific: catch old raw rows without a [source:] tag
+    // Untagged raw Perplexity rows carry no source marker of any kind, so they
+    // classify as "other" and need their own pattern.
     if (source === "perplexity") {
       deleteOps.push(
         supabase

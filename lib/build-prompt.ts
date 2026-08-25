@@ -1,6 +1,7 @@
 import { Tables } from "@/supabase/types"
 import { ChatPayload, MessageImage } from "@/types"
 import { getBase64FromDataURL, getMediaTypeFromDataURL } from "@/lib/utils"
+import { ContextBudget, resolveContextBudget } from "@/lib/context-budget"
 
 // gpt-tokenizer carries the full BPE rank tables. buildFinalMessages runs in
 // the browser, and importing it statically pulled all of that into the chat
@@ -43,7 +44,8 @@ const buildBasePrompt = (
 export async function buildFinalMessages(
   payload: ChatPayload,
   profile: Tables<"profiles">,
-  chatImages: MessageImage[]
+  chatImages: MessageImage[],
+  budget: ContextBudget = resolveContextBudget()
 ) {
   const {
     chatSettings,
@@ -63,7 +65,11 @@ export async function buildFinalMessages(
 
   const encode = await loadEncoder()
 
-  const CHUNK_SIZE = chatSettings.contextLength
+  // History trims to its share of the window, not to the raw context-length
+  // setting. The server prepends the memory block to the system message after
+  // this runs, and the two used to budget independently — history to 4096
+  // tokens while memory added ~30k on top.
+  const CHUNK_SIZE = budget.historyTokens
   const PROMPT_TOKENS = encode(chatSettings.prompt).length
 
   let remainingTokens = CHUNK_SIZE - PROMPT_TOKENS

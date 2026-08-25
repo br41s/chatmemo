@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server"
+import { ContextBudget, resolveContextBudget } from "@/lib/context-budget"
 import { cookies } from "next/headers"
 
 // ---------------------------------------------------------------------------
@@ -499,9 +500,6 @@ const MAX_SUMMARY_ROWS = 12
 // FULL conversation, truncating mid-transcript drops the assistant replies and
 // makes the model think only the prompt was stored. 80k chars ≈ 20k tokens.
 const MAX_ROW_CHARS = 80_000
-const MAX_TOTAL_CHARS = 120_000
-
-const INDEX_MARKER = "Conversation Index"
 
 /** Injected when retrieval runs but matches nothing. The chat route detects
  *  this to decide whether to keep baseline memory (see openrouter/route.ts). */
@@ -552,8 +550,7 @@ async function searchSummaries(
         .select("id, content, created_at")
         .eq("user_id", userId)
         .ilike("content", `%${term}%`)
-        .not("content", "like", "[chatmemo:%")
-        .not("content", "ilike", `%${INDEX_MARKER}%`)
+        .in("kind", ["conversation", "summary"])
         .order("created_at", { ascending: false })
         .limit(MAX_SUMMARY_ROWS)
     )
@@ -610,9 +607,12 @@ export function rankByTermCoverage<T extends RankableRow>(
 
 export async function getFullConversationForUser(
   userId: string,
-  userMessage: string
+  userMessage: string,
+  budget: ContextBudget = resolveContextBudget()
 ): Promise<string | null> {
   if (!detectFullConversationIntent(userMessage)) return null
+
+  const maxTotalChars = budget.fullConversationChars
 
   const supabase = createClient(cookies())
   const isoDate = extractIsoDate(userMessage)
@@ -643,7 +643,7 @@ export async function getFullConversationForUser(
 
   const pushBlock = (block: string): boolean => {
     if (!block) return true
-    if (totalChars + block.length > MAX_TOTAL_CHARS) return false
+    if (totalChars + block.length > maxTotalChars) return false
     parts.push(block)
     totalChars += block.length
     return true
@@ -656,7 +656,7 @@ export async function getFullConversationForUser(
   }
 
   // --- 2. In-app conversations from chats + messages ------------------------
-  if (totalChars < MAX_TOTAL_CHARS) {
+  if (totalChars < maxTotalChars) {
     const base = supabase
       .from("chats")
       .select("id, name, created_at")

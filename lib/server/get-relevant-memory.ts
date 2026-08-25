@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server"
+import { ContextBudget, resolveContextBudget } from "@/lib/context-budget"
 import { cookies } from "next/headers"
 import {
   extractQuotedPhrases,
@@ -32,9 +33,6 @@ const MAX_TERMS = 4
 const ROWS_PER_TERM = 8 // candidate rows fetched per ILIKE term
 const MAX_RELEVANT_ROWS = 4 // top-ranked rows injected
 const RELEVANT_ROW_MAX = 2_000 // per-row excerpt cap (vs 400 in baseline)
-const RELEVANT_BUDGET = 6_000 // total char budget for the section (~1.5k tokens)
-
-const INDEX_MARKER = "Conversation Index"
 
 // Conversational filler that survives the shared STOP list (>3 chars, not a
 // stopword) but carries no recall signal. Searching for these would run a DB
@@ -101,7 +99,8 @@ export function buildRelevantTerms(message: string): string[] {
  */
 export async function getRelevantMemoryForUser(
   userId: string,
-  userMessage: string
+  userMessage: string,
+  budget: ContextBudget = resolveContextBudget()
 ): Promise<string | null> {
   const terms = buildRelevantTerms(userMessage)
   if (terms.length === 0) return null
@@ -123,8 +122,7 @@ export async function getRelevantMemoryForUser(
         .select("id, content, created_at")
         .eq("user_id", userId)
         .ilike("content", `%${term}%`)
-        .not("content", "like", "[chatmemo:%")
-        .not("content", "ilike", `%${INDEX_MARKER}%`)
+        .in("kind", ["conversation", "summary"])
         .order("created_at", { ascending: false })
         .limit(ROWS_PER_TERM)
     )
@@ -153,7 +151,7 @@ export async function getRelevantMemoryForUser(
       row.content.length > RELEVANT_ROW_MAX
         ? row.content.slice(0, RELEVANT_ROW_MAX) + "…"
         : row.content
-    if (chars + excerpt.length > RELEVANT_BUDGET) break
+    if (chars + excerpt.length > budget.relevantChars) break
     blocks.push(excerpt)
     chars += excerpt.length
   }

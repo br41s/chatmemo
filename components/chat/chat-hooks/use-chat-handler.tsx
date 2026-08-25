@@ -6,6 +6,9 @@ import { updateChat } from "@/db/chats"
 import { getCollectionFilesByCollectionId } from "@/db/collection-files"
 import { deleteMessagesIncludingAndAfter } from "@/db/messages"
 import { buildFinalMessages } from "@/lib/build-prompt"
+import { resolveContextBudget } from "@/lib/context-budget"
+import { MemoryReport } from "@/lib/memory-report"
+import { resolveModelWindow } from "@/lib/models/model-window"
 import { Tables } from "@/supabase/types"
 import { ChatMessage, ChatPayload, LLMID, ModelProvider } from "@/types"
 import { useRouter } from "next/navigation"
@@ -68,7 +71,8 @@ export const useChatHandler = () => {
     models,
     isPromptPickerOpen,
     isFilePickerOpen,
-    isToolPickerOpen
+    isToolPickerOpen,
+    setMemoryReports
   } = useContext(ChatbotUIContext)
 
   const chatInputRef = useRef<HTMLTextAreaElement>(null)
@@ -190,6 +194,13 @@ export const useChatHandler = () => {
     }
   }
 
+  // The optimistic message id is temporary: handleCreateMessages replaces it
+  // with the persisted row's id once the turn is saved, so the report is
+  // re-keyed there rather than being lost.
+  const recordMemoryReport = (messageId: string, report: MemoryReport) => {
+    setMemoryReports(prev => ({ ...prev, [messageId]: report }))
+  }
+
   const handleSendMessage = async (
     messageContent: string,
     chatMessages: ChatMessage[],
@@ -236,6 +247,19 @@ export const useChatHandler = () => {
         selectedWorkspace,
         messageContent
       )
+
+      // The assistant message this turn writes into — the report describes
+      // what that answer was given, so it is stored against that id.
+      const reportTargetId = isRegeneration ? lastChatMessage?.message.id : null
+
+      // One budget for the turn. The client trims history to its share; the
+      // server sizes the memory block to the rest of the same window.
+      const budgetHint = resolveModelWindow(
+        chatSettings!.model,
+        availableOpenRouterModels,
+        chatSettings!.contextLength
+      )
+      const budget = resolveContextBudget(budgetHint)
 
       let currentChat = selectedChat ? { ...selectedChat } : null
 
@@ -295,10 +319,14 @@ export const useChatHandler = () => {
       if (selectedTools.length > 0 && isToolsCompatible) {
         setToolInUse("Tools")
 
+        // History is trimmed to the same budget, but no hint is sent: the
+        // tools route injects no memory, so there is no memory block for the
+        // server to size.
         const formattedMessages = await buildFinalMessages(
           payload,
           profile!,
-          chatImages
+          chatImages,
+          budget
         )
 
         const response = await fetch("/api/chat/tools", {
@@ -346,10 +374,16 @@ export const useChatHandler = () => {
             isRegeneration,
             regenerationTarget,
             newAbortController,
+            budget,
             setIsGenerating,
             setFirstTokenReceived,
             setChatMessages,
-            setToolInUse
+            setToolInUse,
+            report =>
+              recordMemoryReport(
+                reportTargetId ?? tempAssistantChatMessage.message.id,
+                report
+              )
           )
         } else {
           generatedText = await handleHostedChat(
@@ -362,10 +396,17 @@ export const useChatHandler = () => {
             newAbortController,
             newMessageImages,
             chatImages,
+            budget,
+            budgetHint,
             setIsGenerating,
             setFirstTokenReceived,
             setChatMessages,
-            setToolInUse
+            setToolInUse,
+            report =>
+              recordMemoryReport(
+                reportTargetId ?? tempAssistantChatMessage.message.id,
+                report
+              )
           )
         }
       }
@@ -396,7 +437,7 @@ export const useChatHandler = () => {
         })
       }
 
-      await handleCreateMessages(
+      const persistedAssistantId = await handleCreateMessages(
         chatMessages,
         currentChat,
         profile!,
@@ -411,6 +452,18 @@ export const useChatHandler = () => {
         setChatImages,
         selectedAssistant
       )
+
+      // Move the report from the optimistic id to the persisted one, so the
+      // indicator survives a reload of the conversation in this session.
+      const optimisticId = tempAssistantChatMessage.message.id
+      if (persistedAssistantId && persistedAssistantId !== optimisticId) {
+        setMemoryReports(prev => {
+          const report = prev[optimisticId]
+          if (!report) return prev
+          const { [optimisticId]: _dropped, ...rest } = prev
+          return { ...rest, [persistedAssistantId]: report }
+        })
+      }
 
       // Fire-and-forget: write memory summary after messages are persisted.
       // chatMessages.length >= 2 ensures there were already ≥1 full turn before

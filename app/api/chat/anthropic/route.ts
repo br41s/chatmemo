@@ -1,5 +1,7 @@
 import { CHAT_SETTING_LIMITS } from "@/lib/chat-setting-limits"
 import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
+import { ContextBudgetHint } from "@/lib/context-budget"
+import { memoryReportHeaders } from "@/lib/server/memory-report-headers"
 import { injectMemoryOpenAIFormat } from "@/lib/server/inject-memory"
 import { getBase64FromDataURL, getMediaTypeFromDataURL } from "@/lib/utils"
 import { ChatSettings } from "@/types"
@@ -11,9 +13,10 @@ export const runtime = "edge"
 
 export async function POST(request: NextRequest) {
   const json = await request.json()
-  const { chatSettings, messages } = json as {
+  const { chatSettings, messages, contextBudget } = json as {
     chatSettings: ChatSettings
     messages: any[]
+    contextBudget?: ContextBudgetHint
   }
 
   try {
@@ -23,10 +26,8 @@ export async function POST(request: NextRequest) {
 
     // Inject memory into the system message (index 0) before splitting it off
     // from the conversation messages below.
-    const augmentedMessages = await injectMemoryOpenAIFormat(
-      messages,
-      profile.user_id
-    )
+    const { messages: augmentedMessages, report: memoryReport } =
+      await injectMemoryOpenAIFormat(messages, profile.user_id, contextBudget)
 
     let ANTHROPIC_FORMATTED_MESSAGES: any = augmentedMessages.slice(1)
 
@@ -79,7 +80,10 @@ export async function POST(request: NextRequest) {
       })
 
       try {
-        return anthropicStreamResponse(response)
+        return anthropicStreamResponse(
+          response,
+          memoryReportHeaders(memoryReport)
+        )
       } catch (error: any) {
         console.error("Error parsing Anthropic API response:", error)
         return new NextResponse(

@@ -1,3 +1,4 @@
+import { ContextBudgetHint } from "@/lib/context-budget"
 import { Tables } from "@/supabase/types"
 import { ChatMessage, LLMID } from "."
 
@@ -23,4 +24,7 @@ export interface ChatPayload {
 export interface ChatAPIPayload {
   chatSettings: ChatSettings
   messages: Tables<"messages">[]
+  /** What the client knows about the chosen model's window. The server
+   *  re-resolves the split from it rather than trusting a supplied one. */
+  contextBudget?: ContextBudgetHint
 }

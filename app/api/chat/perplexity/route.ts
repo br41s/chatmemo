@@ -1,4 +1,6 @@
 import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
+import { ContextBudgetHint } from "@/lib/context-budget"
+import { memoryReportHeaders } from "@/lib/server/memory-report-headers"
 import { injectMemoryOpenAIFormat } from "@/lib/server/inject-memory"
 import { ChatSettings } from "@/types"
 import { openAIStreamResponse } from "@/lib/server/streaming"
@@ -8,9 +10,10 @@ export const runtime = "edge"
 
 export async function POST(request: Request) {
   const json = await request.json()
-  const { chatSettings, messages } = json as {
+  const { chatSettings, messages, contextBudget } = json as {
     chatSettings: ChatSettings
     messages: any[]
+    contextBudget?: ContextBudgetHint
   }
 
   try {
@@ -18,10 +21,8 @@ export async function POST(request: Request) {
 
     checkApiKey(profile.perplexity_api_key, "Perplexity")
 
-    const augmentedMessages = await injectMemoryOpenAIFormat(
-      messages,
-      profile.user_id
-    )
+    const { messages: augmentedMessages, report: memoryReport } =
+      await injectMemoryOpenAIFormat(messages, profile.user_id, contextBudget)
 
     // Perplexity is compatible the OpenAI SDK
     const perplexity = new OpenAI({
@@ -35,7 +36,7 @@ export async function POST(request: Request) {
       stream: true
     })
 
-    return openAIStreamResponse(response)
+    return openAIStreamResponse(response, memoryReportHeaders(memoryReport))
   } catch (error: any) {
     let errorMessage = error.message || "An unexpected error occurred"
     const errorCode = error.status || 500

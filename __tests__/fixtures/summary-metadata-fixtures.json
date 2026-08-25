@@ -1,0 +1,22 @@
+[
+  {"k":"watermark-claude","c":"[chatmemo:watermark:source=claude ts=1750000000000]"},
+  {"k":"watermark-chatgpt","c":"[chatmemo:watermark:source=chatgpt ts=1750000000000]"},
+  {"k":"watermark-perplexity","c":"[chatmemo:watermark:source=perplexity ts=1]"},
+  {"k":"watermark-unknown","c":"[chatmemo:watermark:source=weird ts=1]"},
+  {"k":"index-claude","c":"[Claude Conversation Index — imported 2026-01-02]\n[2026-01-01] Trip"},
+  {"k":"index-chatgpt","c":"[ChatGPT Conversation Index — imported 2026-01-02]\n[2026-01-01] Trip"},
+  {"k":"index-perplexity","c":"[Perplexity Conversation Index — imported 2026-01-02]"},
+  {"k":"index-marker-midtext","c":"[source:claude]\nConversation Index for my stuff\n[2026-01-01] Trip"},
+  {"k":"tagged-claude-conv","c":"[source:claude]\n### [2026-03-01] Qatar flight change\n- decided to rebook"},
+  {"k":"tagged-chatgpt-conv","c":"[source:chatgpt]\n### [2025-11-05] Tax questions\nUser: hi"},
+  {"k":"tagged-perplexity-conv","c":"[source:perplexity]\n### [2025-07-04] Phuket hotels\nUser: hi"},
+  {"k":"tagged-chatgpt-summary","c":"[source:chatgpt:summary]\n### [2025-11-05] Tax questions\n- summary bullet"},
+  {"k":"tagged-perplexity-summary","c":"[source:perplexity:summary]\nSome compact summary text"},
+  {"k":"untagged-with-header","c":"### [2024-12-24] Christmas planning\n- bought gifts"},
+  {"k":"untagged-plain","c":"User prefers concise answers and ships on Fridays."},
+  {"k":"untagged-heading-line","c":"# My notes\nsome body text"},
+  {"k":"header-no-title","c":"### [2026-02-02]\nbody only"},
+  {"k":"blank","c":"   "},
+  {"k":"long-first-line","c":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA end"},
+  {"k":"tagged-unknown-source","c":"[source:gemini]\n### [2026-05-05] Something\nbody"}
+]
