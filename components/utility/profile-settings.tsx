@@ -344,9 +344,9 @@ export const ProfileSettings: FC<ProfileSettingsProps> = ({}) => {
                   <div className="text-xs">
                     {username !== profile.username ? (
                       usernameAvailable ? (
-                        <div className="text-green-500">AVAILABLE</div>
+                        <div className="text-success">AVAILABLE</div>
                       ) : (
-                        <div className="text-red-500">UNAVAILABLE</div>
+                        <div className="text-destructive">UNAVAILABLE</div>
                       )
                     ) : null}
                   </div>
@@ -370,9 +370,9 @@ export const ProfileSettings: FC<ProfileSettingsProps> = ({}) => {
                       {loadingUsername ? (
                         <IconLoader2 className="animate-spin" />
                       ) : usernameAvailable ? (
-                        <IconCircleCheckFilled className="text-green-500" />
+                        <IconCircleCheckFilled className="text-success" />
                       ) : (
-                        <IconCircleXFilled className="text-red-500" />
+                        <IconCircleXFilled className="text-destructive" />
                       )}
                     </div>
                   ) : null}

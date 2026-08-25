@@ -56,7 +56,7 @@ export const FilePreview: FC<FilePreviewProps> = ({
             )
           } else if (type === "file") {
             return (
-              <div className="rounded bg-blue-500 p-2">
+              <div className="rounded bg-info p-2 text-info-foreground">
                 <IconFileFilled />
               </div>
             )

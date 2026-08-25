@@ -150,7 +150,7 @@ export const ChatFilesDisplay: FC<ChatFilesDisplayProps> = ({}) => {
                 <button
                   type="button"
                   aria-label={`Remove attached image ${index + 1}`}
-                  className="absolute right-[-6px] top-[-2px] flex size-5 cursor-pointer items-center justify-center rounded-full border-DEFAULT border-primary bg-muted-foreground hover:border-red-500 hover:bg-white hover:text-red-500 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  className="absolute right-[-6px] top-[-2px] flex size-5 cursor-pointer items-center justify-center rounded-full border-DEFAULT border-primary bg-muted-foreground hover:border-destructive hover:bg-background hover:text-destructive focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   onClick={() => {
                     setNewMessageImages(
                       newMessageImages.filter(
@@ -173,7 +173,7 @@ export const ChatFilesDisplay: FC<ChatFilesDisplayProps> = ({}) => {
                   key={index}
                   className="relative flex h-[64px] items-center space-x-4 rounded-xl border-2 px-4 py-3"
                 >
-                  <div className="rounded bg-blue-500 p-2">
+                  <div className="rounded bg-info p-2 text-info-foreground">
                     <IconLoader2 className="animate-spin" />
                   </div>
 
@@ -190,7 +190,7 @@ export const ChatFilesDisplay: FC<ChatFilesDisplayProps> = ({}) => {
                     className="flex h-[64px] cursor-pointer items-center space-x-4 rounded-xl border-2 px-4 py-3 text-left hover:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     onClick={() => getLinkAndView(file)}
                   >
-                    <div className="rounded bg-blue-500 p-2">
+                    <div className="rounded bg-info p-2 text-info-foreground">
                       {(() => {
                         let fileExtension = file.type.includes("/")
                           ? file.type.split("/")[1]
@@ -223,7 +223,7 @@ export const ChatFilesDisplay: FC<ChatFilesDisplayProps> = ({}) => {
                   <button
                     type="button"
                     aria-label={`Remove ${file.name}`}
-                    className="absolute right-[-6px] top-[-6px] flex size-5 cursor-pointer items-center justify-center rounded-full border-DEFAULT border-primary bg-muted-foreground hover:border-red-500 hover:bg-white hover:text-red-500 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    className="absolute right-[-6px] top-[-6px] flex size-5 cursor-pointer items-center justify-center rounded-full border-DEFAULT border-primary bg-muted-foreground hover:border-destructive hover:bg-background hover:text-destructive focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     onClick={() => {
                       setNewMessageFiles(
                         newMessageFiles.filter(f => f.id !== file.id)
@@ -283,8 +283,10 @@ const RetrievalToggle = ({}) => {
           <IconCircleFilled
             className={cn(
               "p-1",
-              useRetrieval ? "text-green-500" : "text-red-500",
-              useRetrieval ? "hover:text-green-200" : "hover:text-red-200"
+              useRetrieval ? "text-success" : "text-destructive",
+              useRetrieval
+                ? "hover:text-success/70"
+                : "hover:text-destructive/70"
             )}
             size={24}
             onClick={e => {

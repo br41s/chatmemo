@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { RowListSkeleton } from "@/components/ui/skeletons"
 import {
   Sheet,
   SheetContent,
@@ -495,7 +496,7 @@ export function MemoryHistorySheet() {
           <AlertDialogCancel>Keep my memory</AlertDialogCancel>
           <AlertDialogAction
             onClick={handleClearAll}
-            className="bg-red-600 text-white hover:bg-red-700"
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >
             Delete everything
           </AlertDialogAction>
@@ -532,7 +533,7 @@ export function MemoryHistorySheet() {
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-7 text-xs text-muted-foreground hover:text-red-500"
+                className="h-7 text-xs text-muted-foreground hover:text-destructive"
                 disabled={clearingAll}
                 onClick={() => setConfirmClear(true)}
               >
@@ -544,13 +545,13 @@ export function MemoryHistorySheet() {
         </SheetHeader>
 
         {restoredId && (
-          <div className="rounded-md bg-green-500/10 px-3 py-2 text-sm text-green-600 dark:text-green-400">
+          <div className="rounded-md bg-success/10 px-3 py-2 text-sm text-success">
             Version restored — now active as latest memory.
           </div>
         )}
 
         {error && (
-          <div className="rounded-md bg-red-500/10 px-3 py-2 text-sm text-red-600 dark:text-red-400">
+          <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {error}
           </div>
         )}
@@ -568,9 +569,7 @@ export function MemoryHistorySheet() {
         )}
 
         {loading ? (
-          <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-            Loading…
-          </div>
+          <RowListSkeleton label="Loading memory history" />
         ) : summaries.length === 0 ? (
           <div className="flex flex-1 items-center justify-center text-center text-sm text-muted-foreground">
             No memory snapshots yet.
@@ -610,7 +609,7 @@ export function MemoryHistorySheet() {
                         {formatDate(row.created_at)}
                       </span>
                       {isCurrent && (
-                        <span className="rounded-full bg-green-500/15 px-2 py-0.5 text-xs font-medium text-green-600 dark:text-green-400">
+                        <span className="rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success">
                           Current
                         </span>
                       )}
@@ -643,7 +642,7 @@ export function MemoryHistorySheet() {
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="size-7 p-0 text-muted-foreground hover:text-red-500"
+                        className="size-7 p-0 text-muted-foreground hover:text-destructive"
                         disabled={deletingId === row.id || restoringId !== null}
                         onClick={() => handleDelete(row.id)}
                         title="Delete this entry"
@@ -754,7 +753,7 @@ export function MemoryHistorySheet() {
           </p>
 
           {importResult && (
-            <div className="mt-2 rounded-md bg-green-500/10 px-3 py-2 text-xs text-green-600 dark:text-green-400">
+            <div className="mt-2 rounded-md bg-success/10 px-3 py-2 text-xs text-success">
               ✓ Imported {importResult.inserted} memory
               {importResult.inserted !== 1 ? " entries" : " entry"} from{" "}
               {importResult.conversations_found} conversation
@@ -769,7 +768,7 @@ export function MemoryHistorySheet() {
           )}
 
           {importError && (
-            <div className="mt-2 rounded-md bg-red-500/10 px-3 py-2 text-xs text-red-600 dark:text-red-400">
+            <div className="mt-2 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
               {importError}
             </div>
           )}
@@ -796,8 +795,8 @@ export function MemoryHistorySheet() {
                     variant="ghost"
                     className={`h-6 flex-1 text-[10px] ${
                       isConfirming
-                        ? "text-red-500 hover:text-red-600"
-                        : "text-muted-foreground hover:text-red-500"
+                        ? "text-destructive hover:text-destructive/80"
+                        : "text-muted-foreground hover:text-destructive"
                     }`}
                     disabled={
                       clearingSource !== null || importingSource !== null
@@ -814,7 +813,7 @@ export function MemoryHistorySheet() {
               })}
             </div>
             {clearSourceResult && (
-              <p className="mt-1 text-[10px] text-green-600 dark:text-green-400">
+              <p className="mt-1 text-[10px] text-success">
                 {clearSourceResult}
               </p>
             )}
@@ -870,12 +869,12 @@ export function MemoryHistorySheet() {
             </p>
 
             {backupResult && (
-              <p className="mt-1.5 text-[10px] text-green-600 dark:text-green-400">
+              <p className="mt-1.5 text-[10px] text-success">
                 ✓ {backupResult}
               </p>
             )}
             {backupError && (
-              <p className="mt-1.5 text-[10px] text-red-600 dark:text-red-400">
+              <p className="mt-1.5 text-[10px] text-destructive">
                 {backupError}
               </p>
             )}
