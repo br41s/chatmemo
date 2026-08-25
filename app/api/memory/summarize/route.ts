@@ -1,12 +1,18 @@
 import { getServerProfile } from "@/lib/server/server-chat-helpers"
 import {
   callSummarizer,
+  callSummarizerWithMeta,
   createOpenRouterClient,
   resolveOpenRouterKey
 } from "@/lib/server/openrouter"
 import { createClient } from "@/lib/supabase/server"
 import { insertSummary } from "@/db/summaries"
-import { getLessons, upsertLessons } from "@/lib/db/lessons"
+import { getLessonsRecord, replaceLessons } from "@/lib/db/lessons"
+import {
+  checkLessonsRewrite,
+  lessonsRewriteMaxTokens,
+  MAX_LESSONS_CHARS
+} from "@/lib/lessons-rewrite"
 import { cookies } from "next/headers"
 import { NextRequest, NextResponse } from "next/server"
 import { ServerRuntime } from "next"
@@ -16,6 +22,9 @@ export const runtime: ServerRuntime = "nodejs"
 const MAX_MESSAGES = 20
 const MIN_USEFUL_MESSAGES = 4
 const DUPLICATE_THRESHOLD = 0.75 // Jaccard similarity above this → skip insert
+// How far back to look for a near-duplicate. Enough to see past the other
+// conversations a user may have in flight at the same time.
+const DUPLICATE_LOOKBACK = 8
 
 /** Word-level Jaccard similarity between two strings (0–1). */
 function jaccardSimilarity(a: string, b: string): number {
@@ -156,19 +165,28 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Near-duplicate guard
-    const { data: lastRow } = await supabase
+    // Near-duplicate guard.
+    //
+    // Compared against the most recent few rows rather than only the newest.
+    // This route fires after every turn, so a conversation produces a run of
+    // near-identical summaries; checking one row back caught that only while
+    // the user had a single chat in flight. With two conversations interleaved,
+    // the newest row belonged to the other chat and every summary looked novel.
+    const { data: recentRows } = await supabase
       .from("summaries")
       .select("content")
       .eq("user_id", userId)
+      .eq("kind", "conversation")
       .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle()
+      .limit(DUPLICATE_LOOKBACK)
 
-    if (
-      lastRow?.content &&
-      jaccardSimilarity(summaryText, lastRow.content) >= DUPLICATE_THRESHOLD
-    ) {
+    const duplicateOf = (recentRows ?? []).find(
+      row =>
+        row.content &&
+        jaccardSimilarity(summaryText, row.content) >= DUPLICATE_THRESHOLD
+    )
+
+    if (duplicateOf) {
       return NextResponse.json(
         { success: true, inserted: false, reason: "duplicate" },
         { status: 200 }
@@ -183,7 +201,12 @@ export async function POST(request: NextRequest) {
     // doc if new meaningful facts were found. Non-fatal if it fails.
     // ------------------------------------------------------------------
     try {
-      const currentLessons = await getLessons(supabase, userId)
+      // Read the version stamp with the document: the rewrite below replaces
+      // it wholesale, so the write has to prove nothing changed underneath.
+      const { content: currentLessons, updatedAt } = await getLessonsRecord(
+        supabase,
+        userId
+      )
       const emptyTemplate = `# User Lessons
 
 ## Preferences & Communication Style
@@ -194,23 +217,56 @@ export async function POST(request: NextRequest) {
 
 ## Recurring Patterns & Constraints`
 
-      const lessonsInput =
-        `CURRENT USER LESSONS DOCUMENT:\n${currentLessons ?? emptyTemplate}\n\n` +
-        `TODAY'S CONVERSATION SUMMARY:\n${summaryText}`
+      if ((currentLessons?.length ?? 0) > MAX_LESSONS_CHARS) {
+        // Too large to restate even at the ceiling allowance. Attempting the
+        // rewrite would risk losing what it could not fit.
+        console.warn(
+          `[summarize] Lessons document is ${currentLessons?.length} chars; skipping rewrite (limit ${MAX_LESSONS_CHARS})`
+        )
+      } else {
+        const lessonsInput =
+          `CURRENT USER LESSONS DOCUMENT:\n${currentLessons ?? emptyTemplate}\n\n` +
+          `TODAY'S CONVERSATION SUMMARY:\n${summaryText}`
 
-      const updatedLessons = await callSummarizer(
-        openai,
-        LESSONS_SYSTEM_PROMPT,
-        lessonsInput,
-        800
-      )
+        const { text: updatedLessons, truncated } =
+          await callSummarizerWithMeta(
+            openai,
+            LESSONS_SYSTEM_PROMPT,
+            lessonsInput,
+            // Scales with the document. The previous fixed 800 guaranteed
+            // truncation once the document outgrew it.
+            lessonsRewriteMaxTokens(currentLessons)
+          )
 
-      if (
-        updatedLessons &&
-        updatedLessons !== "SKIP" &&
-        updatedLessons !== currentLessons
-      ) {
-        await upsertLessons(supabase, userId, updatedLessons)
+        if (updatedLessons) {
+          const verdict = checkLessonsRewrite({
+            previous: currentLessons,
+            next: updatedLessons,
+            truncated
+          })
+
+          if (verdict.ok) {
+            const won = await replaceLessons(
+              supabase,
+              userId,
+              updatedLessons,
+              updatedAt
+            )
+            if (!won) {
+              // Another summarise wrote first. Its document is the base now;
+              // rewriting from the stale copy would discard its facts.
+              console.warn(
+                "[summarize] Lessons write lost a race; leaving the winner in place"
+              )
+            }
+          } else if (verdict.reason !== "unchanged") {
+            console.warn(
+              `[summarize] Rejected lessons rewrite (${verdict.reason}${
+                verdict.detail ? `: ${verdict.detail}` : ""
+              })`
+            )
+          }
+        }
       }
     } catch (lessonsErr) {
       // Non-fatal — log but don't fail the summarize response

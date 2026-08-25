@@ -468,13 +468,22 @@ export const useChatHandler = () => {
       // Fire-and-forget: write memory summary after messages are persisted.
       // chatMessages.length >= 2 ensures there were already ≥1 full turn before
       // this one, making ≥4 total messages — enough for a useful summary.
+      //
+      // keepalive, because the moment right after an answer finishes is the
+      // most natural one to close the tab or navigate away, and without it the
+      // browser cancels this request in flight — losing the turn from memory,
+      // on the feature the product exists for. The body is a single id, far
+      // inside the 64 KB keepalive limit.
       if (currentChat?.id && chatMessages.length >= 2) {
         fetch("/api/memory/summarize", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chatId: currentChat.id })
-        }).catch(() => {
-          // Non-critical — silent failure
+          body: JSON.stringify({ chatId: currentChat.id }),
+          keepalive: true
+        }).catch(error => {
+          // Still non-fatal — a failed summary must never disturb the chat —
+          // but silence made this indistinguishable from success.
+          console.warn("Memory summary request failed:", error)
         })
       }
 
