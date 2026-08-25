@@ -17,8 +17,11 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
 
 ## Architecture — memory system (the core feature)
 
-- `summaries` table: append-only memory rows (in-app chat summaries, Claude
-  Code sessions, bulk imports from ChatGPT/Claude/Perplexity/Gemini).
+- `summaries` table: memory rows (in-app chat summaries, Claude Code
+  sessions, bulk imports from ChatGPT/Claude/Perplexity/Gemini). Rows are
+  written once rather than edited — there is no `updated_at` and no UPDATE
+  policy — but they are deletable: the memory panel offers delete, clear-all
+  and restore (`20260518000000_summaries_delete_policy`).
 - `lib/server/inject-memory.ts`: shared injector — every provider chat route
   prepends the user's memory block to the system prompt. Three layers run in
   parallel per turn:
@@ -42,8 +45,9 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
 
 ## Constraints & gotchas
 
-- **Pre-commit hook runs `git add .`** (`.husky/pre-commit`). For atomic
-  commits: run `lint:fix`/`format:write` manually, commit with `--no-verify`.
+- **Pre-commit runs `lint-staged`** — it formats only what is already
+  staged, so partial commits work normally and `--no-verify` is no longer
+  needed for them.
 - **`next build` deletes/regenerates `public/worker-*.js`** (next-pwa). Two
   legacy worker files are tracked; restore with `git checkout --` if a local
   build removes them. New ones are gitignored.

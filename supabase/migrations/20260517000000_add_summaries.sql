@@ -12,7 +12,9 @@ CREATE TABLE IF NOT EXISTS summaries (
     -- METADATA
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-    -- no updated_at: append-only, rows are never mutated
+    -- no updated_at: rows carry no revision history of their own
+    -- (superseded: 20260518000000 added a DELETE policy, and the memory
+    --  panel offers delete, clear-all and restore)
 
     -- REQUIRED
     content TEXT NOT NULL
@@ -37,4 +39,6 @@ CREATE POLICY "Allow insert access to own summaries"
     FOR INSERT
     WITH CHECK (user_id = auth.uid());
 
--- no UPDATE or DELETE policies: append-only table
+-- no UPDATE policy: a summary is replaced rather than edited in place.
+-- A DELETE policy was added the next day (20260518000000_summaries_delete_policy)
+-- so the memory panel can remove rows; this file predates it.
