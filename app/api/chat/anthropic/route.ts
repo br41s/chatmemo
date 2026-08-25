@@ -1,4 +1,4 @@
-import { CHAT_SETTING_LIMITS } from "@/lib/chat-setting-limits"
+import { maxTokenOutputFor } from "@/lib/chat-setting-limits"
 import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
 import { ContextBudgetHint } from "@/lib/context-budget"
 import { memoryReportHeaders } from "@/lib/server/memory-report-headers"
@@ -74,8 +74,7 @@ export async function POST(request: NextRequest) {
         messages: ANTHROPIC_FORMATTED_MESSAGES,
         temperature: chatSettings.temperature,
         system: augmentedMessages[0].content,
-        max_tokens:
-          CHAT_SETTING_LIMITS[chatSettings.model].MAX_TOKEN_OUTPUT_LENGTH,
+        max_tokens: maxTokenOutputFor(chatSettings.model),
         stream: true
       })
 
