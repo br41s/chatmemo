@@ -176,3 +176,16 @@ Cuatro PRs apilados sobre la rama de auditoría, uno por hallazgo, en orden de d
 - Decidido: el guardia de duplicados compara contra las últimas ocho filas de tipo `conversation`, no solo la más reciente. Con dos conversaciones intercaladas, la fila más nueva pertenecía a la otra y cada resumen parecía nuevo.
 - Límite aceptado: el arreglo completo de ARCH-08 —una fila por chat en vez de una por turno— necesita `chat_id` en `summaries`, es decir otra migración. Queda pendiente hasta que la de metadatos tipados esté aplicada.
 - Verificado: 348 pruebas Jest en 35 suites (21 nuevas), type-check en condiciones de clon limpio y build de producción.
+
+## 2026-08-25 — Las filas índice consumían la asignación de memoria
+
+- Descubierto al verificar el backfill en producción: una fila `index` de 58 007 caracteres, más catorce de ChatGPT a ~4 000. Las filas índice se inyectaban enteras, antes que las demás capas, y no se contaban contra ningún presupuesto.
+- Medido: ~74 k de los 100 k de asignación consumidos por índices antes de considerar ninguna de las 665 filas personales ni las 549 bulk.
+- Descartada la primera hipótesis: no era una mala clasificación. `position('Conversation Index' in content)` da 9, 10 o 33 en las dieciséis filas, es decir el marcador está al principio tras la etiqueta `[source:X]`. Todas son índices legítimos. El clasificador es correcto y no hace falta migración.
+- Causa real: el diseño suponía que un índice era diminuto — el comentario decía «tiny» — y un import masivo real produce una lista de fechas de 58 k.
+- Decidido: las filas índice reciben su propia cuota (`INDEX_SHARE`, 10 % de la asignación) y un tope por fila de 4 000 caracteres, igual que las demás capas.
+- Motivo del tope por fila y no solo de cuota: una única fila enorme agotaría la cuota entera y dejaría fuera los índices de las otras fuentes.
+- Aceptado: truncar un índice cuesta las entradas más antiguas de esa fila. Es una lista de fechas, así que el corte no corrompe nada, y el coste es menor que perder el contenido real de las conversaciones.
+- Decidido: `indexChars` entra en la clave de caché del blob base, como el resto de cuotas.
+- Verificado: las tres pruebas nuevas fallan contra el comportamiento anterior y pasan contra el corregido; 352 pruebas en 35 suites, type-check en clon limpio y build de producción.
+- Pendiente: que el importador escriba varias filas índice más pequeñas en vez de una gigante sería el arreglo de fondo.

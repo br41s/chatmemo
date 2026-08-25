@@ -30,6 +30,12 @@ const MAX_PERSONAL_ROWS = 150 // enough to cover all personal sessions
 const MAX_BULK_ROWS = 30 // only recent bulk rows are useful
 const MAX_INDEX_ROWS = 5
 
+// Per-row cap for index rows. They are date lists, so truncation costs the
+// oldest entries in that row rather than corrupting anything — but without a
+// cap one legitimately-large index (a bulk import can produce 58k chars of
+// them) crowds out every actual conversation.
+const INDEX_ROW_MAX = 4_000
+
 function cap(content: string, max: number): string {
   return content.length > max ? content.slice(0, max) + "…" : content
 }
@@ -100,7 +106,7 @@ export async function getLatestSummaryForUser(
   // The budget is part of the cache key, not just the query: the same rows
   // assembled under a different allowance are a different blob, so switching
   // to a smaller-window model must not serve the larger model's block.
-  const version = `${await readMemoryVersion(supabase, userId)}|${budget.personalChars}|${budget.bulkChars}`
+  const version = `${await readMemoryVersion(supabase, userId)}|${budget.personalChars}|${budget.bulkChars}|${budget.indexChars}`
   const cached = baselineCache.get(userId, version)
   // A cached null is a real answer — "this user has no memory yet" is worth
   // not recomputing — so only undefined counts as a miss.
@@ -200,11 +206,17 @@ export function buildSummarySections(
 ): string | null {
   const parts: string[] = []
 
-  // 1. Index rows (tiny, high-value for history questions)
+  // 1. Index rows — compact date lists, high-value for history questions, but
+  //    capped and budgeted like every other layer. They used to be pushed
+  //    whole and counted against nothing, on the assumption they were tiny.
+  let indexChars = 0
   for (const row of indexData.slice(0, MAX_INDEX_ROWS)) {
     const content = (row.content ?? "").trim()
     if (!content) continue
-    parts.push(content)
+    const capped = cap(content, INDEX_ROW_MAX)
+    if (indexChars + capped.length > budget.indexChars) break
+    parts.push(capped)
+    indexChars += capped.length
   }
 
   // 2. Personal rows — compact summaries, large budget

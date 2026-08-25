@@ -51,11 +51,23 @@ const MAX_OUTPUT_SHARE = 0.25
  *  reply, so there is always room for memory to say something. */
 const MAX_HISTORY_SHARE = 0.5
 
-// Layer shares, as fractions of the memory allowance. These reproduce the
-// previous fixed constants at the default allowance.
+// Layer shares, as fractions of the memory allowance. Personal and bulk
+// reproduce the previous fixed constants at the default allowance.
 const PERSONAL_SHARE = 0.8
 const BULK_SHARE = 0.2
 const RELEVANT_SHARE = 0.06
+
+/**
+ * Index rows had no share at all: they were injected whole, before the other
+ * layers, and never counted against anything. That was survivable while they
+ * were the "tiny" date lists the code assumed, and stopped being survivable
+ * once a real import produced a 58k-char one — a single row taking most of the
+ * allowance from hundreds of actual conversations.
+ *
+ * Deliberately small. A date list is high-value per character for "what was my
+ * first X" questions, but it is an index, not content.
+ */
+const INDEX_SHARE = 0.1
 
 /** A full-conversation hit drops the baseline and relevance layers, so the
  *  transcript may exceed the steady-state memory share. 1.2 reproduces the
@@ -75,6 +87,7 @@ export interface ContextBudget {
   personalChars: number
   bulkChars: number
   relevantChars: number
+  indexChars: number
   fullConversationChars: number
 }
 
@@ -150,6 +163,7 @@ export function resolveContextBudget(
     personalChars: Math.floor(memoryChars * PERSONAL_SHARE),
     bulkChars: Math.floor(memoryChars * BULK_SHARE),
     relevantChars: Math.floor(memoryChars * RELEVANT_SHARE),
+    indexChars: Math.floor(memoryChars * INDEX_SHARE),
     fullConversationChars: Math.floor(memoryChars * FULL_CONVERSATION_SHARE)
   }
 }

@@ -168,3 +168,67 @@ describe("buildSummarySections — honours the resolved context budget", () => {
     expect(out.length).toBeLessThan(85_000)
   })
 })
+
+describe("buildSummarySections — index rows cannot crowd out content", () => {
+  const large = () =>
+    resolveContextBudget({
+      windowTokens: 128_000,
+      requestedHistoryTokens: 4_096,
+      outputTokens: 4_096
+    })
+
+  // Shapes taken from a real database: a Perplexity bulk import wrote one
+  // 58k-char date list, and ChatGPT imports wrote fourteen at ~4k each. Index
+  // rows used to be injected whole and counted against nothing, so those alone
+  // consumed roughly three quarters of the allowance before any conversation
+  // was considered.
+  const hugeIndex = () => row("[Perplexity Conversation Index]\n" + "i".repeat(58_000))
+  const chatgptIndex = () => row("[ChatGPT Conversation Index]\n" + "c".repeat(4_000))
+
+  it("caps a single oversized index row", () => {
+    const out = buildSummarySections(null, [hugeIndex()], [], [], large())!
+    expect(out.length).toBeLessThan(6_000)
+  })
+
+  it("keeps index rows inside their share of the allowance", () => {
+    const budget = large()
+    const indexes = [hugeIndex(), ...Array.from({ length: 4 }, chatgptIndex)]
+
+    const out = buildSummarySections(null, indexes, [], [], budget)!
+
+    expect(out.length).toBeLessThanOrEqual(budget.indexChars + 200)
+  })
+
+  it("leaves the personal budget intact when indexes are huge", () => {
+    // The regression that mattered: with 58k of index injected first, the
+    // conversations the user actually cares about were squeezed out.
+    const budget = large()
+    const personal = Array.from({ length: 60 }, (_, i) =>
+      row(`${i}`.padEnd(1_500, "p"))
+    )
+
+    const withIndexes = buildSummarySections(
+      null,
+      [hugeIndex(), ...Array.from({ length: 4 }, chatgptIndex)],
+      personal,
+      [],
+      budget
+    )!
+    const withoutIndexes = buildSummarySections(null, [], personal, [], budget)!
+
+    // The personal content is unaffected by how large the indexes were.
+    expect(withIndexes).toContain("0".padEnd(1_500, "p"))
+    expect(withIndexes.length - withoutIndexes.length).toBeLessThanOrEqual(
+      budget.indexChars + 500
+    )
+  })
+
+  it("still includes a normal-sized index in full", () => {
+    // The claude index in that same database is 704 chars — well under the cap,
+    // and it should arrive untouched.
+    const small = row("[Claude Conversation Index]\n" + "s".repeat(600))
+    const out = buildSummarySections(null, [small], [], [], large())!
+    expect(out).toContain("s".repeat(600))
+    expect(out).not.toContain("…")
+  })
+})
