@@ -1,30 +1,14 @@
-import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
-import { ContextBudgetHint } from "@/lib/context-budget"
-import { memoryReportHeaders } from "@/lib/server/memory-report-headers"
-import { injectMemoryOpenAIFormat } from "@/lib/server/inject-memory"
-import { ChatSettings } from "@/types"
+import { createChatRoute } from "@/lib/server/chat-route"
 import { openAIStreamResponse } from "@/lib/server/streaming"
 import OpenAI from "openai"
 
 export const runtime = "edge"
 
-export async function POST(request: Request) {
-  const json = await request.json()
-  const { chatSettings, messages, contextBudget } = json as {
-    chatSettings: ChatSettings
-    messages: any[]
-    contextBudget?: ContextBudgetHint
-  }
-
-  try {
-    const profile = await getServerProfile()
-
-    checkApiKey(profile.perplexity_api_key, "Perplexity")
-
-    const { messages: augmentedMessages, report: memoryReport } =
-      await injectMemoryOpenAIFormat(messages, profile.user_id, contextBudget)
-
-    // Perplexity is compatible the OpenAI SDK
+export const POST = createChatRoute({
+  provider: "Perplexity",
+  apiKey: profile => profile.perplexity_api_key,
+  respond: async ({ profile, chatSettings, messages, headers }) => {
+    // Perplexity is compatible with the OpenAI SDK
     const perplexity = new OpenAI({
       apiKey: profile.perplexity_api_key || "",
       baseURL: "https://api.perplexity.ai/"
@@ -32,25 +16,10 @@ export async function POST(request: Request) {
 
     const response = await perplexity.chat.completions.create({
       model: chatSettings.model,
-      messages: augmentedMessages,
+      messages,
       stream: true
     })
 
-    return openAIStreamResponse(response, memoryReportHeaders(memoryReport))
-  } catch (error: any) {
-    let errorMessage = error.message || "An unexpected error occurred"
-    const errorCode = error.status || 500
-
-    if (errorMessage.toLowerCase().includes("api key not found")) {
-      errorMessage =
-        "Perplexity API Key not found. Please set it in your profile settings."
-    } else if (errorCode === 401) {
-      errorMessage =
-        "Perplexity API Key is incorrect. Please fix it in your profile settings."
-    }
-
-    return new Response(JSON.stringify({ message: errorMessage }), {
-      status: errorCode
-    })
+    return openAIStreamResponse(response, headers)
   }
-}
+})

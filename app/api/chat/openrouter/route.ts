@@ -1,8 +1,4 @@
-import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
-import { ContextBudgetHint } from "@/lib/context-budget"
-import { memoryReportHeaders } from "@/lib/server/memory-report-headers"
-import { injectMemoryOpenAIFormat } from "@/lib/server/inject-memory"
-import { ChatSettings } from "@/types"
+import { createChatRoute } from "@/lib/server/chat-route"
 import { openAIStreamResponse } from "@/lib/server/streaming"
 import { ServerRuntime } from "next"
 import OpenAI from "openai"
@@ -13,22 +9,10 @@ import {
 
 export const runtime: ServerRuntime = "edge"
 
-export async function POST(request: Request) {
-  const json = await request.json()
-  const { chatSettings, messages, contextBudget } = json as {
-    chatSettings: ChatSettings
-    messages: ChatCompletionMessageParam[]
-    contextBudget?: ContextBudgetHint
-  }
-
-  try {
-    const profile = await getServerProfile()
-
-    checkApiKey(profile.openrouter_api_key, "OpenRouter")
-
-    const { messages: augmentedMessages, report: memoryReport } =
-      await injectMemoryOpenAIFormat(messages, profile.user_id, contextBudget)
-
+export const POST = createChatRoute({
+  provider: "OpenRouter",
+  apiKey: profile => profile.openrouter_api_key,
+  respond: async ({ profile, chatSettings, messages, headers }) => {
     const openai = new OpenAI({
       apiKey: profile.openrouter_api_key || "",
       baseURL: "https://openrouter.ai/api/v1"
@@ -36,24 +20,12 @@ export async function POST(request: Request) {
 
     const response = await openai.chat.completions.create({
       model: chatSettings.model as ChatCompletionCreateParamsBase["model"],
-      messages: augmentedMessages,
+      messages: messages as ChatCompletionMessageParam[],
       temperature: chatSettings.temperature,
       max_tokens: undefined,
       stream: true
     })
 
-    return openAIStreamResponse(response, memoryReportHeaders(memoryReport))
-  } catch (error: any) {
-    let errorMessage = error.message || "An unexpected error occurred"
-    const errorCode = error.status || 500
-
-    if (errorMessage.toLowerCase().includes("api key not found")) {
-      errorMessage =
-        "OpenRouter API Key not found. Please set it in your profile settings."
-    }
-
-    return new Response(JSON.stringify({ message: errorMessage }), {
-      status: errorCode
-    })
+    return openAIStreamResponse(response, headers)
   }
-}
+})
