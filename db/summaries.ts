@@ -13,18 +13,62 @@ import { summaryMetadataColumns } from "@/lib/summary-metadata"
 export async function insertSummary(
   supabase: SupabaseClient<Database>,
   userId: string,
-  content: string
-): Promise<void> {
+  content: string,
+  chatId?: string | null
+): Promise<string> {
   const row: TablesInsert<"summaries"> = {
     user_id: userId,
     content,
-    ...summaryMetadataColumns(content)
+    ...summaryMetadataColumns(content),
+    ...(chatId ? { chat_id: chatId } : {})
   }
 
-  const { error } = await supabase.from("summaries").insert(row)
+  const { data, error } = await supabase
+    .from("summaries")
+    .insert(row)
+    .select("id")
+    .single()
 
   if (error) {
     throw new Error(`[insertSummary] ${error.message}`)
+  }
+
+  return data.id
+}
+
+/**
+ * Replace a chat's stored summary with a fresh one.
+ *
+ * The summarise route fires after every turn, so appending produced roughly
+ * nine near-identical rows for a twenty-message conversation — bloating both
+ * the table and the injected memory block with the same facts restated.
+ *
+ * Insert first, then remove the older rows for that chat. The other order
+ * would leave the conversation with no memory at all if the insert failed;
+ * this way the worst case is a brief duplicate that the next turn clears.
+ *
+ * Rows written before chat_id existed have no chat and are left alone — they
+ * are real history, just no longer replaceable.
+ */
+export async function replaceChatSummary(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  chatId: string,
+  content: string
+): Promise<void> {
+  const insertedId = await insertSummary(supabase, userId, content, chatId)
+
+  const { error } = await supabase
+    .from("summaries")
+    .delete()
+    .eq("user_id", userId)
+    .eq("chat_id", chatId)
+    .neq("id", insertedId)
+
+  // Non-fatal: the new summary is already stored, and a stale sibling costs
+  // budget rather than correctness.
+  if (error) {
+    console.warn(`[replaceChatSummary] could not prune: ${error.message}`)
   }
 }
 

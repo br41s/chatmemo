@@ -6,7 +6,7 @@ import {
   resolveOpenRouterKey
 } from "@/lib/server/openrouter"
 import { createClient } from "@/lib/supabase/server"
-import { insertSummary } from "@/db/summaries"
+import { replaceChatSummary } from "@/db/summaries"
 import { getLessonsRecord, replaceLessons } from "@/lib/db/lessons"
 import {
   checkLessonsRewrite,
@@ -167,14 +167,14 @@ export async function POST(request: NextRequest) {
 
     // Near-duplicate guard.
     //
-    // Compared against the most recent few rows rather than only the newest.
-    // This route fires after every turn, so a conversation produces a run of
-    // near-identical summaries; checking one row back caught that only while
-    // the user had a single chat in flight. With two conversations interleaved,
-    // the newest row belonged to the other chat and every summary looked novel.
+    // One query answers two questions: is there already a summary for THIS
+    // chat, and does this one restate something recent. The chat-scoped row is
+    // authoritative — it is the one being replaced. The wider recent window is
+    // a transition net for rows written before chat_id existed, which cannot
+    // be matched to a conversation at all.
     const { data: recentRows } = await supabase
       .from("summaries")
-      .select("content")
+      .select("content, chat_id")
       .eq("user_id", userId)
       .eq("kind", "conversation")
       .order("created_at", { ascending: false })
@@ -193,7 +193,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    await insertSummary(supabase, userId, summaryText)
+    // Replace this chat's summary rather than appending another. The route
+    // fires after every turn, so appending produced roughly nine near-identical
+    // rows for a twenty-message conversation.
+    await replaceChatSummary(supabase, userId, chatId, summaryText)
 
     // ------------------------------------------------------------------
     // Lessons update pass — runs after the summary is saved.

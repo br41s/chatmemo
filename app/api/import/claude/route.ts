@@ -1,3 +1,7 @@
+import {
+  importTooLargeMessage,
+  MAX_IMPORT_FILE_BYTES
+} from "@/lib/import-limits"
 import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
 // Source tag for selective deletion
 const SOURCE = "claude"
@@ -19,8 +23,6 @@ import { NextRequest, NextResponse } from "next/server"
 import { ServerRuntime } from "next"
 
 export const runtime: ServerRuntime = "nodejs"
-
-const MAX_FILE_BYTES = 100 * 1024 * 1024 // 100 MB
 
 /** Conversations with fewer chars than this are not stored as raw full text. */
 const MIN_CHARS_FOR_RAW = 300
@@ -89,11 +91,11 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
-    if (fileField.size > MAX_FILE_BYTES) {
+    if (fileField.size > MAX_IMPORT_FILE_BYTES) {
       return NextResponse.json(
         {
           success: false,
-          reason: `File exceeds ${MAX_FILE_BYTES / 1024 / 1024} MB limit`
+          reason: importTooLargeMessage(fileField.name, fileField.size)
         },
         { status: 400 }
       )

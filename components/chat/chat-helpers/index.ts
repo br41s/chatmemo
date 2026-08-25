@@ -106,6 +106,39 @@ export const handleRetrieval = async (
   return results
 }
 
+/** One image and where it ended up: null when it had no file to upload, or
+ *  when the upload failed. */
+export interface UploadedImage<T> {
+  obj: T
+  path: string | null
+}
+
+/**
+ * Split resolved uploads into the paths to persist on the message and the
+ * image records to put in state, keeping every path with the image it came
+ * from.
+ *
+ * Pure + exported because the association is the whole point: the previous
+ * version re-zipped a filtered result against an unfiltered list by index, so
+ * a single skipped or failed upload shifted every later image onto another
+ * image's path.
+ */
+export function collectImagePaths<T>(
+  uploaded: UploadedImage<T>[],
+  messageId: string
+): { paths: string[]; images: (T & { messageId: string; path: string })[] } {
+  return {
+    paths: uploaded
+      .map(({ path }) => path)
+      .filter((path): path is string => !!path),
+    images: uploaded.map(({ obj, path }) => ({
+      ...obj,
+      messageId,
+      path: path ?? ""
+    }))
+  }
+}
+
 export const createTempMessages = (
   messageContent: string,
   chatMessages: ChatMessage[],
@@ -152,9 +185,16 @@ export const createTempMessages = (
   let newMessages = []
 
   if (isRegeneration) {
+    // Rebuilt, not blanked in place. The object being emptied is the same one
+    // held in React state, so writing to it mutated rendered state directly —
+    // and a spread of the outer array does not make that safe, because the
+    // message object inside it is still the same reference.
     const lastMessageIndex = chatMessages.length - 1
-    chatMessages[lastMessageIndex].message.content = ""
-    newMessages = [...chatMessages]
+    newMessages = chatMessages.map((chatMessage, index) =>
+      index === lastMessageIndex
+        ? { ...chatMessage, message: { ...chatMessage.message, content: "" } }
+        : chatMessage
+    )
   } else {
     newMessages = [
       ...chatMessages,
@@ -171,8 +211,9 @@ export const createTempMessages = (
   }
 }
 
-// Captured before createTempMessages runs, because that function blanks the
-// last assistant message in place to make room for the regenerated text.
+// Captured before createTempMessages runs. That function no longer mutates the
+// message in place, but it does return a list whose last assistant message has
+// been emptied, so the original content still has to be read first.
 export interface RegenerationTarget {
   id: string
   content: string
@@ -547,32 +588,35 @@ export const handleCreateMessages = async (
       finalAssistantMessage
     ])
 
-    // Upload each image (stored in newMessageImages) for the user message to message_images bucket
-    const uploadPromises = newMessageImages
-      .filter(obj => obj.file !== null)
-      .map(obj => {
-        let filePath = `${profile.user_id}/${currentChat.id}/${
+    // Upload each image for the user message to the message_images bucket.
+    //
+    // Each result stays attached to the image it came from. The previous
+    // version uploaded a FILTERED list (skipping images with no file), dropped
+    // failures from the results, and then re-zipped what was left against the
+    // UNFILTERED list by index — so one image without a file, or one failed
+    // upload, shifted every later image onto the wrong path.
+    const uploaded = await Promise.all(
+      newMessageImages.map(async obj => {
+        if (!obj.file) return { obj, path: null }
+
+        const filePath = `${profile.user_id}/${currentChat.id}/${
           createdMessages[0].id
         }/${uuidv4()}`
 
-        return uploadMessageImage(filePath, obj.file as File).catch(error => {
-          console.error(`Failed to upload image at ${filePath}:`, error)
-          return null
-        })
+        const path = await uploadMessageImage(filePath, obj.file).catch(
+          error => {
+            console.error(`Failed to upload image at ${filePath}:`, error)
+            return null
+          }
+        )
+
+        return { obj, path }
       })
+    )
 
-    const paths = (await Promise.all(uploadPromises)).filter(
-      Boolean
-    ) as string[]
+    const { paths, images } = collectImagePaths(uploaded, createdMessages[0].id)
 
-    setChatImages(prevImages => [
-      ...prevImages,
-      ...newMessageImages.map((obj, index) => ({
-        ...obj,
-        messageId: createdMessages[0].id,
-        path: paths[index]
-      }))
-    ])
+    setChatImages(prevImages => [...prevImages, ...images])
 
     const updatedMessage = await updateMessage(createdMessages[0].id, {
       ...createdMessages[0],
