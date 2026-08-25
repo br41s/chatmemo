@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { RowListSkeleton } from "@/components/ui/skeletons"
 import {
   Sheet,
   SheetContent,
@@ -42,27 +43,53 @@ const SOURCE_LABELS: Record<TimelineSource, string> = {
   unknown: "Unknown"
 }
 
-const SOURCE_COLORS: Record<TimelineSource, string> = {
-  "claude-ai": "bg-orange-500",
-  "claude-code": "bg-violet-500",
-  chatgpt: "bg-green-500",
-  perplexity: "bg-teal-500",
-  import: "bg-blue-500",
-  todo: "bg-yellow-500",
-  chat: "bg-cyan-500",
-  unknown: "bg-gray-500"
-}
-
-const SOURCE_BORDER: Record<TimelineSource, string> = {
-  "claude-ai": "border-l-orange-500",
-  "claude-code": "border-l-violet-500",
-  chatgpt: "border-l-green-500",
-  perplexity: "border-l-teal-500",
-  import: "border-l-blue-500",
-  todo: "border-l-yellow-500",
-  chat: "border-l-cyan-500",
-  unknown: "border-l-gray-500"
-}
+// One record rather than two parallel ones: the badge and the left border are
+// the same decision, and separate maps meant a new source could get a badge
+// and no border. The values are theme tokens, so the palette tunes per theme
+// instead of being a light-theme palette shown on both — the badges used to be
+// white text on a fixed 500-level fill, which in dark mode was white on a
+// colour bright enough to disappear against it.
+const SOURCE_TONES: Record<TimelineSource, { badge: string; border: string }> =
+  {
+    "claude-ai": {
+      badge:
+        "bg-[hsl(var(--source-claude-ai)/0.15)] text-[hsl(var(--source-claude-ai))]",
+      border: "border-l-[hsl(var(--source-claude-ai))]"
+    },
+    "claude-code": {
+      badge:
+        "bg-[hsl(var(--source-claude-code)/0.15)] text-[hsl(var(--source-claude-code))]",
+      border: "border-l-[hsl(var(--source-claude-code))]"
+    },
+    chatgpt: {
+      badge:
+        "bg-[hsl(var(--source-chatgpt)/0.15)] text-[hsl(var(--source-chatgpt))]",
+      border: "border-l-[hsl(var(--source-chatgpt))]"
+    },
+    perplexity: {
+      badge:
+        "bg-[hsl(var(--source-perplexity)/0.15)] text-[hsl(var(--source-perplexity))]",
+      border: "border-l-[hsl(var(--source-perplexity))]"
+    },
+    import: {
+      badge:
+        "bg-[hsl(var(--source-import)/0.15)] text-[hsl(var(--source-import))]",
+      border: "border-l-[hsl(var(--source-import))]"
+    },
+    todo: {
+      badge: "bg-[hsl(var(--source-todo)/0.15)] text-[hsl(var(--source-todo))]",
+      border: "border-l-[hsl(var(--source-todo))]"
+    },
+    chat: {
+      badge: "bg-[hsl(var(--source-chat)/0.15)] text-[hsl(var(--source-chat))]",
+      border: "border-l-[hsl(var(--source-chat))]"
+    },
+    unknown: {
+      badge:
+        "bg-[hsl(var(--source-unknown)/0.15)] text-[hsl(var(--source-unknown))]",
+      border: "border-l-[hsl(var(--source-unknown))]"
+    }
+  }
 
 function SourceIcon({ source }: { source: TimelineSource }) {
   const cls = "size-3"
@@ -101,7 +128,7 @@ function EntryCard({
 
   return (
     <div
-      className={`cursor-pointer rounded-r-lg border border-l-4 transition-colors ${SOURCE_BORDER[entry.source]} space-y-1.5 p-3 ${
+      className={`cursor-pointer rounded-r-lg border border-l-4 transition-colors ${SOURCE_TONES[entry.source].border} space-y-1.5 p-3 ${
         active
           ? "bg-muted/60 ring-1 ring-primary/30"
           : "bg-background hover:bg-muted/40"
@@ -116,7 +143,7 @@ function EntryCard({
           <div className="mt-0.5 flex flex-wrap items-center gap-2">
             <span className="text-xs text-muted-foreground">{entry.date}</span>
             <span
-              className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] text-white ${SOURCE_COLORS[entry.source]}`}
+              className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${SOURCE_TONES[entry.source].badge}`}
             >
               <SourceIcon source={entry.source} />
               {SOURCE_LABELS[entry.source]}
@@ -177,7 +204,7 @@ function ConvCard({
   return (
     <div
       ref={focused ? focusedRef : undefined}
-      className={`rounded-r-lg border border-l-4 bg-background ${SOURCE_BORDER[entry.source]} space-y-2 p-3 ${
+      className={`rounded-r-lg border border-l-4 bg-background ${SOURCE_TONES[entry.source].border} space-y-2 p-3 ${
         focused ? "ring-2 ring-primary/40" : "opacity-80"
       }`}
     >
@@ -187,7 +214,7 @@ function ConvCard({
           <div className="mt-0.5 flex flex-wrap items-center gap-2">
             <span className="text-xs text-muted-foreground">{entry.date}</span>
             <span
-              className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] text-white ${SOURCE_COLORS[entry.source]}`}
+              className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${SOURCE_TONES[entry.source].badge}`}
             >
               <SourceIcon source={entry.source} />
               {SOURCE_LABELS[entry.source]}
@@ -538,6 +565,12 @@ export function TimelineSheet() {
 
           {/* List */}
           <ScrollArea className="flex-1 px-3 pb-4">
+            {loading && !error && (
+              <div className="pt-2">
+                <RowListSkeleton rows={6} label="Loading the timeline" />
+              </div>
+            )}
+
             {!loading && !error && grouped.length === 0 && (
               <p className="py-8 text-center text-sm text-muted-foreground">
                 {hasFilters

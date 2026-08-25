@@ -157,7 +157,7 @@ export const ToolItem: FC<ToolItemProps> = ({ tool }) => {
               minRows={15}
             />
 
-            <div className="text-xs text-red-500">{schemaError}</div>
+            <div className="text-xs text-destructive">{schemaError}</div>
           </div>
         </>
       )}

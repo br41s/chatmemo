@@ -2,21 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Hardcoded greys here meant the scrollbar was a light-theme scrollbar in both
+   themes: #ccc on a near-black background. */
 ::-webkit-scrollbar-track {
   background-color: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: #ccc;
+  background-color: hsl(var(--muted-foreground) / 0.35);
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: #aaa;
+  background-color: hsl(var(--muted-foreground) / 0.6);
 }
 
 ::-webkit-scrollbar-track:hover {
-  background-color: #f2f2f2;
+  background-color: hsl(var(--muted));
 }
 
 ::-webkit-scrollbar-corner {
@@ -29,68 +31,142 @@
 }
 
 @layer base {
+  /* The palette was the stock shadcn neutral scale, hue 0 saturation 0 from top
+     to bottom, which is why the product read as a template rather than a
+     product. Two changes fix that without repainting the interface:
+
+     1. A brand hue. 258 — violet — chosen because it is the one part of the
+        spectrum none of the providers this thing aggregates already owns:
+        OpenAI green, Anthropic clay, Google blue, Perplexity teal. Brand chrome
+        therefore never collides with the source colours in the timeline, which
+        are categorical and have to stay distinguishable from each other and
+        from the app around them.
+
+     2. A neutral bias. The greys carry the same hue at low saturation, so
+        backgrounds, borders and muted text sit in the same family as the accent
+        instead of beside it.
+
+     Every foreground/background pair below clears WCAG AA (4.5:1) in its own
+     theme; the closest is warning at 5.09:1 in light. Status colours are
+     defined per theme as the readable value, which is what the ad-hoc
+     `text-green-600 dark:text-green-400` pairs scattered through the components
+     were approximating by hand, inconsistently. */
   :root {
     --background: 0 0% 100%;
-    --foreground: 0 0% 3.9%;
+    --foreground: 258 24% 9%;
 
-    --muted: 0 0% 96.1%;
-    --muted-foreground: 0 0% 45.1%;
+    --muted: 258 24% 96%;
+    --muted-foreground: 258 8% 44%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 3.9%;
+    --popover-foreground: 258 24% 9%;
 
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 3.9%;
+    --card-foreground: 258 24% 9%;
 
-    --border: 0 0% 89.8%;
-    --input: 0 0% 89.8%;
+    --border: 258 20% 90%;
+    --input: 258 20% 90%;
 
-    --primary: 0 0% 9%;
-    --primary-foreground: 0 0% 98%;
+    --primary: 258 28% 12%;
+    --primary-foreground: 258 24% 98%;
 
-    --secondary: 0 0% 96.1%;
-    --secondary-foreground: 0 0% 9%;
+    --secondary: 258 24% 96%;
+    --secondary-foreground: 258 28% 12%;
 
-    --accent: 0 0% 96.1%;
-    --accent-foreground: 0 0% 9%;
+    --accent: 258 26% 94%;
+    --accent-foreground: 258 28% 12%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
+    --brand: 258 72% 52%;
+    --brand-foreground: 0 0% 100%;
 
-    --ring: 0 0% 63.9%;
+    --success: 152 62% 30%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 36 92% 32%;
+    --warning-foreground: 0 0% 100%;
+
+    --info: 214 84% 42%;
+    --info-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 45%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* The focus ring was 0 0% 63.9% — a mid grey that was hard to see against
+       either a light or a muted surface. Making it the brand colour is both the
+       most visible piece of identity in the interface and the accessibility
+       fix. */
+    --ring: 258 72% 52%;
+
+    /* Categorical, not semantic: these identify where a memory came from, so
+       they have to stay distinguishable from each other and from the brand.
+       Kept out of the semantic set on purpose — a Perplexity teal is not a
+       "success" and must not drift when the status palette changes. The two
+       Claude entries share a hue because they are the same product. */
+    --source-claude-ai: 24 90% 45%;
+    --source-claude-code: 24 55% 32%;
+    --source-chatgpt: 158 70% 30%;
+    --source-perplexity: 184 70% 30%;
+    --source-import: 214 84% 42%;
+    --source-todo: 36 92% 32%;
+    --source-chat: 258 72% 52%;
+    --source-unknown: 258 8% 42%;
 
     --radius: 0.5rem;
   }
 
   .dark {
-    --background: 0 0% 3.9%;
-    --foreground: 0 0% 98%;
+    --background: 258 18% 7%;
+    --foreground: 258 16% 97%;
 
-    --muted: 0 0% 14.9%;
-    --muted-foreground: 0 0% 63.9%;
+    --muted: 258 14% 15%;
+    --muted-foreground: 258 10% 64%;
 
-    --popover: 0 0% 3.9%;
-    --popover-foreground: 0 0% 98%;
+    --popover: 258 18% 7%;
+    --popover-foreground: 258 16% 97%;
 
-    --card: 0 0% 3.9%;
-    --card-foreground: 0 0% 98%;
+    --card: 258 18% 7%;
+    --card-foreground: 258 16% 97%;
 
-    --border: 0 0% 14.9%;
-    --input: 0 0% 14.9%;
+    --border: 258 12% 18%;
+    --input: 258 12% 18%;
 
-    --primary: 0 0% 98%;
-    --primary-foreground: 0 0% 9%;
+    --primary: 258 16% 97%;
+    --primary-foreground: 258 28% 12%;
 
-    --secondary: 0 0% 14.9%;
-    --secondary-foreground: 0 0% 98%;
+    --secondary: 258 14% 15%;
+    --secondary-foreground: 258 16% 97%;
 
-    --accent: 0 0% 14.9%;
-    --accent-foreground: 0 0% 98%;
+    --accent: 258 14% 18%;
+    --accent-foreground: 258 16% 97%;
 
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 85.7% 97.3%;
+    --brand: 258 90% 74%;
+    --brand-foreground: 258 40% 10%;
 
-    --ring: 0 0% 14.9%;
+    --success: 152 62% 58%;
+    --success-foreground: 152 40% 8%;
+
+    --warning: 36 92% 62%;
+    --warning-foreground: 36 60% 8%;
+
+    --info: 214 90% 68%;
+    --info-foreground: 214 50% 10%;
+
+    /* Bright enough to read as text on the page, which is what the components
+       actually need it for; the destructive button therefore takes a dark
+       label rather than a light one. */
+    --destructive: 0 84% 66%;
+    --destructive-foreground: 0 40% 10%;
+
+    --source-claude-ai: 24 90% 58%;
+    --source-claude-code: 24 55% 45%;
+    --source-chatgpt: 158 60% 44%;
+    --source-perplexity: 184 60% 42%;
+    --source-import: 214 84% 58%;
+    --source-todo: 36 92% 48%;
+    --source-chat: 258 80% 66%;
+    --source-unknown: 258 8% 52%;
+
+    --ring: 258 90% 74%;
   }
 }
 
