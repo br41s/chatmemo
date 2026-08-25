@@ -1138,6 +1138,7 @@ export type Database = {
       }
       summaries: {
         Row: {
+          chat_id: string | null
           content: string
           created_at: string
           id: string
@@ -1148,6 +1149,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          chat_id?: string | null
           content: string
           created_at?: string
           id?: string
@@ -1158,6 +1160,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          chat_id?: string | null
           content?: string
           created_at?: string
           id?: string
@@ -1167,7 +1170,15 @@ export type Database = {
           title?: string | null
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "summaries_chat_id_fkey"
+            columns: ["chat_id"]
+            isOneToOne: false
+            referencedRelation: "chats"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       tool_workspaces: {
         Row: {

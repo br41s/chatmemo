@@ -1,6 +1,17 @@
 "use client"
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { RowListSkeleton } from "@/components/ui/skeletons"
 import {
@@ -17,6 +28,11 @@ import {
   IconDatabaseExport,
   IconDatabaseImport
 } from "@tabler/icons-react"
+import {
+  importTooLargeMessage,
+  MAX_IMPORT_FILE_BYTES,
+  MAX_IMPORT_FILE_MB
+} from "@/lib/import-limits"
 import { useCallback, useRef, useState } from "react"
 
 interface SummaryRow {
@@ -49,6 +65,7 @@ interface ImportResult {
 export function MemoryHistorySheet() {
   const [open, setOpen] = useState(false)
   const [summaries, setSummaries] = useState<SummaryRow[]>([])
+  const [search, setSearch] = useState("")
   const [nextOffset, setNextOffset] = useState<number | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -207,6 +224,14 @@ export function MemoryHistorySheet() {
       for (let i = 0; i < files.length; i++) {
         if (files.length > 1) {
           setImportProgress({ current: i + 1, total: files.length })
+        }
+
+        // Checked here so the message can explain what to do. Sent unchecked,
+        // an oversized export is rejected by the platform before the route
+        // runs and comes back as a bare status code.
+        if (files[i].size > MAX_IMPORT_FILE_BYTES) {
+          setImportError(importTooLargeMessage(files[i].name, files[i].size))
+          return
         }
 
         const fd = new FormData()
@@ -427,10 +452,6 @@ export function MemoryHistorySheet() {
   }
 
   const handleClearAll = async () => {
-    if (!confirmClear) {
-      setConfirmClear(true)
-      return
-    }
     setClearingAll(true)
     setConfirmClear(false)
     setError(null)
@@ -445,6 +466,45 @@ export function MemoryHistorySheet() {
     }
   }
 
+  // The panel that manages memory had no way to find anything in it — the
+  // timeline next door has filters, this listed every row newest-first with a
+  // 120-character preview. Filtering is over what has been loaded, which the
+  // footer says, so an empty result is not mistaken for an empty history.
+  const query = search.trim().toLowerCase()
+  const visibleSummaries = query
+    ? summaries.filter(row => row.content.toLowerCase().includes(query))
+    : summaries
+
+  // Clearing every summary is irreversible and there is no undo, so it asks
+  // properly. It used to be a two-click inline toggle that disarmed itself on
+  // blur — the same affordance as a nit-level action, for deleting the user's
+  // entire memory.
+  const clearAllDialog = (
+    <AlertDialog open={confirmClear} onOpenChange={setConfirmClear}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete all memory?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This removes every stored summary — {summaries.length} loaded here,
+            and any older ones not yet shown — including everything imported
+            from ChatGPT, Claude and Perplexity. It cannot be undone.
+            {"\n\n"}
+            Export a backup first if you might want this back.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Keep my memory</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={handleClearAll}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            Delete everything
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetTrigger asChild>
@@ -458,6 +518,8 @@ export function MemoryHistorySheet() {
       </SheetTrigger>
 
       <SheetContent side="left" className="flex w-[380px] flex-col gap-4 p-4">
+        {clearAllDialog}
+
         <SheetHeader className="pb-2">
           <div className="flex items-center justify-between">
             <SheetTitle className="flex items-center gap-2 text-base">
@@ -468,17 +530,12 @@ export function MemoryHistorySheet() {
               <Button
                 size="sm"
                 variant="ghost"
-                className={`h-7 text-xs ${confirmClear ? "text-destructive hover:text-destructive/80" : "text-muted-foreground hover:text-destructive"}`}
+                className="h-7 text-xs text-muted-foreground hover:text-destructive"
                 disabled={clearingAll}
-                onClick={handleClearAll}
-                onBlur={() => setConfirmClear(false)}
+                onClick={() => setConfirmClear(true)}
               >
                 <IconTrash size={13} className="mr-1" />
-                {clearingAll
-                  ? "Clearing…"
-                  : confirmClear
-                    ? "Confirm clear all"
-                    : "Clear all"}
+                {clearingAll ? "Clearing…" : "Clear all"}
               </Button>
             )}
           </div>
@@ -496,6 +553,18 @@ export function MemoryHistorySheet() {
           </div>
         )}
 
+        {summaries.length > 0 && (
+          <Input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder={`Search ${summaries.length} loaded ${
+              summaries.length === 1 ? "entry" : "entries"
+            }…`}
+            className="h-8 text-xs"
+            aria-label="Search memory entries"
+          />
+        )}
+
         {loading ? (
           <RowListSkeleton label="Loading memory history" />
         ) : summaries.length === 0 ? (
@@ -504,11 +573,22 @@ export function MemoryHistorySheet() {
             <br />
             Send a few messages to generate one.
           </div>
+        ) : visibleSummaries.length === 0 ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-1 text-center text-sm text-muted-foreground">
+            <p>No loaded entry matches “{search.trim()}”.</p>
+            {nextOffset !== null && (
+              <p className="text-xs">
+                Older entries have not been loaded yet — load more below and
+                search again.
+              </p>
+            )}
+          </div>
         ) : (
           <ScrollArea className="flex-1">
             <ul className="flex flex-col gap-2 pr-2">
-              {summaries.map((row, idx) => {
-                const isCurrent = idx === 0
+              {visibleSummaries.map((row, idx) => {
+                // Newest overall, not newest in the filtered view.
+                const isCurrent = row.id === summaries[0]?.id
                 const isRestoring = restoringId === row.id
                 const justRestored = restoredId === row.id
 

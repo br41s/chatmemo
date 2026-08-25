@@ -1,3 +1,7 @@
+import {
+  importTooLargeMessage,
+  MAX_IMPORT_FILE_BYTES
+} from "@/lib/import-limits"
 import { getServerProfile } from "@/lib/server/server-chat-helpers"
 import { createClient } from "@/lib/supabase/server"
 import { getWatermark, insertSummary, setWatermark } from "@/db/summaries"
@@ -20,7 +24,6 @@ export const runtime: ServerRuntime = "nodejs"
 export const maxDuration = 60 // seconds — allow time for LLM summarisation batches
 
 const SOURCE = "chatgpt"
-const MAX_FILE_BYTES = 100 * 1024 * 1024 // 100 MB
 
 /** Max conversations to LLM-summarise per import (3 per batch = ~5 batches). */
 const MAX_TO_SUMMARIZE = 15
@@ -86,11 +89,11 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
-    if (fileField.size > MAX_FILE_BYTES) {
+    if (fileField.size > MAX_IMPORT_FILE_BYTES) {
       return NextResponse.json(
         {
           success: false,
-          reason: `File exceeds ${MAX_FILE_BYTES / 1024 / 1024} MB limit`
+          reason: importTooLargeMessage(fileField.name, fileField.size)
         },
         { status: 400 }
       )
