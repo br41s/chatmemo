@@ -66,17 +66,29 @@ export function resolveOpenRouterKey(profile: {
 // Summarizer
 // ---------------------------------------------------------------------------
 
+export interface SummarizerResult {
+  /** Trimmed output, or null for an empty/SKIP/too-short result. */
+  text: string | null
+  /**
+   * The model stopped because it hit max_tokens rather than finishing.
+   *
+   * Matters for any caller that REPLACES a stored document with the output:
+   * a truncated rewrite looks like a valid shorter document, and writing it
+   * destroys whatever the model had not got to yet.
+   */
+  truncated: boolean
+}
+
 /**
- * Calls the summarisation model and returns the trimmed summary text.
- * Returns null if the model output is empty, is the SKIP sentinel, or
- * contains fewer than MIN_SUMMARY_WORDS words.
+ * Calls the summarisation model and reports both the text and whether the
+ * model ran out of room.
  */
-export async function callSummarizer(
+export async function callSummarizerWithMeta(
   client: OpenAI,
   systemPrompt: string,
   userContent: string,
   maxTokens: number = 700
-): Promise<string | null> {
+): Promise<SummarizerResult> {
   let lastError: unknown
   for (const model of SUMMARIZE_MODELS) {
     try {
@@ -91,7 +103,9 @@ export async function callSummarizer(
         stream: false
       })
 
-      const text = (completion.choices[0]?.message?.content ?? "").trim()
+      const choice = completion.choices[0]
+      const text = (choice?.message?.content ?? "").trim()
+      const truncated = choice?.finish_reason === "length"
 
       if (
         !text ||
@@ -99,10 +113,10 @@ export async function callSummarizer(
         text.split(/\s+/).length < MIN_SUMMARY_WORDS
       ) {
         // Valid empty/SKIP result — not a failure, so don't try the fallback.
-        return null
+        return { text: null, truncated }
       }
 
-      return text
+      return { text, truncated }
     } catch (error) {
       lastError = error
       console.error(
@@ -116,4 +130,23 @@ export async function callSummarizer(
   // Every model failed — rethrow so the caller's error handling (e.g. the
   // 429 rate-limit messaging in the import route) still applies.
   throw lastError
+}
+
+/**
+ * Text-only wrapper for callers that append their output rather than replacing
+ * a document, and so cannot be harmed by a truncated result.
+ */
+export async function callSummarizer(
+  client: OpenAI,
+  systemPrompt: string,
+  userContent: string,
+  maxTokens: number = 700
+): Promise<string | null> {
+  const { text } = await callSummarizerWithMeta(
+    client,
+    systemPrompt,
+    userContent,
+    maxTokens
+  )
+  return text
 }

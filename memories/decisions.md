@@ -161,3 +161,18 @@ Cuatro PRs apilados sobre la rama de auditoría, uno por hallazgo, en orden de d
 - Decidido: una recuperación que no encuentra nada también se muestra. Al modelo se le dijo que lo admitiera en vez de reconstruir la conversación, y quien lee merece saberlo.
 - Decidido: el informe se re-indexa del id optimista al id persistido cuando se guarda el turno.
 - Verificado: 327 pruebas Jest en 33 suites, type-check en condiciones de clon limpio y build de producción en las cuatro ramas.
+
+## 2026-08-21 — Durabilidad de la memoria (ARCH-09, ARCH-10, ARCH-08)
+
+- Decidido: `callSummarizerWithMeta` expone `finish_reason === "length"`. Es la señal definitiva de truncamiento y no había forma de verla; `callSummarizer` queda como envoltorio de texto para quienes añaden en vez de reemplazar.
+- Decidido: una reescritura de lecciones debe ganarse la escritura. Tres comprobaciones independientes porque la señal más fiable no siempre está: truncamiento reportado, pérdida de alguna cabecera `##` presente antes, y encogimiento por debajo del 80 % del documento previo.
+- Motivo: la pasada de lecciones reemplaza el documento entero y `user_lessons` no tiene historial de versiones. Una reescritura truncada parece un documento más corto válido, y escribirla destruye los hechos a los que el modelo no llegó.
+- Decidido: `lessonsRewriteMaxTokens` escala con el tamaño del documento en vez del 800 fijo, que garantizaba truncamiento en cuanto el documento lo superaba. Con techo, para que un documento desbocado no pida salida ilimitada.
+- Decidido: pasado `MAX_LESSONS_CHARS` la ruta omite la reescritura y lo registra. Ni siquiera el techo podría reformular el documento; intentarlo arriesga justo la pérdida que esto evita.
+- Decidido: `replaceLessons` condiciona la escritura al `updated_at` leído. El upsert ciego anterior convertía dos resúmenes simultáneos en una carrera donde el segundo descartaba en silencio los hechos del primero.
+- Decidido: quien pierde la carrera no reintenta. El documento del ganador es ahora la base, y reescribir desde la copia obsoleta reintroduciría la pérdida.
+- Decidido: `keepalive: true` en la llamada a `/api/memory/summarize`. El momento justo tras una respuesta es el más natural para cerrar la pestaña, y sin eso el navegador cancelaba la petición y el turno nunca se recordaba.
+- Decidido: su fallo sigue sin ser fatal, pero deja de ser silencioso; el catch vacío hacía indistinguible el fallo del éxito.
+- Decidido: el guardia de duplicados compara contra las últimas ocho filas de tipo `conversation`, no solo la más reciente. Con dos conversaciones intercaladas, la fila más nueva pertenecía a la otra y cada resumen parecía nuevo.
+- Límite aceptado: el arreglo completo de ARCH-08 —una fila por chat en vez de una por turno— necesita `chat_id` en `summaries`, es decir otra migración. Queda pendiente hasta que la de metadatos tipados esté aplicada.
+- Verificado: 348 pruebas Jest en 35 suites (21 nuevas), type-check en condiciones de clon limpio y build de producción.
