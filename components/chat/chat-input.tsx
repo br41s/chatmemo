@@ -1,7 +1,6 @@
 import { ChatbotUIContext } from "@/context/context"
 import useHotkey from "@/lib/hooks/use-hotkey"
 import { LLM_LIST } from "@/lib/models/llm/llm-list"
-import { cn } from "@/lib/utils"
 import {
   IconBolt,
   IconCirclePlus,
@@ -234,11 +233,14 @@ export const ChatInput: FC<ChatInputProps> = ({}) => {
         </div>
 
         <>
-          <IconCirclePlus
-            className="absolute bottom-[12px] left-3 cursor-pointer p-1 hover:opacity-50"
-            size={32}
+          <button
+            type="button"
+            aria-label="Attach a file"
+            className="absolute bottom-[12px] left-3 cursor-pointer rounded-full hover:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             onClick={() => fileInputRef.current?.click()}
-          />
+          >
+            <IconCirclePlus className="p-1" size={32} />
+          </button>
 
           {/* Hidden input to select files from device */}
           <Input
@@ -270,26 +272,35 @@ export const ChatInput: FC<ChatInputProps> = ({}) => {
           onCompositionEnd={() => setIsTyping(false)}
         />
 
-        <div className="absolute bottom-[14px] right-3 cursor-pointer hover:opacity-50">
+        <div className="absolute bottom-[14px] right-3 hover:opacity-50">
           {isGenerating ? (
-            <IconPlayerStopFilled
-              className="animate-pulse rounded bg-transparent p-1 hover:bg-background"
+            <button
+              type="button"
+              aria-label="Stop generating"
+              className="cursor-pointer rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               onClick={handleStopMessage}
-              size={30}
-            />
+            >
+              <IconPlayerStopFilled
+                className="animate-pulse rounded bg-transparent p-1 hover:bg-background"
+                size={30}
+              />
+            </button>
           ) : (
-            <IconSend
-              className={cn(
-                "rounded bg-primary p-1 text-secondary",
-                !localInput && "cursor-not-allowed opacity-50"
-              )}
-              onClick={() => {
-                if (!localInput) return
-
-                handleSendMessage(localInput, chatMessages, false)
-              }}
-              size={30}
-            />
+            <button
+              type="button"
+              aria-label="Send message"
+              // Disabled rather than a click handler that returns early: an
+              // empty composer's send button was focusable and pressable, and
+              // simply did nothing when pressed.
+              disabled={!localInput}
+              className="cursor-pointer rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => handleSendMessage(localInput, chatMessages, false)}
+            >
+              <IconSend
+                className="rounded bg-primary p-1 text-secondary"
+                size={30}
+              />
+            </button>
           )}
         </div>
       </div>

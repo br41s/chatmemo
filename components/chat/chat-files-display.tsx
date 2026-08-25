@@ -116,34 +116,42 @@ export const ChatFilesDisplay: FC<ChatFilesDisplayProps> = ({}) => {
 
         <div className="overflow-auto">
           <div className="flex gap-2 overflow-auto pt-2">
+            {/* Preview and remove are two controls, so they are two buttons
+                side by side rather than one clickable row with a second
+                clickable thing nested inside it — which is both unreachable by
+                keyboard and invalid markup. */}
             {messageImages.map((image, index) => (
-              <div
-                key={index}
-                className="relative flex h-[64px] cursor-pointer items-center space-x-4 rounded-xl hover:opacity-50"
-              >
-                <Image
-                  className="rounded"
-                  // Force the image to be 56px by 56px
-                  style={{
-                    minWidth: "56px",
-                    minHeight: "56px",
-                    maxHeight: "56px",
-                    maxWidth: "56px"
-                  }}
-                  src={image.base64} // Preview images will always be base64
-                  alt="File image"
-                  width={56}
-                  height={56}
+              <div key={index} className="relative flex h-[64px] items-center">
+                <button
+                  type="button"
+                  aria-label={`Preview attached image ${index + 1}`}
+                  className="cursor-pointer rounded-xl hover:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   onClick={() => {
                     setSelectedImage(image)
                     setShowPreview(true)
                   }}
-                />
+                >
+                  <Image
+                    className="rounded"
+                    // Force the image to be 56px by 56px
+                    style={{
+                      minWidth: "56px",
+                      minHeight: "56px",
+                      maxHeight: "56px",
+                      maxWidth: "56px"
+                    }}
+                    src={image.base64} // Preview images will always be base64
+                    alt=""
+                    width={56}
+                    height={56}
+                  />
+                </button>
 
-                <IconX
-                  className="absolute right-[-6px] top-[-2px] flex size-5 cursor-pointer items-center justify-center rounded-full border-DEFAULT border-primary bg-muted-foreground text-[10px] hover:border-red-500 hover:bg-white hover:text-red-500"
-                  onClick={e => {
-                    e.stopPropagation()
+                <button
+                  type="button"
+                  aria-label={`Remove attached image ${index + 1}`}
+                  className="absolute right-[-6px] top-[-2px] flex size-5 cursor-pointer items-center justify-center rounded-full border-DEFAULT border-primary bg-muted-foreground hover:border-red-500 hover:bg-white hover:text-red-500 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  onClick={() => {
                     setNewMessageImages(
                       newMessageImages.filter(
                         f => f.messageId !== image.messageId
@@ -153,7 +161,9 @@ export const ChatFilesDisplay: FC<ChatFilesDisplayProps> = ({}) => {
                       chatImages.filter(f => f.messageId !== image.messageId)
                     )
                   }}
-                />
+                >
+                  <IconX className="size-4" />
+                </button>
               </div>
             ))}
 
@@ -173,50 +183,56 @@ export const ChatFilesDisplay: FC<ChatFilesDisplayProps> = ({}) => {
                   </div>
                 </div>
               ) : (
-                <div
-                  key={file.id}
-                  className="relative flex h-[64px] cursor-pointer items-center space-x-4 rounded-xl border-2 px-4 py-3 hover:opacity-50"
-                  onClick={() => getLinkAndView(file)}
-                >
-                  <div className="rounded bg-blue-500 p-2">
-                    {(() => {
-                      let fileExtension = file.type.includes("/")
-                        ? file.type.split("/")[1]
-                        : file.type
+                <div key={file.id} className="relative">
+                  <button
+                    type="button"
+                    aria-label={`Open ${file.name}`}
+                    className="flex h-[64px] cursor-pointer items-center space-x-4 rounded-xl border-2 px-4 py-3 text-left hover:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    onClick={() => getLinkAndView(file)}
+                  >
+                    <div className="rounded bg-blue-500 p-2">
+                      {(() => {
+                        let fileExtension = file.type.includes("/")
+                          ? file.type.split("/")[1]
+                          : file.type
 
-                      switch (fileExtension) {
-                        case "pdf":
-                          return <IconFileTypePdf />
-                        case "markdown":
-                          return <IconMarkdown />
-                        case "txt":
-                          return <IconFileTypeTxt />
-                        case "json":
-                          return <IconJson />
-                        case "csv":
-                          return <IconFileTypeCsv />
-                        case "docx":
-                          return <IconFileTypeDocx />
-                        default:
-                          return <IconFileFilled />
-                      }
-                    })()}
-                  </div>
+                        switch (fileExtension) {
+                          case "pdf":
+                            return <IconFileTypePdf />
+                          case "markdown":
+                            return <IconMarkdown />
+                          case "txt":
+                            return <IconFileTypeTxt />
+                          case "json":
+                            return <IconJson />
+                          case "csv":
+                            return <IconFileTypeCsv />
+                          case "docx":
+                            return <IconFileTypeDocx />
+                          default:
+                            return <IconFileFilled />
+                        }
+                      })()}
+                    </div>
 
-                  <div className="truncate text-sm">
-                    <div className="truncate">{file.name}</div>
-                  </div>
+                    <div className="truncate text-sm">
+                      <div className="truncate">{file.name}</div>
+                    </div>
+                  </button>
 
-                  <IconX
-                    className="absolute right-[-6px] top-[-6px] flex size-5 cursor-pointer items-center justify-center rounded-full border-DEFAULT border-primary bg-muted-foreground text-[10px] hover:border-red-500 hover:bg-white hover:text-red-500"
-                    onClick={e => {
-                      e.stopPropagation()
+                  <button
+                    type="button"
+                    aria-label={`Remove ${file.name}`}
+                    className="absolute right-[-6px] top-[-6px] flex size-5 cursor-pointer items-center justify-center rounded-full border-DEFAULT border-primary bg-muted-foreground hover:border-red-500 hover:bg-white hover:text-red-500 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    onClick={() => {
                       setNewMessageFiles(
                         newMessageFiles.filter(f => f.id !== file.id)
                       )
                       setChatFiles(chatFiles.filter(f => f.id !== file.id))
                     }}
-                  />
+                  >
+                    <IconX className="size-4" />
+                  </button>
                 </div>
               )
             )}

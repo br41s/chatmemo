@@ -204,13 +204,19 @@ export const ChatUI: FC<ChatUIProps> = ({}) => {
       </div>
 
       <div className="flex max-h-[50px] min-h-[50px] w-full items-center justify-center border-b-2 bg-secondary font-bold">
-        <div className="max-w-[200px] truncate sm:max-w-[400px] md:max-w-[500px] lg:max-w-[600px] xl:max-w-[700px]">
+        <h1 className="max-w-[200px] truncate text-base font-bold sm:max-w-[400px] md:max-w-[500px] lg:max-w-[600px] xl:max-w-[700px]">
           {selectedChat?.name || "Chat"}
-        </div>
+        </h1>
       </div>
 
+      {/* A scrollable region needs a name and a tab stop of its own, otherwise
+          a keyboard user has no way to scroll the transcript without landing on
+          something inside it first. */}
       <div
-        className="flex size-full flex-col overflow-auto border-b"
+        role="region"
+        aria-label="Messages"
+        tabIndex={0}
+        className="flex size-full flex-col overflow-auto border-b focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
         onScroll={handleScroll}
       >
         <div ref={messagesStartRef} />

@@ -516,7 +516,10 @@ export function MemoryHistorySheet() {
         </Button>
       </SheetTrigger>
 
-      <SheetContent side="left" className="flex w-[380px] flex-col gap-4 p-4">
+      <SheetContent
+        side="left"
+        className="flex w-full flex-col gap-4 p-4 sm:w-[380px]"
+      >
         {clearAllDialog}
 
         <SheetHeader className="pb-2">

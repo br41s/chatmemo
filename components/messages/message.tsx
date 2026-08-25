@@ -181,6 +181,12 @@ export const Message: FC<MessageProps> = ({
     return acc
   }, fileAccumulator)
 
+  const sourceCount = fileItems.length
+  const fileCount = Object.keys(fileSummary).length
+  const sourcesLabel = `${sourceCount} ${
+    sourceCount === 1 ? "Source" : "Sources"
+  } from ${fileCount} ${fileCount === 1 ? "File" : "Files"}`
+
   return (
     <div
       className={cn(
@@ -203,7 +209,23 @@ export const Message: FC<MessageProps> = ({
             onRegenerate={handleRegenerate}
           />
         </div>
-        <div className="space-y-3">
+        <div
+          className="space-y-3"
+          // The reply arrives token by token, and a live region that fired on
+          // every frame would be unreadable. `aria-busy` is the pairing for
+          // that: assistive tech holds the region while it is true and reads
+          // the finished answer once when generation stops. Only the last
+          // assistant message is live — the rest of the transcript is static
+          // text a reader moves through on its own.
+          aria-live={
+            message.role === "assistant" && isLast ? "polite" : undefined
+          }
+          aria-busy={
+            message.role === "assistant" && isLast && isGenerating
+              ? true
+              : undefined
+          }
+        >
           {message.role === "system" ? (
             <div className="flex items-center space-x-4">
               <IconPencil
@@ -318,28 +340,26 @@ export const Message: FC<MessageProps> = ({
         {fileItems.length > 0 && (
           <div className="mt-6 border-t border-primary pt-4 font-bold">
             {!viewSources ? (
-              <div
-                className="flex cursor-pointer items-center text-lg hover:opacity-50"
+              <button
+                type="button"
+                aria-expanded={false}
+                className="flex cursor-pointer items-center text-lg hover:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 onClick={() => setViewSources(true)}
               >
-                {fileItems.length}
-                {fileItems.length > 1 ? " Sources " : " Source "}
-                from {Object.keys(fileSummary).length}{" "}
-                {Object.keys(fileSummary).length > 1 ? "Files" : "File"}{" "}
+                {sourcesLabel}
                 <IconCaretRightFilled className="ml-1" />
-              </div>
+              </button>
             ) : (
               <>
-                <div
-                  className="flex cursor-pointer items-center text-lg hover:opacity-50"
+                <button
+                  type="button"
+                  aria-expanded={true}
+                  className="flex cursor-pointer items-center text-lg hover:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   onClick={() => setViewSources(false)}
                 >
-                  {fileItems.length}
-                  {fileItems.length > 1 ? " Sources " : " Source "}
-                  from {Object.keys(fileSummary).length}{" "}
-                  {Object.keys(fileSummary).length > 1 ? "Files" : "File"}{" "}
+                  {sourcesLabel}
                   <IconCaretDownFilled className="ml-1" />
-                </div>
+                </button>
 
                 <div className="mt-3 space-y-4">
                   {Object.values(fileSummary).map((file, index) => (
@@ -360,19 +380,20 @@ export const Message: FC<MessageProps> = ({
                           return parentFile?.id === file.id
                         })
                         .map((fileItem, index) => (
-                          <div
+                          <button
                             key={index}
-                            className="ml-8 mt-1.5 flex cursor-pointer items-center space-x-2 hover:opacity-50"
+                            type="button"
+                            className="ml-8 mt-1.5 flex w-full cursor-pointer items-center space-x-2 text-left hover:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                             onClick={() => {
                               setSelectedFileItem(fileItem)
                               setShowFileItemPreview(true)
                             }}
                           >
-                            <div className="text-sm font-normal">
+                            <span className="text-sm font-normal">
                               <span className="mr-1 text-lg font-bold">-</span>{" "}
                               {fileItem.content.substring(0, 200)}...
-                            </div>
-                          </div>
+                            </span>
+                          </button>
                         ))}
                     </div>
                   ))}
@@ -387,13 +408,15 @@ export const Message: FC<MessageProps> = ({
             const item = chatImages.find(image => image.path === path)
 
             return (
-              <Image
+              <button
                 key={index}
-                className="cursor-pointer rounded hover:opacity-50"
-                src={path.startsWith("data") ? path : item?.base64}
-                alt="message image"
-                width={300}
-                height={300}
+                type="button"
+                // The image carries no alt text worth reading — nothing here
+                // knows what it depicts — so the label lives on the control
+                // and the image itself is left decorative rather than
+                // announcing "message image" once per attachment.
+                aria-label={`Open attached image ${index + 1} of ${message.image_paths.length}`}
+                className="cursor-pointer rounded hover:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 onClick={() => {
                   setSelectedImage({
                     messageId: message.id,
@@ -405,8 +428,16 @@ export const Message: FC<MessageProps> = ({
 
                   setShowImagePreview(true)
                 }}
-                loading="lazy"
-              />
+              >
+                <Image
+                  className="rounded"
+                  src={path.startsWith("data") ? path : item?.base64}
+                  alt=""
+                  width={300}
+                  height={300}
+                  loading="lazy"
+                />
+              </button>
             )
           })}
         </div>
