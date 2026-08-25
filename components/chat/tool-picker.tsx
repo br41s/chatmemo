@@ -85,6 +85,7 @@ export const ToolPicker: FC<ToolPickerProps> = ({}) => {
                   ref={ref => {
                     itemsRef.current[index] = ref
                   }}
+                  role="button"
                   tabIndex={0}
                   className="flex cursor-pointer items-center rounded p-2 hover:bg-accent focus:bg-accent focus:outline-none"
                   onClick={() => callSelectTool(item as Tables<"tools">)}
