@@ -1,3 +1,4 @@
+import { useChatInput } from "@/context/chat-input-context"
 import { ChatbotUIContext } from "@/context/context"
 import { getAssistantCollectionsByAssistantId } from "@/db/assistant-collections"
 import { getAssistantFilesByAssistantId } from "@/db/assistant-files"
@@ -11,23 +12,26 @@ export const usePromptAndCommand = () => {
   const {
     chatFiles,
     setNewMessageFiles,
-    userInput,
-    setUserInput,
     setShowFilesDisplay,
-    setIsPromptPickerOpen,
-    setIsFilePickerOpen,
-    setSlashCommand,
-    setHashtagCommand,
     setUseRetrieval,
-    setToolCommand,
-    setIsToolPickerOpen,
     setSelectedTools,
-    setAtCommand,
-    setIsAssistantPickerOpen,
     setSelectedAssistant,
     setChatSettings,
     setChatFiles
   } = useContext(ChatbotUIContext)
+
+  const {
+    userInput,
+    setUserInput,
+    setIsPromptPickerOpen,
+    setIsFilePickerOpen,
+    setSlashCommand,
+    setHashtagCommand,
+    setToolCommand,
+    setIsToolPickerOpen,
+    setAtCommand,
+    setIsAssistantPickerOpen
+  } = useChatInput()
 
   const handleInputChange = (value: string) => {
     const atTextRegex = /@([^ ]*)$/

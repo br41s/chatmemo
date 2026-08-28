@@ -1,3 +1,4 @@
+import { useChatInput } from "@/context/chat-input-context"
 import { ChatbotUIContext } from "@/context/context"
 import { FC, useContext } from "react"
 import { AssistantPicker } from "./assistant-picker"
@@ -9,16 +10,16 @@ import { ToolPicker } from "./tool-picker"
 interface ChatCommandInputProps {}
 
 export const ChatCommandInput: FC<ChatCommandInputProps> = ({}) => {
+  const { newMessageFiles, chatFiles } = useContext(ChatbotUIContext)
+
   const {
-    newMessageFiles,
-    chatFiles,
     slashCommand,
     isFilePickerOpen,
     setIsFilePickerOpen,
     hashtagCommand,
     focusPrompt,
     focusFile
-  } = useContext(ChatbotUIContext)
+  } = useChatInput()
 
   const { handleSelectUserFile, handleSelectUserCollection } =
     usePromptAndCommand()

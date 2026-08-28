@@ -1,6 +1,8 @@
 "use client"
 
 import { Dashboard } from "@/components/ui/dashboard"
+import { useChatStream } from "@/context/chat-stream-context"
+import { useChatInput } from "@/context/chat-input-context"
 import { ChatbotUIContext } from "@/context/context"
 import { getAssistantWorkspacesByWorkspaceId } from "@/db/assistants"
 import { getChatsByWorkspaceId } from "@/db/chats"
@@ -48,16 +50,17 @@ export default function WorkspaceLayout({ children }: WorkspaceLayoutProps) {
     selectedWorkspace,
     setSelectedWorkspace,
     setSelectedChat,
-    setChatMessages,
-    setUserInput,
-    setIsGenerating,
-    setFirstTokenReceived,
     setChatFiles,
     setChatImages,
     setNewMessageFiles,
     setNewMessageImages,
     setShowFilesDisplay
   } = useContext(ChatbotUIContext)
+
+  const { setChatMessages, setIsGenerating, setFirstTokenReceived } =
+    useChatStream()
+
+  const { setUserInput } = useChatInput()
 
   const [loading, setLoading] = useState(true)
 

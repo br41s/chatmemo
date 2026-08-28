@@ -1,3 +1,4 @@
+import { useChatInput } from "@/context/chat-input-context"
 import { ChatbotUIContext } from "@/context/context"
 import { Tables } from "@/supabase/types"
 import { IconBooks } from "@tabler/icons-react"
@@ -25,8 +26,9 @@ export const FilePicker: FC<FilePickerProps> = ({
   onSelectCollection,
   isFocused
 }) => {
-  const { files, collections, setIsFilePickerOpen } =
-    useContext(ChatbotUIContext)
+  const { files, collections } = useContext(ChatbotUIContext)
+
+  const { setIsFilePickerOpen } = useChatInput()
 
   const itemsRef = useRef<(HTMLDivElement | null)[]>([])
 

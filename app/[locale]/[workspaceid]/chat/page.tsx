@@ -8,7 +8,8 @@ import { ChatSettings } from "@/components/chat/chat-settings"
 import { ChatUI } from "@/components/chat/chat-ui"
 import { QuickSettings } from "@/components/chat/quick-settings"
 import { ChatEmptyState } from "@/components/chat/chat-empty-state"
-import { ChatbotUIContext } from "@/context/context"
+import { useChatStream } from "@/context/chat-stream-context"
+import { useChatInput } from "@/context/chat-input-context"
 import useHotkey from "@/lib/hooks/use-hotkey"
 import { useContext } from "react"
 
@@ -18,7 +19,9 @@ export default function ChatPage() {
     handleFocusChatInput()
   })
 
-  const { chatMessages, setUserInput } = useContext(ChatbotUIContext)
+  const { chatMessages } = useChatStream()
+
+  const { setUserInput } = useChatInput()
 
   const { handleNewChat, handleFocusChatInput } = useChatHandler()
 
