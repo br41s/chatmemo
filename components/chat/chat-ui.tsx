@@ -1,15 +1,15 @@
 import Loading from "@/app/[locale]/loading"
 import { useChatHandler } from "@/components/chat/chat-hooks/use-chat-handler"
 import { useChatStream } from "@/context/chat-stream-context"
+import { Button } from "@/components/ui/button"
 import { ChatbotUIContext } from "@/context/context"
 import { cn } from "@/lib/utils"
 import { getAssistantToolsByAssistantId } from "@/db/assistant-tools"
 import { getChatFilesByChatId } from "@/db/chat-files"
 import { getChatById } from "@/db/chats"
-import { getMessageFileItemsByMessageId } from "@/db/message-file-items"
-import { getMessagesByChatId } from "@/db/messages"
-import { getMessageImageFromStorage } from "@/db/storage/message-images"
+import { getMessagesByChatId, type MessageWithFileItems } from "@/db/messages"
 import { convertBlobToBase64 } from "@/lib/blob-to-b64"
+import { supabase } from "@/lib/supabase/browser-client"
 import useHotkey from "@/lib/hooks/use-hotkey"
 import { LLMID, MessageImage } from "@/types"
 import { useParams } from "next/navigation"
@@ -60,6 +60,11 @@ export const ChatUI: FC<ChatUIProps> = ({}) => {
   } = useScroll()
 
   const [loading, setLoading] = useState(true)
+  const [loadingOlder, setLoadingOlder] = useState(false)
+  const [hasOlderMessages, setHasOlderMessages] = useState(false)
+  // Tracked here rather than read off the transcript: subscribing to
+  // `chatMessages` would re-render this component on every streamed token.
+  const [oldestSequence, setOldestSequence] = useState<number | null>(null)
 
   useEffect(() => {
     const fetchData = async () => {
@@ -80,51 +85,109 @@ export const ChatUI: FC<ChatUIProps> = ({}) => {
     }
   }, [])
 
+  /**
+   * Everything the transcript needs, in one query.
+   *
+   * This used to render nothing until it had finished: the messages, then one
+   * file-items query per message, then a signed URL per image, then a download
+   * and a base64 encode per image, then the chat's files — roughly `2 + M + 2I`
+   * round trips for a chat of M messages and I images, all before the first
+   * word appeared.
+   *
+   * Now the one query that produces the transcript is the only thing that
+   * blocks. Images and the file strip resolve behind it and appear when they
+   * are ready.
+   */
   const fetchMessages = async () => {
-    const fetchedMessages = await getMessagesByChatId(params.chatid as string)
-
-    const imagePromises: Promise<MessageImage>[] = fetchedMessages.flatMap(
-      message =>
-        message.image_paths
-          ? message.image_paths.map(async imagePath => {
-              const url = await getMessageImageFromStorage(imagePath)
-
-              if (url) {
-                const response = await fetch(url)
-                const blob = await response.blob()
-                const base64 = await convertBlobToBase64(blob)
-
-                return {
-                  messageId: message.id,
-                  path: imagePath,
-                  base64,
-                  url,
-                  file: null
-                }
-              }
-
-              return {
-                messageId: message.id,
-                path: imagePath,
-                base64: "",
-                url,
-                file: null
-              }
-            })
-          : []
+    const { messages, hasOlder } = await getMessagesByChatId(
+      params.chatid as string
     )
 
-    const images: MessageImage[] = await Promise.all(imagePromises.flat())
-    setChatImages(images)
-
-    const messageFileItemPromises = fetchedMessages.map(
-      async message => await getMessageFileItemsByMessageId(message.id)
+    setChatFileItems(messages.flatMap(message => message.file_items))
+    setChatMessages(
+      messages.map(message => ({
+        message,
+        fileItems: message.file_items.map(fileItem => fileItem.id)
+      }))
     )
+    setHasOlderMessages(hasOlder)
+    setOldestSequence(messages[0]?.sequence_number ?? null)
 
-    const messageFileItems = await Promise.all(messageFileItemPromises)
+    // Deliberately not awaited: none of this is needed to read the
+    // conversation, and waiting on it is what made opening a chat feel slow.
+    void loadAttachments(messages)
+  }
 
-    const uniqueFileItems = messageFileItems.flatMap(item => item.file_items)
-    setChatFileItems(uniqueFileItems)
+  /** The older page, prepended. */
+  const loadOlderMessages = async () => {
+    if (oldestSequence === null || loadingOlder) return
+
+    setLoadingOlder(true)
+    try {
+      const { messages, hasOlder } = await getMessagesByChatId(
+        params.chatid as string,
+        { before: oldestSequence }
+      )
+
+      setChatFileItems(previous => [
+        ...messages.flatMap(message => message.file_items),
+        ...previous
+      ])
+      setChatMessages(previous => [
+        ...messages.map(message => ({
+          message,
+          fileItems: message.file_items.map(fileItem => fileItem.id)
+        })),
+        ...previous
+      ])
+      setHasOlderMessages(hasOlder)
+      if (messages.length > 0) setOldestSequence(messages[0].sequence_number)
+
+      void loadAttachments(messages)
+    } finally {
+      setLoadingOlder(false)
+    }
+  }
+
+  /**
+   * Images and the file strip, once the conversation is already on screen.
+   *
+   * One `createSignedUrls` call covers every image rather than one call each.
+   * The URL alone is enough to display the image — the browser fetches it
+   * lazily — so the base64 that the vision providers need is encoded after,
+   * without holding anything up.
+   */
+  const loadAttachments = async (messages: MessageWithFileItems[]) => {
+    const paths = messages.flatMap(message => message.image_paths ?? [])
+
+    if (paths.length > 0) {
+      const { data: signed } = await supabase.storage
+        .from("message_images")
+        .createSignedUrls(paths, 60 * 60 * 24)
+
+      const byPath = new Map(
+        (signed ?? []).map(entry => [entry.path ?? "", entry.signedUrl])
+      )
+
+      const images: MessageImage[] = messages.flatMap(message =>
+        (message.image_paths ?? []).map(path => ({
+          messageId: message.id,
+          path,
+          base64: "",
+          url: byPath.get(path) ?? "",
+          file: null
+        }))
+      )
+
+      setChatImages(previous => [
+        ...previous.filter(
+          image => !images.some(fresh => fresh.path === image.path)
+        ),
+        ...images
+      ])
+
+      void encodeImages(images)
+    }
 
     const chatFiles = await getChatFilesByChatId(params.chatid as string)
 
@@ -139,19 +202,35 @@ export const ChatUI: FC<ChatUIProps> = ({}) => {
 
     setUseRetrieval(true)
     setShowFilesDisplay(true)
+  }
 
-    const fetchedChatMessages = fetchedMessages.map(message => {
-      return {
-        message,
-        fileItems: messageFileItems
-          .filter(messageFileItem => messageFileItem.id === message.id)
-          .flatMap(messageFileItem =>
-            messageFileItem.file_items.map(fileItem => fileItem.id)
+  /**
+   * Fill in the base64 behind the rendered images.
+   *
+   * Anthropic's route needs a data URL rather than a link, so the encoding
+   * still has to happen — just not before the person can read the
+   * conversation. A send that beats this resolves the missing one on demand.
+   */
+  const encodeImages = async (images: MessageImage[]) => {
+    await Promise.all(
+      images.map(async image => {
+        if (!image.url) return
+
+        try {
+          const response = await fetch(image.url)
+          const base64 = await convertBlobToBase64(await response.blob())
+
+          setChatImages(previous =>
+            previous.map(existing =>
+              existing.path === image.path ? { ...existing, base64 } : existing
+            )
           )
-      }
-    })
-
-    setChatMessages(fetchedChatMessages)
+        } catch {
+          // A broken image is not worth failing the chat over; it simply keeps
+          // rendering from its URL.
+        }
+      })
+    )
   }
 
   const fetchChat = async () => {
@@ -222,6 +301,20 @@ export const ChatUI: FC<ChatUIProps> = ({}) => {
         onScroll={handleScroll}
       >
         <div ref={messagesStartRef} />
+
+        {hasOlderMessages && (
+          <div className="flex justify-center py-3">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              disabled={loadingOlder}
+              onClick={loadOlderMessages}
+            >
+              {loadingOlder ? "Loading…" : "Load earlier messages"}
+            </Button>
+          </div>
+        )}
 
         <ChatMessages />
 

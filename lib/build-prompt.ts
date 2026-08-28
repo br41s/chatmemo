@@ -1,6 +1,7 @@
 import { Tables } from "@/supabase/types"
 import { ChatPayload, MessageImage } from "@/types"
 import { getBase64FromDataURL, getMediaTypeFromDataURL } from "@/lib/utils"
+import { convertBlobToBase64 } from "@/lib/blob-to-b64"
 import { ContextBudget, resolveContextBudget } from "@/lib/context-budget"
 
 // gpt-tokenizer carries the full BPE rank tables. buildFinalMessages runs in
@@ -39,6 +40,38 @@ const buildBasePrompt = (
   fullPrompt += `User Instructions:\n${prompt}`
 
   return fullPrompt
+}
+
+/**
+ * The data URL a vision provider needs for a stored image.
+ *
+ * The chat loads images by signed URL and encodes the base64 behind the render,
+ * so a message sent in the first moment after opening a chat can arrive here
+ * before the encoding has finished. Anthropic's route reads the media type out
+ * of a data URL, so a link will not do — this fills the gap rather than sending
+ * an empty string, which is what the previous version did whenever the entry
+ * was missing.
+ */
+export async function resolveImageData(
+  path: string,
+  chatImages: MessageImage[]
+): Promise<string> {
+  if (path.startsWith("data")) return path
+
+  const chatImage = chatImages.find(image => image.path === path)
+  if (!chatImage) return ""
+  if (chatImage.base64) return chatImage.base64
+  if (!chatImage.url) return ""
+
+  try {
+    const response = await fetch(chatImage.url)
+    const base64 = await convertBlobToBase64(await response.blob())
+    // Cached on the entry so a second message does not fetch it again.
+    chatImage.base64 = base64
+    return base64
+  } catch {
+    return ""
+  }
 }
 
 export async function buildFinalMessages(
@@ -139,45 +172,33 @@ export async function buildFinalMessages(
 
   finalMessages.unshift(tempSystemMessage)
 
-  finalMessages = finalMessages.map(message => {
-    let content
+  finalMessages = await Promise.all(
+    finalMessages.map(async message => {
+      let content
 
-    if (message.image_paths.length > 0) {
-      content = [
-        {
-          type: "text",
-          text: message.content
-        },
-        ...message.image_paths.map(path => {
-          let formedUrl = ""
+      if (message.image_paths.length > 0) {
+        content = [
+          {
+            type: "text",
+            text: message.content
+          },
+          ...(await Promise.all(
+            message.image_paths.map(async path => ({
+              type: "image_url",
+              image_url: { url: await resolveImageData(path, chatImages) }
+            }))
+          ))
+        ]
+      } else {
+        content = message.content
+      }
 
-          if (path.startsWith("data")) {
-            formedUrl = path
-          } else {
-            const chatImage = chatImages.find(image => image.path === path)
-
-            if (chatImage) {
-              formedUrl = chatImage.base64
-            }
-          }
-
-          return {
-            type: "image_url",
-            image_url: {
-              url: formedUrl
-            }
-          }
-        })
-      ]
-    } else {
-      content = message.content
-    }
-
-    return {
-      role: message.role,
-      content
-    }
-  })
+      return {
+        role: message.role,
+        content
+      }
+    })
+  )
 
   if (messageFileItems.length > 0) {
     const retrievalText = buildRetrievalText(messageFileItems)

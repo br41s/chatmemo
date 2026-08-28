@@ -396,7 +396,9 @@ const MessageComponent: FC<MessageProps> = ({
               >
                 <Image
                   className="rounded"
-                  src={path.startsWith("data") ? path : item?.base64}
+                  src={
+                    path.startsWith("data") ? path : item?.base64 || item?.url
+                  }
                   alt=""
                   width={300}
                   height={300}
