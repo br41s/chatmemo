@@ -1177,7 +1177,7 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "chats"
             referencedColumns: ["id"]
-          },
+          }
         ]
       }
       tool_workspaces: {
@@ -1268,6 +1268,27 @@ export type Database = {
             referencedColumns: ["id"]
           }
         ]
+      }
+      user_lessons: {
+        Row: {
+          content: string
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          content?: string
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          content?: string
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       workspaces: {
         Row: {

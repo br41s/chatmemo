@@ -1,3 +1,4 @@
+import { Database } from "@/supabase/types"
 import { createServerClient, type CookieOptions } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 
@@ -9,7 +10,7 @@ export const createClient = (request: NextRequest) => {
     }
   })
 
-  const supabase = createServerClient(
+  const supabase = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
