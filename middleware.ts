@@ -18,11 +18,13 @@ export async function middleware(request: NextRequest) {
 
     const session = await supabase.auth.getSession()
 
-    const redirectToChat = session && request.nextUrl.pathname === "/"
+    // `session` is the response envelope, which is always truthy — guarding on
+    // it meant the redirect also ran with no signed-in user, and the workspace
+    // lookup below filtered on `undefined`. The typed client is what surfaced
+    // that; the untyped one accepted it and left the query to fail at runtime.
+    const userId = session.data.session?.user.id
 
-    if (redirectToChat) {
-      const userId = session.data.session?.user.id
-
+    if (userId && request.nextUrl.pathname === "/") {
       // Fast path: serve from cookie, no DB round-trip.
       const cached = request.cookies.get(HOME_WORKSPACE_COOKIE)?.value
       if (cached) {

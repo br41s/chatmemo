@@ -1,11 +1,18 @@
+import { Database } from "@/supabase/types"
 import { SupabaseClient } from "@supabase/supabase-js"
+
+// The schema generic matters here more than anywhere: every function in this
+// file names `user_lessons`, a table that was missing from supabase/types.ts
+// entirely. A bare SupabaseClient accepts any table name and returns `any`,
+// so nothing said so.
+type Supabase = SupabaseClient<Database>
 
 /**
  * Fetch the user's current lessons document.
  * Returns null if none exists yet.
  */
 export async function getLessons(
-  supabase: SupabaseClient,
+  supabase: Supabase,
   userId: string
 ): Promise<string | null> {
   const { data } = await supabase
@@ -29,7 +36,7 @@ export interface LessonsRecord {
  * safely.
  */
 export async function getLessonsRecord(
-  supabase: SupabaseClient,
+  supabase: Supabase,
   userId: string
 ): Promise<LessonsRecord> {
   const { data } = await supabase
@@ -58,7 +65,7 @@ export async function getLessonsRecord(
  * reintroduce exactly the loss being prevented.
  */
 export async function replaceLessons(
-  supabase: SupabaseClient,
+  supabase: Supabase,
   userId: string,
   content: string,
   expectedUpdatedAt: string | null
@@ -91,7 +98,7 @@ export async function replaceLessons(
  * possible; this remains for callers that own the document outright.
  */
 export async function upsertLessons(
-  supabase: SupabaseClient,
+  supabase: Supabase,
   userId: string,
   content: string
 ): Promise<void> {
