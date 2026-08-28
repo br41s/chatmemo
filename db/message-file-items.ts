@@ -1,24 +1,9 @@
 import { supabase } from "@/lib/supabase/browser-client"
 import { TablesInsert } from "@/supabase/types"
 
-export const getMessageFileItemsByMessageId = async (messageId: string) => {
-  const { data: messageFileItems, error } = await supabase
-    .from("messages")
-    .select(
-      `
-      id,
-      file_items (*)
-    `
-    )
-    .eq("id", messageId)
-    .single()
-
-  if (!messageFileItems) {
-    throw new Error(error.message)
-  }
-
-  return messageFileItems
-}
+// `getMessageFileItemsByMessageId` used to live here. Its only caller ran it
+// once per message while opening a chat; the messages query embeds
+// `file_items` now, so there is nothing left to ask one row at a time.
 
 export const createMessageFileItems = async (
   messageFileItems: TablesInsert<"message_file_items">[]
