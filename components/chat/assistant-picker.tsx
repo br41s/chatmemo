@@ -1,3 +1,4 @@
+import { useChatInput } from "@/context/chat-input-context"
 import { ChatbotUIContext } from "@/context/context"
 import { Tables } from "@/supabase/types"
 import { IconRobotFace } from "@tabler/icons-react"
@@ -8,14 +9,14 @@ import { usePromptAndCommand } from "./chat-hooks/use-prompt-and-command"
 interface AssistantPickerProps {}
 
 export const AssistantPicker: FC<AssistantPickerProps> = ({}) => {
+  const { assistants, assistantImages } = useContext(ChatbotUIContext)
+
   const {
-    assistants,
-    assistantImages,
     focusAssistant,
     atCommand,
     isAssistantPickerOpen,
     setIsAssistantPickerOpen
-  } = useContext(ChatbotUIContext)
+  } = useChatInput()
 
   const { handleSelectAssistant } = usePromptAndCommand()
 

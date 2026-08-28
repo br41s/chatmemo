@@ -1,3 +1,5 @@
+import { useChatStream } from "@/context/chat-stream-context"
+import { useChatInput } from "@/context/chat-input-context"
 import { ChatbotUIContext } from "@/context/context"
 import { getAssistantCollectionsByAssistantId } from "@/db/assistant-collections"
 import { getAssistantFilesByAssistantId } from "@/db/assistant-files"
@@ -33,12 +35,8 @@ export const useChatHandler = () => {
 
   const {
     chatFiles,
-    setUserInput,
     setNewMessageImages,
     profile,
-    setIsGenerating,
-    setChatMessages,
-    setFirstTokenReceived,
     selectedChat,
     selectedWorkspace,
     setSelectedChat,
@@ -46,12 +44,9 @@ export const useChatHandler = () => {
     setSelectedTools,
     availableLocalModels,
     availableOpenRouterModels,
-    abortController,
-    setAbortController,
     chatSettings,
     newMessageImages,
     selectedAssistant,
-    chatMessages,
     chatImages,
     setChatImages,
     setChatFiles,
@@ -60,20 +55,33 @@ export const useChatHandler = () => {
     newMessageFiles,
     chatFileItems,
     setChatFileItems,
-    setToolInUse,
     useRetrieval,
     sourceCount,
-    setIsPromptPickerOpen,
-    setIsFilePickerOpen,
     selectedTools,
     selectedPreset,
     setChatSettings,
     models,
-    isPromptPickerOpen,
-    isFilePickerOpen,
-    isToolPickerOpen,
     setMemoryReports
   } = useContext(ChatbotUIContext)
+
+  const {
+    setIsGenerating,
+    setChatMessages,
+    setFirstTokenReceived,
+    abortController,
+    setAbortController,
+    chatMessages,
+    setToolInUse
+  } = useChatStream()
+
+  const {
+    setUserInput,
+    setIsPromptPickerOpen,
+    setIsFilePickerOpen,
+    isPromptPickerOpen,
+    isFilePickerOpen,
+    isToolPickerOpen
+  } = useChatInput()
 
   const chatInputRef = useRef<HTMLTextAreaElement>(null)
 

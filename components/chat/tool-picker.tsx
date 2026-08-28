@@ -1,3 +1,4 @@
+import { useChatInput } from "@/context/chat-input-context"
 import { ChatbotUIContext } from "@/context/context"
 import { Tables } from "@/supabase/types"
 import { IconBolt } from "@tabler/icons-react"
@@ -7,13 +8,10 @@ import { usePromptAndCommand } from "./chat-hooks/use-prompt-and-command"
 interface ToolPickerProps {}
 
 export const ToolPicker: FC<ToolPickerProps> = ({}) => {
-  const {
-    tools,
-    focusTool,
-    toolCommand,
-    isToolPickerOpen,
-    setIsToolPickerOpen
-  } = useContext(ChatbotUIContext)
+  const { tools } = useContext(ChatbotUIContext)
+
+  const { focusTool, toolCommand, isToolPickerOpen, setIsToolPickerOpen } =
+    useChatInput()
 
   const { handleSelectTool } = usePromptAndCommand()
 

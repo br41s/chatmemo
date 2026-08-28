@@ -1,5 +1,6 @@
 import Loading from "@/app/[locale]/loading"
 import { useChatHandler } from "@/components/chat/chat-hooks/use-chat-handler"
+import { useChatStream } from "@/context/chat-stream-context"
 import { ChatbotUIContext } from "@/context/context"
 import { cn } from "@/lib/utils"
 import { getAssistantToolsByAssistantId } from "@/db/assistant-tools"
@@ -29,7 +30,6 @@ export const ChatUI: FC<ChatUIProps> = ({}) => {
   const params = useParams()
 
   const {
-    setChatMessages,
     selectedChat,
     setSelectedChat,
     setChatSettings,
@@ -42,6 +42,8 @@ export const ChatUI: FC<ChatUIProps> = ({}) => {
     setUseRetrieval,
     setSelectedTools
   } = useContext(ChatbotUIContext)
+
+  const { setChatMessages } = useChatStream()
 
   const { handleNewChat, handleFocusChatInput } = useChatHandler()
 

@@ -1,3 +1,4 @@
+import { useChatInput } from "@/context/chat-input-context"
 import { ChatbotUIContext } from "@/context/context"
 import { Tables } from "@/supabase/types"
 import { FC, useContext, useEffect, useRef, useState } from "react"
@@ -10,13 +11,14 @@ import { usePromptAndCommand } from "./chat-hooks/use-prompt-and-command"
 interface PromptPickerProps {}
 
 export const PromptPicker: FC<PromptPickerProps> = ({}) => {
+  const { prompts } = useContext(ChatbotUIContext)
+
   const {
-    prompts,
     isPromptPickerOpen,
     setIsPromptPickerOpen,
     focusPrompt,
     slashCommand
-  } = useContext(ChatbotUIContext)
+  } = useChatInput()
 
   const { handleSelectPrompt } = usePromptAndCommand()
 

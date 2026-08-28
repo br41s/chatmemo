@@ -1,4 +1,4 @@
-import { ChatbotUIContext } from "@/context/context"
+import { useChatStream } from "@/context/chat-stream-context"
 import {
   type UIEventHandler,
   useCallback,
@@ -9,7 +9,7 @@ import {
 } from "react"
 
 export const useScroll = () => {
-  const { isGenerating, chatMessages } = useContext(ChatbotUIContext)
+  const { isGenerating, chatMessages } = useChatStream()
 
   const messagesStartRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)

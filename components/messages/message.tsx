@@ -1,20 +1,16 @@
-import { useChatHandler } from "@/components/chat/chat-hooks/use-chat-handler"
 import { ChatbotUIContext } from "@/context/context"
 import { LLM_LIST } from "@/lib/models/llm/llm-list"
 import { cn } from "@/lib/utils"
 import { Tables } from "@/supabase/types"
 import { LLM, LLMID, MessageImage, ModelProvider } from "@/types"
 import {
-  IconBolt,
   IconCaretDownFilled,
   IconCaretRightFilled,
-  IconCircleFilled,
-  IconFileText,
   IconMoodSmile,
   IconPencil
 } from "@tabler/icons-react"
 import Image from "next/image"
-import { FC, useContext, useEffect, useRef, useState } from "react"
+import { FC, memo, useContext, useEffect, useRef, useState } from "react"
 import { ModelIcon } from "../models/model-icon"
 import { Button } from "../ui/button"
 import { FileIcon } from "../ui/file-icon"
@@ -24,6 +20,8 @@ import { WithTooltip } from "../ui/with-tooltip"
 import { MessageActions } from "./message-actions"
 import { MessageMarkdown } from "./message-markdown"
 import { MessageMemory } from "./message-memory"
+import { MessageStreamingBody } from "./message-streaming-body"
+import { messagePropsEqual } from "@/lib/message-props"
 
 const ICON_SIZE = 32
 
@@ -32,39 +30,38 @@ interface MessageProps {
   fileItems: Tables<"file_items">[]
   isEditing: boolean
   isLast: boolean
+  /** Passed down rather than read from the stream context, so that a token does
+   *  not re-render every message in the transcript. */
+  isGenerating: boolean
   onStartEdit: (message: Tables<"messages">) => void
   onCancelEdit: () => void
   onSubmitEdit: (value: string, sequenceNumber: number) => void
+  onRegenerate: (content: string) => void
 }
 
-export const Message: FC<MessageProps> = ({
+const MessageComponent: FC<MessageProps> = ({
   message,
   fileItems,
   isEditing,
   isLast,
+  isGenerating,
   onStartEdit,
   onCancelEdit,
-  onSubmitEdit
+  onSubmitEdit,
+  onRegenerate
 }) => {
   const {
     assistants,
     profile,
-    isGenerating,
-    setIsGenerating,
-    firstTokenReceived,
     availableLocalModels,
     availableOpenRouterModels,
-    chatMessages,
     selectedAssistant,
     chatImages,
     assistantImages,
-    toolInUse,
     files,
     models,
     memoryReports
   } = useContext(ChatbotUIContext)
-
-  const { handleSendMessage } = useChatHandler()
 
   const editInputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -105,13 +102,8 @@ export const Message: FC<MessageProps> = ({
     }
   }
 
-  const handleRegenerate = async () => {
-    setIsGenerating(true)
-    await handleSendMessage(
-      editedMessage || chatMessages[chatMessages.length - 2].message.content,
-      chatMessages,
-      true
-    )
+  const handleRegenerate = () => {
+    onRegenerate(editedMessage)
   }
 
   const handleStartEdit = () => {
@@ -206,6 +198,7 @@ export const Message: FC<MessageProps> = ({
             isLast={isLast}
             isEditing={isEditing}
             isHovering={isHovering}
+            isGenerating={isGenerating}
             onRegenerate={handleRegenerate}
           />
         </div>
@@ -290,37 +283,7 @@ export const Message: FC<MessageProps> = ({
               </div>
             </div>
           )}
-          {!firstTokenReceived &&
-          isGenerating &&
-          isLast &&
-          message.role === "assistant" ? (
-            <>
-              {(() => {
-                switch (toolInUse) {
-                  case "none":
-                    return (
-                      <IconCircleFilled className="animate-pulse" size={20} />
-                    )
-                  case "retrieval":
-                    return (
-                      <div className="flex animate-pulse items-center space-x-2">
-                        <IconFileText size={20} />
-
-                        <div>Searching files...</div>
-                      </div>
-                    )
-                  default:
-                    return (
-                      <div className="flex animate-pulse items-center space-x-2">
-                        <IconBolt size={20} />
-
-                        <div>Using {toolInUse}...</div>
-                      </div>
-                    )
-                }
-              })()}
-            </>
-          ) : isEditing ? (
+          {isEditing ? (
             <TextareaAutosize
               textareaRef={editInputRef}
               className="text-md"
@@ -328,6 +291,8 @@ export const Message: FC<MessageProps> = ({
               onValueChange={setEditedMessage}
               maxRows={20}
             />
+          ) : isLast && message.role === "assistant" ? (
+            <MessageStreamingBody content={message.content} />
           ) : (
             <MessageMarkdown content={message.content} />
           )}
@@ -480,3 +445,9 @@ export const Message: FC<MessageProps> = ({
     </div>
   )
 }
+
+/**
+ * Only re-render a message when something it shows has changed. The comparison
+ * itself lives in lib/message-props.ts so it can be tested directly.
+ */
+export const Message = memo(MessageComponent, messagePropsEqual)

@@ -1,8 +1,8 @@
-// TODO: Separate into multiple contexts, keeping simple for now
-
 "use client"
 
 import { MemoryReport } from "@/lib/memory-report"
+import { ChatInputProvider } from "@/context/chat-input-context"
+import { ChatStreamProvider } from "@/context/chat-stream-context"
 import { ChatbotUIContext } from "@/context/context"
 import { getProfileByUserId } from "@/db/profile"
 import { getWorkspaceImageFromStorage } from "@/db/storage/workspace-images"
@@ -76,8 +76,6 @@ export const GlobalState: FC<GlobalStateProps> = ({ children }) => {
   const [openaiAssistants, setOpenaiAssistants] = useState<any[]>([])
 
   // PASSIVE CHAT STORE
-  const [userInput, setUserInput] = useState<string>("")
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatSettings, setChatSettings] = useState<ChatSettings>({
     model: ((typeof window !== "undefined" &&
       localStorage.getItem("chatmemo.selectedModel")) ||
@@ -98,26 +96,6 @@ export const GlobalState: FC<GlobalStateProps> = ({ children }) => {
   const [selectedChat, setSelectedChat] = useState<Tables<"chats"> | null>(null)
   const [chatFileItems, setChatFileItems] = useState<Tables<"file_items">[]>([])
 
-  // ACTIVE CHAT STORE
-  const [isGenerating, setIsGenerating] = useState<boolean>(false)
-  const [firstTokenReceived, setFirstTokenReceived] = useState<boolean>(false)
-  const [abortController, setAbortController] =
-    useState<AbortController | null>(null)
-
-  // CHAT INPUT COMMAND STORE
-  const [isPromptPickerOpen, setIsPromptPickerOpen] = useState(false)
-  const [slashCommand, setSlashCommand] = useState("")
-  const [isFilePickerOpen, setIsFilePickerOpen] = useState(false)
-  const [hashtagCommand, setHashtagCommand] = useState("")
-  const [isToolPickerOpen, setIsToolPickerOpen] = useState(false)
-  const [toolCommand, setToolCommand] = useState("")
-  const [focusPrompt, setFocusPrompt] = useState(false)
-  const [focusFile, setFocusFile] = useState(false)
-  const [focusTool, setFocusTool] = useState(false)
-  const [focusAssistant, setFocusAssistant] = useState(false)
-  const [atCommand, setAtCommand] = useState("")
-  const [isAssistantPickerOpen, setIsAssistantPickerOpen] = useState(false)
-
   // ATTACHMENTS STORE
   const [chatFiles, setChatFiles] = useState<ChatFile[]>([])
   const [chatImages, setChatImages] = useState<MessageImage[]>([])
@@ -131,7 +109,6 @@ export const GlobalState: FC<GlobalStateProps> = ({ children }) => {
 
   // TOOL STORE
   const [selectedTools, setSelectedTools] = useState<Tables<"tools">[]>([])
-  const [toolInUse, setToolInUse] = useState<string>("none")
 
   // MEMORY STORE
   const [memoryReports, setMemoryReports] = useState<
@@ -270,50 +247,12 @@ export const GlobalState: FC<GlobalStateProps> = ({ children }) => {
         setOpenaiAssistants,
 
         // PASSIVE CHAT STORE
-        userInput,
-        setUserInput,
-        chatMessages,
-        setChatMessages,
         chatSettings,
         setChatSettings,
         selectedChat,
         setSelectedChat,
         chatFileItems,
         setChatFileItems,
-
-        // ACTIVE CHAT STORE
-        isGenerating,
-        setIsGenerating,
-        firstTokenReceived,
-        setFirstTokenReceived,
-        abortController,
-        setAbortController,
-
-        // CHAT INPUT COMMAND STORE
-        isPromptPickerOpen,
-        setIsPromptPickerOpen,
-        slashCommand,
-        setSlashCommand,
-        isFilePickerOpen,
-        setIsFilePickerOpen,
-        hashtagCommand,
-        setHashtagCommand,
-        isToolPickerOpen,
-        setIsToolPickerOpen,
-        toolCommand,
-        setToolCommand,
-        focusPrompt,
-        setFocusPrompt,
-        focusFile,
-        setFocusFile,
-        focusTool,
-        setFocusTool,
-        focusAssistant,
-        setFocusAssistant,
-        atCommand,
-        setAtCommand,
-        isAssistantPickerOpen,
-        setIsAssistantPickerOpen,
 
         // ATTACHMENT STORE
         chatFiles,
@@ -336,15 +275,17 @@ export const GlobalState: FC<GlobalStateProps> = ({ children }) => {
         // TOOL STORE
         selectedTools,
         setSelectedTools,
-        toolInUse,
-        setToolInUse,
 
         // MEMORY STORE
         memoryReports,
         setMemoryReports
       }}
     >
-      {children}
+      {/* Inside, so a token or a keystroke re-renders only what reads them —
+          this component, and therefore the value object above, stays put. */}
+      <ChatStreamProvider>
+        <ChatInputProvider>{children}</ChatInputProvider>
+      </ChatStreamProvider>
     </ChatbotUIContext.Provider>
   )
 }

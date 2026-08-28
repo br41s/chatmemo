@@ -1,3 +1,5 @@
+import { useChatStream } from "@/context/chat-stream-context"
+import { useChatInput } from "@/context/chat-input-context"
 import { ChatbotUIContext } from "@/context/context"
 import useHotkey from "@/lib/hooks/use-hotkey"
 import { LLM_LIST } from "@/lib/models/llm/llm-list"
@@ -36,14 +38,21 @@ export const ChatInput: FC<ChatInputProps> = ({}) => {
   const prevContextInput = useRef("")
 
   const {
+    selectedPreset,
+    selectedAssistant,
+    chatSettings,
+    selectedTools,
+    setSelectedTools,
+    assistantImages
+  } = useContext(ChatbotUIContext)
+
+  const { chatMessages, isGenerating } = useChatStream()
+
+  const {
     isAssistantPickerOpen,
     focusAssistant,
     setFocusAssistant,
     userInput,
-    chatMessages,
-    isGenerating,
-    selectedPreset,
-    selectedAssistant,
     focusPrompt,
     setFocusPrompt,
     focusFile,
@@ -53,12 +62,8 @@ export const ChatInput: FC<ChatInputProps> = ({}) => {
     isPromptPickerOpen,
     setIsPromptPickerOpen,
     isFilePickerOpen,
-    setFocusFile,
-    chatSettings,
-    selectedTools,
-    setSelectedTools,
-    assistantImages
-  } = useContext(ChatbotUIContext)
+    setFocusFile
+  } = useChatInput()
 
   const {
     chatInputRef,

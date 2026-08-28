@@ -1,6 +1,5 @@
-import { ChatbotUIContext } from "@/context/context"
 import { IconCheck, IconCopy, IconEdit, IconRepeat } from "@tabler/icons-react"
-import { FC, useContext, useEffect, useState } from "react"
+import { FC, useEffect, useState } from "react"
 import { WithTooltip } from "../ui/with-tooltip"
 
 export const MESSAGE_ICON_SIZE = 18
@@ -10,6 +9,9 @@ interface MessageActionsProps {
   isLast: boolean
   isEditing: boolean
   isHovering: boolean
+  /** From the parent rather than the stream context: a context read here would
+   *  re-render one of these per message on every token. */
+  isGenerating: boolean
   onCopy: () => void
   onEdit: () => void
   onRegenerate: () => void
@@ -20,12 +22,11 @@ export const MessageActions: FC<MessageActionsProps> = ({
   isLast,
   isEditing,
   isHovering,
+  isGenerating,
   onCopy,
   onEdit,
   onRegenerate
 }) => {
-  const { isGenerating } = useContext(ChatbotUIContext)
-
   const [showCheckmark, setShowCheckmark] = useState(false)
 
   const handleCopy = () => {
