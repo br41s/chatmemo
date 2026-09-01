@@ -1,712 +1,155 @@
 "use client"
 
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { RowListSkeleton } from "@/components/ui/skeletons"
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import {
-  Sheet,
-  SheetContent,
-  SheetTitle,
-  SheetTrigger
-} from "@/components/ui/sheet"
-import type { TimelineEntry, TimelineSource } from "@/lib/timeline-parser"
-import {
-  IconArrowDown,
-  IconArrowLeft,
-  IconArrowUp,
-  IconCalendar,
-  IconChevronDown,
-  IconChevronUp,
-  IconCode,
-  IconHistory,
-  IconMessage,
-  IconRobot,
-  IconSearch,
-  IconTimeline,
-  IconX
-} from "@tabler/icons-react"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+  countBySource,
+  emptyFilters,
+  extendAbove,
+  extendBelow,
+  filterEntries,
+  groupByMonth,
+  initialWindow,
+  TimelineFilters
+} from "@/lib/timeline-filters"
+import { IconTimeline } from "@tabler/icons-react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { TimelineDetail } from "./timeline-detail"
+import { TimelineList } from "./timeline-list"
+import { useTimelineEntries } from "./use-timeline-entries"
 
-// ---------------------------------------------------------------------------
-// Source helpers
-// ---------------------------------------------------------------------------
-
-const SOURCE_LABELS: Record<TimelineSource, string> = {
-  "claude-ai": "Claude.ai",
-  "claude-code": "Claude Code",
-  chatgpt: "ChatGPT",
-  perplexity: "Perplexity",
-  import: "Import",
-  todo: "TODO",
-  chat: "Chat",
-  unknown: "Unknown"
-}
-
-// One record rather than two parallel ones: the badge and the left border are
-// the same decision, and separate maps meant a new source could get a badge
-// and no border. The values are theme tokens, so the palette tunes per theme
-// instead of being a light-theme palette shown on both — the badges used to be
-// white text on a fixed 500-level fill, which in dark mode was white on a
-// colour bright enough to disappear against it.
-const SOURCE_TONES: Record<TimelineSource, { badge: string; border: string }> =
-  {
-    "claude-ai": {
-      badge:
-        "bg-[hsl(var(--source-claude-ai)/0.15)] text-[hsl(var(--source-claude-ai))]",
-      border: "border-l-[hsl(var(--source-claude-ai))]"
-    },
-    "claude-code": {
-      badge:
-        "bg-[hsl(var(--source-claude-code)/0.15)] text-[hsl(var(--source-claude-code))]",
-      border: "border-l-[hsl(var(--source-claude-code))]"
-    },
-    chatgpt: {
-      badge:
-        "bg-[hsl(var(--source-chatgpt)/0.15)] text-[hsl(var(--source-chatgpt))]",
-      border: "border-l-[hsl(var(--source-chatgpt))]"
-    },
-    perplexity: {
-      badge:
-        "bg-[hsl(var(--source-perplexity)/0.15)] text-[hsl(var(--source-perplexity))]",
-      border: "border-l-[hsl(var(--source-perplexity))]"
-    },
-    import: {
-      badge:
-        "bg-[hsl(var(--source-import)/0.15)] text-[hsl(var(--source-import))]",
-      border: "border-l-[hsl(var(--source-import))]"
-    },
-    todo: {
-      badge: "bg-[hsl(var(--source-todo)/0.15)] text-[hsl(var(--source-todo))]",
-      border: "border-l-[hsl(var(--source-todo))]"
-    },
-    chat: {
-      badge: "bg-[hsl(var(--source-chat)/0.15)] text-[hsl(var(--source-chat))]",
-      border: "border-l-[hsl(var(--source-chat))]"
-    },
-    unknown: {
-      badge:
-        "bg-[hsl(var(--source-unknown)/0.15)] text-[hsl(var(--source-unknown))]",
-      border: "border-l-[hsl(var(--source-unknown))]"
-    }
-  }
-
-function SourceIcon({ source }: { source: TimelineSource }) {
-  const cls = "size-3"
-  switch (source) {
-    case "claude-ai":
-      return <IconMessage className={cls} />
-    case "claude-code":
-      return <IconCode className={cls} />
-    case "chatgpt":
-      return <IconRobot className={cls} />
-    case "perplexity":
-      return <IconSearch className={cls} />
-    case "todo":
-      return <IconCalendar className={cls} />
-    default:
-      return <IconHistory className={cls} />
-  }
-}
-
-// ---------------------------------------------------------------------------
-// EntryCard — list panel (collapsible preview, clickable)
-// ---------------------------------------------------------------------------
-
-function EntryCard({
-  entry,
-  active,
-  onClick
-}: {
-  entry: TimelineEntry
-  active: boolean
-  onClick: () => void
-}) {
-  const [expanded, setExpanded] = useState(false)
-  const hasContent = entry.content.trim().length > 0
-  const preview = entry.content.replace(/\s+/g, " ").trim().slice(0, 160)
-
-  return (
-    <div
-      className={`cursor-pointer rounded-r-lg border border-l-4 transition-colors ${SOURCE_TONES[entry.source].border} space-y-1.5 p-3 ${
-        active
-          ? "bg-muted/60 ring-1 ring-primary/30"
-          : "bg-background hover:bg-muted/40"
-      }`}
-      onClick={onClick}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium leading-snug">
-            {entry.title}
-          </p>
-          <div className="mt-0.5 flex flex-wrap items-center gap-2">
-            <span className="text-xs text-muted-foreground">{entry.date}</span>
-            <span
-              className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${SOURCE_TONES[entry.source].badge}`}
-            >
-              <SourceIcon source={entry.source} />
-              {SOURCE_LABELS[entry.source]}
-            </span>
-          </div>
-        </div>
-        {hasContent && (
-          <button
-            onClick={e => {
-              e.stopPropagation()
-              setExpanded(v => !v)
-            }}
-            className="mt-0.5 shrink-0 text-muted-foreground hover:text-foreground"
-          >
-            {expanded ? (
-              <IconChevronUp size={14} />
-            ) : (
-              <IconChevronDown size={14} />
-            )}
-          </button>
-        )}
-      </div>
-
-      {/* Inline preview — only on mobile (hidden on desktop, right panel handles it) */}
-      {hasContent && expanded && (
-        <div
-          className="text-xs leading-relaxed text-muted-foreground sm:hidden"
-          onClick={e => e.stopPropagation()}
-        >
-          <pre className="whitespace-pre-wrap font-sans">{entry.content}</pre>
-        </div>
-      )}
-      {hasContent && !expanded && (
-        <p className="line-clamp-2 text-xs text-muted-foreground">
-          {preview}
-          {entry.content.length > 160 ? "…" : ""}
-        </p>
-      )}
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// ConvCard — detail panel (always fully expanded)
-// ---------------------------------------------------------------------------
-
-function ConvCard({
-  entry,
-  focused,
-  focusedRef
-}: {
-  entry: TimelineEntry
-  focused: boolean
-  focusedRef?: React.RefObject<HTMLDivElement>
-}) {
-  const hasContent = entry.content.trim().length > 0
-
-  return (
-    <div
-      ref={focused ? focusedRef : undefined}
-      className={`rounded-r-lg border border-l-4 bg-background ${SOURCE_TONES[entry.source].border} space-y-2 p-3 ${
-        focused ? "ring-2 ring-primary/40" : "opacity-80"
-      }`}
-    >
-      <div className="flex items-start gap-2">
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold leading-snug">{entry.title}</p>
-          <div className="mt-0.5 flex flex-wrap items-center gap-2">
-            <span className="text-xs text-muted-foreground">{entry.date}</span>
-            <span
-              className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${SOURCE_TONES[entry.source].badge}`}
-            >
-              <SourceIcon source={entry.source} />
-              {SOURCE_LABELS[entry.source]}
-            </span>
-            {focused && (
-              <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                selected
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-      {hasContent && (
-        <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed text-muted-foreground">
-          {entry.content}
-        </pre>
-      )}
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Source filter pill
-// ---------------------------------------------------------------------------
-
-const ALL_SOURCES: TimelineSource[] = [
-  "claude-ai",
-  "claude-code",
-  "chatgpt",
-  "perplexity",
-  "import",
-  "todo",
-  "chat"
-]
-
-function SourcePill({
-  source,
-  active,
-  count,
-  onClick
-}: {
-  source: TimelineSource | "all"
-  active: boolean
-  count: number
-  onClick: () => void
-}) {
-  const label = source === "all" ? "All" : SOURCE_LABELS[source]
-  return (
-    <button
-      onClick={onClick}
-      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors ${
-        active
-          ? "border-foreground bg-foreground text-background"
-          : "border-border bg-background text-muted-foreground hover:border-foreground"
-      }`}
-    >
-      {label}
-      <span className="opacity-60">{count}</span>
-    </button>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Main component
-// ---------------------------------------------------------------------------
-
-const LOAD_STEP = 5
-
+/**
+ * The conversation timeline.
+ *
+ * This was 714 lines: the source palette, two card components, the filter
+ * pills, the loading, the filtering, the grouping, the paging, and both panes.
+ * What is left is the sheet, the two panes side by side, and the state that
+ * genuinely spans them — which conversation is open, and which slice of the
+ * results is being read.
+ *
+ * The filtering, counting, grouping and window arithmetic are in
+ * lib/timeline-filters.ts, where they can be tested without rendering a sheet.
+ */
 export function TimelineSheet() {
   const [open, setOpen] = useState(false)
-  const [entries, setEntries] = useState<TimelineEntry[]>([])
-  const [nextOffset, setNextOffset] = useState<number | null>(null)
-  const [loadingMore, setLoadingMore] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  // List filters
-  const [search, setSearch] = useState("")
-  const [dateFrom, setDateFrom] = useState("")
-  const [dateTo, setDateTo] = useState("")
-  const [activeSource, setActiveSource] = useState<TimelineSource | "all">(
-    "all"
-  )
-
-  // Detail panel state
+  const [filters, setFilters] = useState<TimelineFilters>(emptyFilters)
   const [focusedIdx, setFocusedIdx] = useState<number | null>(null)
-  const [windowStart, setWindowStart] = useState(0)
-  const [windowEnd, setWindowEnd] = useState(2)
+  const [window, setWindow] = useState(() => initialWindow(0, 3))
   const focusedRef = useRef<HTMLDivElement>(null)
 
-  const loadEntries = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await fetch("/api/timeline")
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
-      setEntries(data.entries ?? [])
-      setNextOffset(data.nextOffset ?? null)
-    } catch {
-      setError("Failed to load timeline")
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  // Filters and counts below apply to what has been loaded. With more pages
-  // outstanding the footer says so, so a search that finds nothing is not
-  // mistaken for an empty history.
-  const loadMoreEntries = useCallback(async () => {
-    if (nextOffset === null) return
-    setLoadingMore(true)
-    setError(null)
-    try {
-      const res = await fetch(`/api/timeline?offset=${nextOffset}`)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
-      setEntries(prev => [...prev, ...(data.entries ?? [])])
-      setNextOffset(data.nextOffset ?? null)
-    } catch {
-      setError("Failed to load more entries")
-    } finally {
-      setLoadingMore(false)
-    }
-  }, [nextOffset])
+  const timeline = useTimelineEntries()
 
   const handleOpenChange = (next: boolean) => {
     setOpen(next)
     if (next) {
-      setSearch("")
-      setDateFrom("")
-      setDateTo("")
-      setActiveSource("all")
+      setFilters(emptyFilters)
       setFocusedIdx(null)
-      loadEntries()
+      timeline.load()
     }
   }
 
-  // Close detail panel when filters change
+  // A conversation open behind a filter that no longer matches it would be
+  // read from the wrong position in the list.
   useEffect(() => {
     setFocusedIdx(null)
-  }, [search, dateFrom, dateTo, activeSource])
+  }, [filters])
 
-  // Scroll focused entry into view when opening detail
   useEffect(() => {
-    if (focusedIdx !== null) {
-      const t = setTimeout(() => {
-        focusedRef.current?.scrollIntoView({
-          behavior: "smooth",
-          block: "center"
-        })
-      }, 80)
-      return () => clearTimeout(t)
-    }
+    if (focusedIdx === null) return
+
+    const timer = setTimeout(() => {
+      focusedRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center"
+      })
+    }, 80)
+
+    return () => clearTimeout(timer)
   }, [focusedIdx])
 
-  // Filtered entries
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase().trim()
-    return entries.filter(e => {
-      if (activeSource !== "all" && e.source !== activeSource) return false
-      if (dateFrom && e.date < dateFrom) return false
-      if (dateTo && e.date > dateTo) return false
-      if (q) {
-        const haystack = `${e.title} ${e.content}`.toLowerCase()
-        if (!haystack.includes(q)) return false
-      }
-      return true
-    })
-  }, [entries, search, dateFrom, dateTo, activeSource])
-
-  // Source counts
-  const sourceCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: entries.length }
-    for (const e of entries) {
-      counts[e.source] = (counts[e.source] ?? 0) + 1
-    }
-    return counts
-  }, [entries])
-
-  // Group for list view
-  const grouped = useMemo(() => {
-    const groups: {
-      label: string
-      entries: (TimelineEntry & { globalIdx: number })[]
-    }[] = []
-    let lastMonth = ""
-    filtered.forEach((e, idx) => {
-      const month = e.date.slice(0, 7)
-      if (month !== lastMonth) {
-        lastMonth = month
-        const [y, m] = month.split("-")
-        const label = new Date(`${y}-${m}-01`).toLocaleDateString(undefined, {
-          year: "numeric",
-          month: "long"
-        })
-        groups.push({ label, entries: [] })
-      }
-      groups[groups.length - 1].entries.push({ ...e, globalIdx: idx })
-    })
-    return groups
-  }, [filtered])
-
-  const openConversation = (idx: number) => {
-    setFocusedIdx(idx)
-    setWindowStart(Math.max(0, idx - 1))
-    setWindowEnd(Math.min(filtered.length - 1, idx + 1))
-  }
-
-  const closeDetail = () => setFocusedIdx(null)
-
-  const loadMoreAbove = () =>
-    setWindowStart(prev => Math.max(0, prev - LOAD_STEP))
-  const loadMoreBelow = () =>
-    setWindowEnd(prev => Math.min(filtered.length - 1, prev + LOAD_STEP))
-
-  const clearFilters = () => {
-    setSearch("")
-    setDateFrom("")
-    setDateTo("")
-    setActiveSource("all")
-  }
-  const hasFilters = search || dateFrom || dateTo || activeSource !== "all"
-
-  const windowEntries = useMemo(
-    () => filtered.slice(windowStart, windowEnd + 1),
-    [filtered, windowStart, windowEnd]
+  const filtered = useMemo(
+    () => filterEntries(timeline.entries, filters),
+    [timeline.entries, filters]
   )
+  const sourceCounts = useMemo(
+    () => countBySource(timeline.entries),
+    [timeline.entries]
+  )
+  const groups = useMemo(() => groupByMonth(filtered), [filtered])
+  const windowEntries = useMemo(
+    () => filtered.slice(window.start, window.end + 1),
+    [filtered, window]
+  )
+
+  const openConversation = (index: number) => {
+    setFocusedIdx(index)
+    setWindow(initialWindow(index, filtered.length))
+  }
 
   const hasDetail = focusedIdx !== null
 
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetTrigger asChild>
-        <button className="flex cursor-pointer flex-col items-center hover:opacity-50">
+        <button
+          aria-label="Conversation timeline"
+          className="flex cursor-pointer flex-col items-center hover:opacity-50"
+        >
           <IconTimeline size={28} />
         </button>
       </SheetTrigger>
 
       {/*
-        Layout:
-        - Mobile: single column; list or detail depending on focusedIdx
-        - Desktop (sm+): two columns side-by-side, both always visible
+        Mobile: one column, showing the list or the conversation.
+        Desktop: both, side by side.
       */}
       <SheetContent
         side="left"
         className="flex w-full flex-row p-0 sm:w-[860px] sm:max-w-[90vw]"
       >
-        {/* ================================================================ */}
-        {/* LEFT PANEL — list + filters                                       */}
-        {/* On mobile: hidden when a conversation is open                    */}
-        {/* On desktop: always visible, fixed width                          */}
-        {/* ================================================================ */}
         <div
-          className={`flex flex-col ${hasDetail ? "hidden sm:flex" : "flex"} w-full sm:w-[340px] sm:shrink-0 sm:border-r`}
+          className={`flex flex-col ${
+            hasDetail ? "hidden sm:flex" : "flex"
+          } w-full sm:w-[340px] sm:shrink-0 sm:border-r`}
         >
-          {/* Header */}
-          <div className="shrink-0 border-b px-4 py-3">
-            <SheetTitle className="flex items-center gap-2 text-base">
-              <IconTimeline size={18} />
-              Conversation Timeline
-            </SheetTitle>
-          </div>
-
-          {/* Filters */}
-          <div className="shrink-0 space-y-2.5 border-b px-4 py-3">
-            {/* Search */}
-            <div className="relative">
-              <IconSearch
-                size={14}
-                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
-              />
-              <Input
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Search conversations…"
-                className="h-8 pl-8 text-sm"
-              />
-              {search && (
-                <button
-                  onClick={() => setSearch("")}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  <IconX size={13} />
-                </button>
-              )}
-            </div>
-
-            {/* Date range */}
-            <div className="flex items-center gap-2">
-              <IconCalendar
-                size={14}
-                className="shrink-0 text-muted-foreground"
-              />
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={e => setDateFrom(e.target.value)}
-                className="flex-1 rounded-md border border-input bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-              />
-              <span className="text-xs text-muted-foreground">–</span>
-              <input
-                type="date"
-                value={dateTo}
-                onChange={e => setDateTo(e.target.value)}
-                className="flex-1 rounded-md border border-input bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
-              />
-              {hasFilters && (
-                <button
-                  onClick={clearFilters}
-                  className="whitespace-nowrap text-xs text-muted-foreground underline hover:text-foreground"
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-
-            {/* Source pills */}
-            <div className="flex flex-wrap gap-1.5">
-              <SourcePill
-                source="all"
-                active={activeSource === "all"}
-                count={sourceCounts["all"] ?? 0}
-                onClick={() => setActiveSource("all")}
-              />
-              {ALL_SOURCES.filter(s => (sourceCounts[s] ?? 0) > 0).map(s => (
-                <SourcePill
-                  key={s}
-                  source={s}
-                  active={activeSource === s}
-                  count={sourceCounts[s] ?? 0}
-                  onClick={() =>
-                    setActiveSource(activeSource === s ? "all" : s)
-                  }
-                />
-              ))}
-            </div>
-          </div>
-
-          {/* Results count */}
-          <div className="shrink-0 px-4 py-1.5 text-xs text-muted-foreground">
-            {loading
-              ? "Loading…"
-              : error
-                ? error
-                : `${filtered.length} conversation${filtered.length !== 1 ? "s" : ""}${hasFilters ? " (filtered)" : ""}`}
-          </div>
-
-          {/* List */}
-          <ScrollArea className="flex-1 px-3 pb-4">
-            {loading && !error && (
-              <div className="pt-2">
-                <RowListSkeleton rows={6} label="Loading the timeline" />
-              </div>
-            )}
-
-            {!loading && !error && grouped.length === 0 && (
-              <p className="py-8 text-center text-sm text-muted-foreground">
-                {hasFilters
-                  ? "No results match your filters."
-                  : "No conversations yet."}
-              </p>
-            )}
-            {grouped.map(group => (
-              <div key={group.label} className="mb-4">
-                <div className="sticky top-0 z-10 mb-2 bg-background/80 py-1.5 backdrop-blur-sm">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    {group.label}
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  {group.entries.map(entry => (
-                    <EntryCard
-                      key={entry.id}
-                      entry={entry}
-                      active={entry.globalIdx === focusedIdx}
-                      onClick={() => openConversation(entry.globalIdx)}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
-
-            {!loading && !error && nextOffset !== null && (
-              <div className="flex flex-col items-center gap-1.5 py-4">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-xs"
-                  disabled={loadingMore}
-                  onClick={loadMoreEntries}
-                >
-                  {loadingMore ? "Loading…" : "Load older conversations"}
-                </Button>
-                <p className="text-[10px] text-muted-foreground">
-                  Filters apply to the {entries.length} loaded so far
-                </p>
-              </div>
-            )}
-          </ScrollArea>
+          <TimelineList
+            filters={filters}
+            onFiltersChange={setFilters}
+            sourceCounts={sourceCounts}
+            groups={groups}
+            resultCount={filtered.length}
+            loadedCount={timeline.entries.length}
+            focusedIdx={focusedIdx}
+            onOpenConversation={openConversation}
+            loading={timeline.loading}
+            loadingMore={timeline.loadingMore}
+            error={timeline.error}
+            hasMore={timeline.nextOffset !== null}
+            onLoadMore={timeline.loadMore}
+          />
         </div>
 
-        {/* ================================================================ */}
-        {/* RIGHT PANEL — conversation detail                                */}
-        {/* On mobile: shown only when a conversation is open               */}
-        {/* On desktop: always visible, placeholder when nothing selected   */}
-        {/* ================================================================ */}
         <div
-          className={`flex flex-1 flex-col ${hasDetail ? "flex" : "hidden sm:flex"}`}
+          className={`flex flex-1 flex-col ${
+            hasDetail ? "flex" : "hidden sm:flex"
+          }`}
         >
-          {hasDetail ? (
-            <>
-              {/* Detail header */}
-              <div className="shrink-0 border-b px-4 py-3">
-                <div className="flex items-center gap-2">
-                  {/* Back on mobile, close (×) on desktop */}
-                  <button
-                    onClick={closeDetail}
-                    className="shrink-0 text-muted-foreground hover:text-foreground"
-                  >
-                    <IconArrowLeft size={17} className="sm:hidden" />
-                    <IconX size={15} className="hidden sm:block" />
-                  </button>
-                  <p className="truncate text-sm font-medium">
-                    {filtered[focusedIdx!]?.title ?? "Conversation"}
-                  </p>
-                </div>
-                <p className="ml-[25px] text-[10px] text-muted-foreground">
-                  {windowStart + 1}–{windowEnd + 1} of {filtered.length}
-                </p>
-              </div>
-
-              {/* Detail scroll area */}
-              <ScrollArea className="flex-1 px-4 pb-4">
-                <div className="space-y-3 py-2">
-                  {/* Load more above */}
-                  {windowStart > 0 ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="w-full text-xs"
-                      onClick={loadMoreAbove}
-                    >
-                      <IconArrowUp size={13} className="mr-1.5" />
-                      Load {Math.min(LOAD_STEP, windowStart)} more above
-                    </Button>
-                  ) : (
-                    <p className="py-1 text-center text-[10px] text-muted-foreground">
-                      ↑ Start of results
-                    </p>
-                  )}
-
-                  {windowEntries.map((entry, i) => (
-                    <ConvCard
-                      key={entry.id}
-                      entry={entry}
-                      focused={windowStart + i === focusedIdx}
-                      focusedRef={focusedRef}
-                    />
-                  ))}
-
-                  {/* Load more below */}
-                  {windowEnd < filtered.length - 1 ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="w-full text-xs"
-                      onClick={loadMoreBelow}
-                    >
-                      <IconArrowDown size={13} className="mr-1.5" />
-                      Load{" "}
-                      {Math.min(
-                        LOAD_STEP,
-                        filtered.length - 1 - windowEnd
-                      )}{" "}
-                      more below
-                    </Button>
-                  ) : (
-                    <p className="py-1 text-center text-[10px] text-muted-foreground">
-                      ↓ End of results
-                    </p>
-                  )}
-                </div>
-              </ScrollArea>
-            </>
-          ) : (
-            /* Placeholder when nothing is selected (desktop only) */
-            <div className="flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
-              <IconMessage size={32} className="opacity-30" />
-              <p className="text-sm">Click a conversation to read it</p>
-            </div>
-          )}
+          <TimelineDetail
+            focusedIdx={focusedIdx}
+            entries={windowEntries}
+            window={window}
+            total={filtered.length}
+            focusedRef={focusedRef}
+            title={
+              focusedIdx !== null
+                ? filtered[focusedIdx]?.title ?? "Conversation"
+                : ""
+            }
+            onClose={() => setFocusedIdx(null)}
+            onLoadAbove={() => setWindow(extendAbove)}
+            onLoadBelow={() =>
+              setWindow(current => extendBelow(current, filtered.length))
+            }
+          />
         </div>
       </SheetContent>
     </Sheet>
