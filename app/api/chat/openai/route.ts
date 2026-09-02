@@ -11,7 +11,7 @@ export const POST = createChatRoute({
   apiKey: profile => profile.openai_api_key,
   // OpenAI says so in the message rather than only in the status.
   incorrectKey: { kind: "message", contains: "incorrect api key" },
-  respond: async ({ profile, chatSettings, messages, headers }) => {
+  respond: async ({ profile, chatSettings, messages, headers, budget }) => {
     const openai = new OpenAI({
       apiKey: profile.openai_api_key || "",
       organization: profile.openai_organization_id
@@ -21,11 +21,12 @@ export const POST = createChatRoute({
       model: chatSettings.model as ChatCompletionCreateParamsBase["model"],
       messages: messages as ChatCompletionCreateParamsBase["messages"],
       temperature: chatSettings.temperature,
-      max_tokens:
-        chatSettings.model === "gpt-4-vision-preview" ||
-        chatSettings.model === "gpt-4o"
-          ? 4096
-          : null, // TODO: Fix
+      // The TODO this replaces: 4096 for two models by name, and `null` —
+      // unbounded — for everything else. The budget already reserved a share of
+      // the window for the reply and trimmed history and memory to fit around
+      // it, so this is the number the prompt was sized against. For gpt-4o and
+      // gpt-4-vision-preview it is the same 4096 that was hardcoded.
+      max_tokens: budget.outputTokens,
       stream: true
     })
 
