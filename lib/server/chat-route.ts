@@ -1,4 +1,8 @@
-import { ContextBudgetHint } from "@/lib/context-budget"
+import {
+  ContextBudget,
+  ContextBudgetHint,
+  resolveContextBudget
+} from "@/lib/context-budget"
 import {
   injectMemoryGoogleFormat,
   injectMemoryOpenAIFormat
@@ -26,6 +30,12 @@ export interface ChatRouteContext {
   messages: any[]
   /** Memory-report headers to hand to the streaming response. */
   headers: Record<string, string>
+  /**
+   * How the model's window was split for this turn. `outputTokens` is the
+   * reply's share of it, which is what a provider's `max_tokens` should be —
+   * the routes used to each guess, and one of them did not guess at all.
+   */
+  budget: ContextBudget
 }
 
 /**
@@ -152,7 +162,11 @@ export function createChatRoute(config: ChatRouteConfig) {
         profile,
         chatSettings,
         messages: augmentedMessages,
-        headers: memoryReportHeaders(report)
+        headers: memoryReportHeaders(report),
+        // Resolved from the same hint the injector reads, so the reply
+        // allowance a route sends matches the split the memory block was
+        // built against.
+        budget: resolveContextBudget(contextBudget)
       })
     } catch (error: any) {
       const { message, status } = chatErrorMessage(
