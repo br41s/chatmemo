@@ -78,12 +78,36 @@ describe("createChatRoute", () => {
       "user-1",
       payload.contextBudget
     )
-    expect(respond).toHaveBeenCalledWith({
-      profile,
-      chatSettings: payload.chatSettings,
-      messages: [{ role: "system", content: "base + memory" }],
-      headers: { "x-chatmemo-memory": "report" }
+    expect(respond).toHaveBeenCalledWith(
+      expect.objectContaining({
+        profile,
+        chatSettings: payload.chatSettings,
+        messages: [{ role: "system", content: "base + memory" }],
+        headers: { "x-chatmemo-memory": "report" }
+      })
+    )
+  })
+
+  it("hands the route the reply allowance, not just the messages", async () => {
+    // The reason this exists: OpenRouter's route sent no `max_tokens` at all,
+    // so it asked to reserve the model's whole window and a key that could not
+    // afford all of it was refused outright.
+    let seen: number | undefined
+
+    const POST = createChatRoute({
+      provider: "OpenRouter",
+      apiKey: p => p.openrouter_api_key ?? null,
+      respond: async ({ budget }) => {
+        seen = budget.outputTokens
+        return new Response("streamed")
+      }
     })
+
+    await POST(request(payload))
+
+    expect(seen).toBeGreaterThan(0)
+    // A quarter of the window, capped — never the whole thing.
+    expect(seen).toBeLessThan(payload.contextBudget.contextLength)
   })
 
   it("uses the Google injector only when the format asks for it", async () => {
