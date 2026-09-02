@@ -51,7 +51,7 @@ export const POST = createChatRoute({
 
     return undefined
   },
-  respond: async ({ profile, chatSettings, messages, headers }) => {
+  respond: async ({ profile, chatSettings, messages, headers, budget }) => {
     const key = profile.azure_openai_api_key || ""
     const deployment = deploymentId(profile, chatSettings) || ""
 
@@ -66,7 +66,9 @@ export const POST = createChatRoute({
       model: deployment as ChatCompletionCreateParamsBase["model"],
       messages: messages as ChatCompletionCreateParamsBase["messages"],
       temperature: chatSettings.temperature,
-      max_tokens: chatSettings.model === "gpt-4-vision-preview" ? 4096 : null, // TODO: Fix
+      // Same as the OpenAI route: the reply's share of the window, which is
+      // what the prompt was already trimmed to leave room for.
+      max_tokens: budget.outputTokens,
       stream: true
     })
 
