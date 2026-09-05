@@ -3,6 +3,32 @@ import { LLM, LLMID, OpenRouterLLM } from "@/types"
 import { toast } from "sonner"
 import { LLM_LIST_MAP } from "./llm/llm-list"
 
+/**
+ * The live catalogue, keyed by provider, as `/api/models` returns it.
+ *
+ * A provider is present only if it answered with at least one usable model;
+ * anything else — no key, a failed request, an unparseable response — leaves
+ * it absent, and the caller keeps that provider's static list (ARCH-07).
+ */
+const fetchProviderCatalogs = async (): Promise<Record<string, LLM[]>> => {
+  try {
+    const response = await fetch("/api/models")
+
+    if (!response.ok) {
+      throw new Error(`Model catalogue is not available.`)
+    }
+
+    const data = await response.json()
+    return (data?.models as Record<string, LLM[]>) ?? {}
+  } catch (error) {
+    // Not surfaced to the user: the static lists are a working catalogue, so
+    // this degrades to the behaviour the app had before ARCH-07 rather than to
+    // an error the user can do nothing about.
+    console.warn("Error fetching provider catalogues: " + error)
+    return {}
+  }
+}
+
 export const fetchHostedModels = async (profile: Tables<"profiles">) => {
   try {
     const providers = ["google", "anthropic", "mistral", "groq", "perplexity"]
@@ -13,7 +39,10 @@ export const fetchHostedModels = async (profile: Tables<"profiles">) => {
       providers.push("openai")
     }
 
-    const response = await fetch("/api/keys")
+    const [response, liveCatalogs] = await Promise.all([
+      fetch("/api/keys"),
+      fetchProviderCatalogs()
+    ])
 
     if (!response.ok) {
       throw new Error(`Server is not responding.`)
@@ -35,7 +64,11 @@ export const fetchHostedModels = async (profile: Tables<"profiles">) => {
       }
 
       if (profile?.[providerKey] || data.isUsingEnvKeyMap[provider]) {
-        const models = LLM_LIST_MAP[provider]
+        // What the provider says it serves today, and only otherwise what the
+        // static list said it served in May 2024.
+        const live = liveCatalogs[provider]
+        const models =
+          Array.isArray(live) && live.length > 0 ? live : LLM_LIST_MAP[provider]
 
         if (Array.isArray(models)) {
           modelsToAdd.push(...models)

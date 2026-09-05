@@ -42,6 +42,7 @@ export const useChatHandler = () => {
     setSelectedChat,
     setChats,
     setSelectedTools,
+    availableHostedModels,
     availableLocalModels,
     availableOpenRouterModels,
     chatSettings,
@@ -253,7 +254,8 @@ export const useChatHandler = () => {
       const budgetHint = resolveModelWindow(
         chatSettings!.model,
         availableOpenRouterModels,
-        chatSettings!.contextLength
+        chatSettings!.contextLength,
+        availableHostedModels
       )
       const budget = resolveContextBudget(budgetHint)
 
