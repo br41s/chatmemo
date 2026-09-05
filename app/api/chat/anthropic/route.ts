@@ -1,4 +1,3 @@
-import { maxTokenOutputFor } from "@/lib/chat-setting-limits"
 import { createChatRoute } from "@/lib/server/chat-route"
 import { anthropicStreamResponse } from "@/lib/server/streaming"
 import { getBase64FromDataURL, getMediaTypeFromDataURL } from "@/lib/utils"
@@ -46,7 +45,7 @@ function toAnthropicMessages(messages: any[]) {
 export const POST = createChatRoute({
   provider: "Anthropic",
   apiKey: profile => profile.anthropic_api_key,
-  respond: async ({ profile, chatSettings, messages, headers }) => {
+  respond: async ({ profile, chatSettings, messages, headers, budget }) => {
     const anthropic = new Anthropic({
       apiKey: profile.anthropic_api_key || ""
     })
@@ -58,7 +57,7 @@ export const POST = createChatRoute({
       messages: toAnthropicMessages(messages.slice(1)),
       temperature: chatSettings.temperature,
       system: messages[0].content,
-      max_tokens: maxTokenOutputFor(chatSettings.model),
+      max_tokens: budget.outputTokens,
       stream: true
     })
 

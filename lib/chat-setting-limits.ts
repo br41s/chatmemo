@@ -1,6 +1,6 @@
 import { LLMID } from "@/types"
 
-type ChatSettingLimits = {
+export type ChatSettingLimits = {
   MIN_TEMPERATURE: number
   MAX_TEMPERATURE: number
   MAX_TOKEN_OUTPUT_LENGTH: number
@@ -8,24 +8,14 @@ type ChatSettingLimits = {
 }
 
 /**
- * Reply-length limit for a model, or a safe default when it is not in the
- * table above.
- *
- * That table only covers the built-in catalogue, which is frozen at May 2024.
- * Three chat routes indexed it directly — `CHAT_SETTING_LIMITS[model].MAX_...`
- * — so any model outside those ids threw a TypeError on undefined and the turn
- * came back as a 500. Every model the app actually defaults to today, routed
- * through OpenRouter, is outside them.
+ * `maxTokenOutputFor` used to live here, and the last three routes calling it
+ * now take the reply's share from the shared context budget instead. The table
+ * below is still the source for the settings sliders, and
+ * `resolveModelWindow` still reads `MAX_TOKEN_OUTPUT_LENGTH` from it as the
+ * fallback for a provider that reports a window but no reply limit — but no
+ * route asks it for a `max_tokens` any more, so nothing here can hand a
+ * provider a number the window cannot pay for.
  */
-export function maxTokenOutputFor(modelId: string): number {
-  return (
-    CHAT_SETTING_LIMITS[modelId as LLMID]?.MAX_TOKEN_OUTPUT_LENGTH ??
-    DEFAULT_MAX_TOKEN_OUTPUT_LENGTH
-  )
-}
-
-/** Conservative enough for any model, generous enough for a real answer. */
-export const DEFAULT_MAX_TOKEN_OUTPUT_LENGTH = 4_096
 
 export const CHAT_SETTING_LIMITS: Record<LLMID, ChatSettingLimits> = {
   // ANTHROPIC MODELS
