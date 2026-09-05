@@ -3,6 +3,7 @@ import { GlobalState } from "@/components/utility/global-state"
 import { Providers } from "@/components/utility/providers"
 import TranslationsProvider from "@/components/utility/translations-provider"
 import initTranslations from "@/lib/i18n"
+import { getInitialData } from "@/lib/server/initial-data"
 import { Database } from "@/supabase/types"
 import { createServerClient } from "@supabase/ssr"
 import { Metadata, Viewport } from "next"
@@ -85,7 +86,14 @@ export default async function RootLayout({
   )
   const session = (await supabase.auth.getSession()).data.session
 
-  const { t, resources } = await initTranslations(locale, i18nNamespaces)
+  // The profile and workspace list, read here rather than fetched from the
+  // browser after mount (ARCH-11). `getSession` is enough to decide *whether*
+  // to read: it is a rendering decision, and RLS — not this check — is what
+  // decides which rows come back.
+  const [initialData, { t, resources }] = await Promise.all([
+    session ? getInitialData(session.user.id) : Promise.resolve(null),
+    initTranslations(locale, i18nNamespaces)
+  ])
 
   return (
     <html lang="en" suppressHydrationWarning>
@@ -98,7 +106,13 @@ export default async function RootLayout({
           >
             <Toaster richColors position="top-center" duration={3000} />
             <div className="flex h-dvh flex-col items-center overflow-x-auto bg-background text-foreground">
-              {session ? <GlobalState>{children}</GlobalState> : children}
+              {session ? (
+                <GlobalState initialData={initialData ?? undefined}>
+                  {children}
+                </GlobalState>
+              ) : (
+                children
+              )}
             </div>
           </TranslationsProvider>
         </Providers>
