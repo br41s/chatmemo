@@ -4,7 +4,24 @@ const PERPLEXITY_PLATORM_LINK =
   "https://docs.perplexity.ai/docs/getting-started"
 
 // Perplexity Models (UPDATED 2/25/24) -----------------------------
-// Model Deprecation Notice
+//
+// Do not trust this list. It is the February 2024 lineup and has not been
+// verified since; the deprecation notice below is itself from that period and
+// names models that were removed years ago.
+//
+// Every other provider's catalogue is now fetched from the provider (ARCH-07,
+// `app/api/models`). Perplexity publishes no documented models endpoint, so it
+// is asked on the OpenAI-compatible path and falls back to this file when that
+// does not answer — which makes this the one static list that can still put a
+// dead model in the picker.
+//
+// It stays because deleting a provider is a product decision, and it is inert
+// in practice: a provider only reaches the picker when the user holds a key
+// for it, and Perplexity is reached through OpenRouter instead, whose
+// catalogue does self-update. Refresh this from a live key before relying on
+// it, or remove the direct integration.
+//
+// Original notice, kept for the date it carries:
 // Please note that on March 15, the pplx-70b-chat, pplx-70b-online, llama-2-70b-chat, and codellama-34b-instruct models will no longer be available through the Perplexity API.
 
 // Mixtral 8x7B Instruct (UPDATED 1/31/24)
