@@ -4,16 +4,14 @@ import { MemoryReport } from "@/lib/memory-report"
 import { ChatInputProvider } from "@/context/chat-input-context"
 import { ChatStreamProvider } from "@/context/chat-stream-context"
 import { ChatbotUIContext } from "@/context/context"
-import { getProfileByUserId } from "@/db/profile"
 import { getWorkspaceImageFromStorage } from "@/db/storage/workspace-images"
-import { getWorkspacesByUserId } from "@/db/workspaces"
 import { convertBlobToBase64 } from "@/lib/blob-to-b64"
 import {
   fetchHostedModels,
   fetchOllamaModels,
   fetchOpenRouterModels
 } from "@/lib/models/fetch-models"
-import { supabase } from "@/lib/supabase/browser-client"
+import { InitialData } from "@/lib/server/initial-data"
 import { Tables } from "@/supabase/types"
 import {
   ChatFile,
@@ -32,13 +30,28 @@ import { FC, useEffect, useState } from "react"
 
 interface GlobalStateProps {
   children: React.ReactNode
+  /**
+   * Read on the server by the layout above (ARCH-11). Absent only for a user
+   * with no readable profile, which is the same state a signed-out visitor
+   * renders in.
+   */
+  initialData?: InitialData
 }
 
-export const GlobalState: FC<GlobalStateProps> = ({ children }) => {
+export const GlobalState: FC<GlobalStateProps> = ({
+  children,
+  initialData
+}) => {
   const router = useRouter()
 
   // PROFILE STORE
-  const [profile, setProfile] = useState<Tables<"profiles"> | null>(null)
+  //
+  // Seeded rather than fetched: these two arrive with the request, so the
+  // first render — server included — already has them, instead of every
+  // surface that reads the profile waiting two round trips for it.
+  const [profile, setProfile] = useState<Tables<"profiles"> | null>(
+    initialData?.profile ?? null
+  )
 
   // ITEMS STORE
   const [assistants, setAssistants] = useState<Tables<"assistants">[]>([])
@@ -50,7 +63,9 @@ export const GlobalState: FC<GlobalStateProps> = ({ children }) => {
   const [presets, setPresets] = useState<Tables<"presets">[]>([])
   const [prompts, setPrompts] = useState<Tables<"prompts">[]>([])
   const [tools, setTools] = useState<Tables<"tools">[]>([])
-  const [workspaces, setWorkspaces] = useState<Tables<"workspaces">[]>([])
+  const [workspaces, setWorkspaces] = useState<Tables<"workspaces">[]>(
+    initialData?.workspaces ?? []
+  )
 
   // MODELS STORE
   const [envKeyMap, setEnvKeyMap] = useState<Record<string, VALID_ENV_KEYS>>({})
@@ -115,79 +130,96 @@ export const GlobalState: FC<GlobalStateProps> = ({ children }) => {
     Record<string, MemoryReport>
   >({})
 
+  // What is left to do in the browser once the profile and the workspaces
+  // arrive with the request: send a user who has not finished signup to setup,
+  // then load the two things the server cannot — the workspace avatars, and
+  // the model catalogues, which depend on the user's keys and on Ollama, which
+  // runs on the user's own machine.
+  //
+  // These two used to be the tail of one serial chain behind the profile
+  // fetch. They are independent of each other, so they go out together.
   useEffect(() => {
-    ;(async () => {
-      const profile = await fetchStartingData()
+    if (!profile) return
 
-      if (profile) {
-        const hostedModelRes = await fetchHostedModels(profile)
-        // Don't bail — use empty defaults so the rest of init still runs
-        const envKeyMap = hostedModelRes?.envKeyMap ?? {}
-        const hostedModels = hostedModelRes?.hostedModels ?? []
+    if (!profile.has_onboarded) {
+      router.push("/setup")
+      return
+    }
 
-        setEnvKeyMap(envKeyMap)
-        setAvailableHostedModels(hostedModels)
+    let cancelled = false
 
-        if (profile["openrouter_api_key"] || envKeyMap["openrouter"]) {
-          const openRouterModels = await fetchOpenRouterModels()
-          if (openRouterModels) {
-            setAvailableOpenRouterModels(openRouterModels)
-          }
-        }
-      }
+    const loadWorkspaceImages = async () => {
+      // One write at the end rather than one per workspace. The old loop
+      // awaited each image in turn and appended to state each time, so N
+      // workspaces meant N sequential round trips and N re-renders.
+      const images = await Promise.all(
+        workspaces.map(async workspace => {
+          if (!workspace.image_path) return null
 
-      if (process.env.NEXT_PUBLIC_OLLAMA_URL) {
-        const localModels = await fetchOllamaModels()
-        if (!localModels) return
-        setAvailableLocalModels(localModels)
-      }
-    })()
-  }, [])
+          try {
+            const url =
+              (await getWorkspaceImageFromStorage(workspace.image_path)) || ""
+            if (!url) return null
 
-  const fetchStartingData = async () => {
-    const session = (await supabase.auth.getSession()).data.session
+            const response = await fetch(url)
+            const blob = await response.blob()
+            const base64 = await convertBlobToBase64(blob)
 
-    if (session) {
-      const user = session.user
-
-      const profile = await getProfileByUserId(user.id)
-      setProfile(profile)
-
-      if (!profile.has_onboarded) {
-        return router.push("/setup")
-      }
-
-      const workspaces = await getWorkspacesByUserId(user.id)
-      setWorkspaces(workspaces)
-
-      for (const workspace of workspaces) {
-        let workspaceImageUrl = ""
-
-        if (workspace.image_path) {
-          workspaceImageUrl =
-            (await getWorkspaceImageFromStorage(workspace.image_path)) || ""
-        }
-
-        if (workspaceImageUrl) {
-          const response = await fetch(workspaceImageUrl)
-          const blob = await response.blob()
-          const base64 = await convertBlobToBase64(blob)
-
-          setWorkspaceImages(prev => [
-            ...prev,
-            {
+            return {
               workspaceId: workspace.id,
               path: workspace.image_path,
-              base64: base64,
-              url: workspaceImageUrl
+              base64,
+              url
             }
-          ])
+          } catch {
+            // An avatar that will not load is not worth a missing switcher.
+            return null
+          }
+        })
+      )
+
+      if (!cancelled) {
+        setWorkspaceImages(
+          images.filter((image): image is WorkspaceImage => image !== null)
+        )
+      }
+    }
+
+    const loadModels = async () => {
+      const hostedModelRes = await fetchHostedModels(profile)
+      // Don't bail — use empty defaults so the rest of init still runs
+      const envKeyMap = hostedModelRes?.envKeyMap ?? {}
+      const hostedModels = hostedModelRes?.hostedModels ?? []
+
+      if (cancelled) return
+
+      setEnvKeyMap(envKeyMap)
+      setAvailableHostedModels(hostedModels)
+
+      if (profile["openrouter_api_key"] || envKeyMap["openrouter"]) {
+        const openRouterModels = await fetchOpenRouterModels()
+        if (openRouterModels && !cancelled) {
+          setAvailableOpenRouterModels(openRouterModels)
         }
       }
-
-      return profile
     }
-  }
+
+    const loadLocalModels = async () => {
+      if (!process.env.NEXT_PUBLIC_OLLAMA_URL) return
+
+      const localModels = await fetchOllamaModels()
+      if (localModels && !cancelled) {
+        setAvailableLocalModels(localModels)
+      }
+    }
+
+    void Promise.all([loadWorkspaceImages(), loadModels(), loadLocalModels()])
+
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <ChatbotUIContext.Provider
