@@ -1,3 +1,4 @@
+import { MEMORY_ORDER_COLUMN } from "@/lib/summary-metadata"
 import { createClient } from "@/lib/supabase/server"
 import { ContextBudget, resolveContextBudget } from "@/lib/context-budget"
 import { cookies } from "next/headers"
@@ -123,7 +124,7 @@ export async function getRelevantMemoryForUser(
         .eq("user_id", userId)
         .ilike("content", `%${term}%`)
         .in("kind", ["conversation", "summary"])
-        .order("created_at", { ascending: false })
+        .order(MEMORY_ORDER_COLUMN, { ascending: false })
         .limit(ROWS_PER_TERM)
     )
   )
