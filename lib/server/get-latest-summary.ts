@@ -1,3 +1,4 @@
+import { MEMORY_ORDER_COLUMN } from "@/lib/summary-metadata"
 import { createClient } from "@/lib/supabase/server"
 import { getLessons } from "@/lib/db/lessons"
 import { VersionedCache } from "@/lib/server/versioned-cache"
@@ -81,6 +82,10 @@ async function readMemoryVersion(
       .from("summaries")
       .select("created_at", { count: "exact" })
       .eq("user_id", userId)
+      // `created_at`, not the effective date the row queries order by: this
+      // asks "has anything been written since the blob was built", which is a
+      // question about insertion. A row imported today carrying a 2024
+      // conversation date must still invalidate the cache.
       .order("created_at", { ascending: false })
       .limit(1),
     supabase
@@ -129,7 +134,7 @@ export async function getLatestSummaryForUser(
       .eq("user_id", userId)
       .in("kind", ["conversation", "summary"])
       .or("kind.eq.summary,source.in.(claude,other)")
-      .order("created_at", { ascending: false })
+      .order(MEMORY_ORDER_COLUMN, { ascending: false })
       .limit(MAX_PERSONAL_ROWS),
 
     // B. Bulk imports: raw Perplexity + ChatGPT conversations, title-only when
@@ -141,7 +146,7 @@ export async function getLatestSummaryForUser(
       .eq("user_id", userId)
       .eq("kind", "conversation")
       .in("source", ["perplexity", "chatgpt"])
-      .order("created_at", { ascending: false })
+      .order(MEMORY_ORDER_COLUMN, { ascending: false })
       .limit(MAX_BULK_ROWS),
 
     // C. Index rows
@@ -150,7 +155,7 @@ export async function getLatestSummaryForUser(
       .select("id, content")
       .eq("user_id", userId)
       .eq("kind", "index")
-      .order("created_at", { ascending: false })
+      .order(MEMORY_ORDER_COLUMN, { ascending: false })
       .limit(MAX_INDEX_ROWS),
 
     // Lessons (separate from conversation history) — fetched in the same

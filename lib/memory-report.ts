@@ -15,6 +15,15 @@ export interface MemoryLayerReport {
   chars: number
   /** Entries it contributed, where the layer is a list of them. */
   entries?: number
+  /**
+   * Oldest and newest conversation dates the layer covers, as `YYYY-MM-DD`.
+   *
+   * Counts alone could not answer the question people actually ask of this
+   * panel — "does what you were given include yesterday?" — and without it a
+   * block that had quietly stopped at some date in the past looked identical
+   * to a healthy one. Absent when no entry carries a parseable date.
+   */
+  span?: { oldest: string; newest: string }
 }
 
 export interface MemoryReport {
@@ -85,6 +94,35 @@ function countEntries(section: string): number {
   return section.split(ENTRY_SEPARATOR).filter(part => part.trim()).length
 }
 
+/** The `### [YYYY-MM-DD]` headers the importers and the summariser write. */
+const ENTRY_DATE_RE = /^###\s+\[(\d{4}-\d{2}-\d{2})\]/gm
+
+/**
+ * The range of conversation dates a section covers.
+ *
+ * Read from the assembled text rather than tracked while building it, for the
+ * same reason the counts are: the block is the single source of truth, and a
+ * second one would drift. Rows with no header contribute nothing, so a section
+ * of entirely undated content reports no span rather than a misleading one.
+ */
+function dateSpan(
+  section: string
+): { oldest: string; newest: string } | undefined {
+  const dates = Array.from(section.matchAll(ENTRY_DATE_RE), match => match[1])
+  if (dates.length === 0) return undefined
+
+  // ISO dates sort lexicographically, so no parsing is needed — and none is
+  // wanted: `new Date("2026-03-01")` would drag a timezone into a label.
+  let oldest = dates[0]
+  let newest = dates[0]
+  for (const date of dates) {
+    if (date < oldest) oldest = date
+    if (date > newest) newest = date
+  }
+
+  return { oldest, newest }
+}
+
 /**
  * Derive the report from the assembled block's own sections.
  *
@@ -116,14 +154,19 @@ export function buildMemoryReport(input: {
       "[/CONVERSATION HISTORY]"
     )
     if (history) {
-      report.history = { chars: history.length, entries: countEntries(history) }
+      report.history = {
+        chars: history.length,
+        entries: countEntries(history),
+        span: dateSpan(history)
+      }
     }
   }
 
   if (input.relevant) {
     report.relevant = {
       chars: input.relevant.length,
-      entries: countEntries(input.relevant)
+      entries: countEntries(input.relevant),
+      span: dateSpan(input.relevant)
     }
   }
 

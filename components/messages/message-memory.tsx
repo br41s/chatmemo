@@ -14,19 +14,30 @@ const formatChars = (chars: number): string =>
   chars >= 1_000 ? `${Math.round(chars / 1_000)}k chars` : `${chars} chars`
 
 interface LayerRowProps {
+  /** Conversation dates this layer covers, when its entries carry any. */
+  span?: { oldest: string; newest: string }
   label: string
   detail: string
   hint: string
 }
 
-const LayerRow: FC<LayerRowProps> = ({ label, detail, hint }) => (
+const LayerRow: FC<LayerRowProps> = ({ label, detail, hint, span }) => (
   <div className="flex items-baseline justify-between gap-4 py-1">
     <div className="min-w-0">
       <div className="text-xs font-medium">{label}</div>
       <div className="text-xs text-muted-foreground">{hint}</div>
     </div>
-    <div className="shrink-0 text-xs tabular-nums text-muted-foreground">
-      {detail}
+    <div className="shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+      <div>{detail}</div>
+      {span && (
+        // The question this panel exists to answer is whether what the model
+        // was given reaches the recent past. A count cannot say.
+        <div className="text-[11px]">
+          {span.oldest === span.newest
+            ? span.newest
+            : `${span.oldest} → ${span.newest}`}
+        </div>
+      )}
     </div>
   </div>
 )
@@ -94,6 +105,7 @@ export const MessageMemory: FC<MessageMemoryProps> = ({ report }) => {
               label="Conversation history"
               hint="Recent and imported summaries"
               detail={`${report.history.entries ?? 0} · ${formatChars(report.history.chars)}`}
+              span={report.history.span}
             />
           )}
 
@@ -102,6 +114,7 @@ export const MessageMemory: FC<MessageMemoryProps> = ({ report }) => {
               label="Relevant matches"
               hint="Closest entries to this question"
               detail={`${report.relevant.entries ?? 0} · ${formatChars(report.relevant.chars)}`}
+              span={report.relevant.span}
             />
           )}
 

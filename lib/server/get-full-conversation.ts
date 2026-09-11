@@ -1,3 +1,4 @@
+import { MEMORY_ORDER_COLUMN } from "@/lib/summary-metadata"
 import { createClient } from "@/lib/supabase/server"
 import { ContextBudget, resolveContextBudget } from "@/lib/context-budget"
 import {
@@ -99,7 +100,7 @@ async function searchSummaries(
         .eq("user_id", userId)
         .ilike("content", `%${term}%`)
         .in("kind", ["conversation", "summary"])
-        .order("created_at", { ascending: false })
+        .order(MEMORY_ORDER_COLUMN, { ascending: false })
         .limit(MAX_SUMMARY_ROWS)
     )
   )
@@ -209,7 +210,7 @@ export async function getFullConversationForUser(
       .from("chats")
       .select("id, name, created_at")
       .eq("user_id", userId)
-      .order("created_at", { ascending: false })
+      .order(MEMORY_ORDER_COLUMN, { ascending: false })
       .limit(MAX_CHATS * 3)
 
     const withDate = dateRange

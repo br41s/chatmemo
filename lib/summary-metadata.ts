@@ -125,3 +125,17 @@ export function summaryMetadataColumns(
     occurred_at: occurredAt ? `${occurredAt}T00:00:00Z` : null
   }
 }
+
+/**
+ * The column memory reads order by: the conversation's own date, falling back
+ * to the row's insertion time.
+ *
+ * A generated, stored column (20260911000000_summaries_effective_at.sql),
+ * because PostgREST cannot order on an expression and the ordering needs an
+ * index to stay cheap.
+ *
+ * Named once because `.order()` is not type-checked against the schema in this
+ * version of supabase-js — a typo here would compile, deploy, and fail as a
+ * runtime error inside memory retrieval, which degrades silently to no memory.
+ */
+export const MEMORY_ORDER_COLUMN = "effective_at"

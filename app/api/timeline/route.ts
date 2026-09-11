@@ -5,6 +5,7 @@ import {
   TIMELINE_PAGE
 } from "@/lib/server/pagination"
 import { createClient } from "@/lib/supabase/server"
+import { MEMORY_ORDER_COLUMN } from "@/lib/summary-metadata"
 import { parseSummariesToEntries } from "@/lib/timeline-parser"
 import { cookies } from "next/headers"
 import { NextRequest, NextResponse } from "next/server"
@@ -29,7 +30,12 @@ export async function GET(request: NextRequest) {
       .from("summaries")
       .select("id, content, created_at")
       .eq("user_id", userId)
-      .order("created_at", { ascending: false })
+      // The timeline displays entries by the date in their content, so paging
+      // by insertion time meant a page boundary could fall anywhere in the
+      // displayed order — an imported archive arriving as one block of "recent"
+      // rows that render as three-year-old cards. Ordering by the same date the
+      // cards are sorted on makes each page a contiguous slice of what is shown.
+      .order(MEMORY_ORDER_COLUMN, { ascending: false })
       .range(offset, offset + limit)
 
     if (error) {
