@@ -41,6 +41,15 @@ export function extractIsoDate(message: string): string | null {
   return m ? `${m[1]}-${m[2]}-${m[3]}` : null
 }
 
+// Calendar ranges are UTC: stored timestamps are UTC, and the answer must not
+// depend on the server's timezone (Vercel runs in UTC, a laptop may not).
+function monthRange(year: number, month: number): DateRange {
+  return {
+    from: new Date(Date.UTC(year, month - 1, 1)),
+    to: new Date(Date.UTC(year, month, 0, 23, 59, 59))
+  }
+}
+
 export function extractDateRange(message: string): DateRange | null {
   const lower = message.toLowerCase()
   const now = new Date()
@@ -50,25 +59,16 @@ export function extractDateRange(message: string): DateRange | null {
     const re = new RegExp(`(?:${name}\\s+(20\\d{2})|(20\\d{2})\\s+${name})`)
     const m = lower.match(re)
     if (m) {
-      const year = parseInt(m[1] ?? m[2])
-      return {
-        from: new Date(year, num - 1, 1),
-        to: new Date(year, num, 0, 23, 59, 59)
-      }
+      return monthRange(parseInt(m[1] ?? m[2]), num)
     }
   }
 
   // Month name only → most recent occurrence of that month
   for (const [name, num] of Object.entries(MONTHS)) {
     if (lower.includes(name)) {
-      const year = now.getFullYear()
-      const from = new Date(year, num - 1, 1)
-      const to = new Date(year, num, 0, 23, 59, 59)
-      if (from > now) {
-        from.setFullYear(year - 1)
-        to.setFullYear(year - 1)
-      }
-      return { from, to }
+      const year = now.getUTCFullYear()
+      const range = monthRange(year, num)
+      return range.from > now ? monthRange(year - 1, num) : range
     }
   }
 
@@ -77,28 +77,28 @@ export function extractDateRange(message: string): DateRange | null {
   if (yearM) {
     const year = parseInt(yearM[1])
     return {
-      from: new Date(year, 0, 1),
-      to: new Date(year, 11, 31, 23, 59, 59)
+      from: new Date(Date.UTC(year, 0, 1)),
+      to: new Date(Date.UTC(year, 11, 31, 23, 59, 59))
     }
   }
 
   // Relative
   if (lower.includes("yesterday") || lower.includes("ayer")) {
     const from = new Date(now)
-    from.setDate(from.getDate() - 1)
-    from.setHours(0, 0, 0, 0)
+    from.setUTCDate(from.getUTCDate() - 1)
+    from.setUTCHours(0, 0, 0, 0)
     const to = new Date(from)
-    to.setHours(23, 59, 59, 999)
+    to.setUTCHours(23, 59, 59, 999)
     return { from, to }
   }
   if (lower.includes("last week") || lower.includes("semana pasada")) {
     const from = new Date(now)
-    from.setDate(from.getDate() - 7)
+    from.setUTCDate(from.getUTCDate() - 7)
     return { from, to: now }
   }
   if (lower.includes("last month") || lower.includes("mes pasado")) {
     const from = new Date(now)
-    from.setMonth(from.getMonth() - 1)
+    from.setUTCMonth(from.getUTCMonth() - 1)
     return { from, to: now }
   }
 

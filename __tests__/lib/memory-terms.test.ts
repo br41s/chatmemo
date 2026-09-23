@@ -37,47 +37,61 @@ describe("extractDateRange", () => {
     // February, so a naive `new Date(year, month, 30)` would overshoot.
     const range = extractDateRange("february 2024 conversation")
 
-    expect(range?.to.getMonth()).toBe(1)
-    expect(range?.to.getDate()).toBe(29)
+    expect(range?.to.getUTCMonth()).toBe(1)
+    expect(range?.to.getUTCDate()).toBe(29)
   })
 
   it("reads a bare year as the whole year", () => {
     const range = extractDateRange("what did we discuss in 2023")
 
-    expect(range?.from.getFullYear()).toBe(2023)
-    expect(range?.from.getMonth()).toBe(0)
-    expect(range?.to.getMonth()).toBe(11)
-    expect(range?.to.getDate()).toBe(31)
+    expect(range?.from.getUTCFullYear()).toBe(2023)
+    expect(range?.from.getUTCMonth()).toBe(0)
+    expect(range?.to.getUTCMonth()).toBe(11)
+    expect(range?.to.getUTCDate()).toBe(31)
   })
 
   it("takes a bare month name as the most recent one that has happened", () => {
-    jest.useFakeTimers().setSystemTime(new Date(2025, 2, 15))
+    jest.useFakeTimers().setSystemTime(new Date(Date.UTC(2025, 2, 15)))
 
     // March has started, so "march" means this year.
-    expect(extractDateRange("the march conversation")?.from.getFullYear()).toBe(
-      2025
-    )
+    expect(
+      extractDateRange("the march conversation")?.from.getUTCFullYear()
+    ).toBe(2025)
     // December has not, so it means last year rather than a range in the future.
     expect(
-      extractDateRange("the december conversation")?.from.getFullYear()
+      extractDateRange("the december conversation")?.from.getUTCFullYear()
     ).toBe(2024)
 
     jest.useRealTimers()
   })
 
   it("reads relative ranges in both languages", () => {
-    jest.useFakeTimers().setSystemTime(new Date(2025, 5, 10, 12, 0, 0))
+    jest
+      .useFakeTimers()
+      .setSystemTime(new Date(Date.UTC(2025, 5, 10, 12, 0, 0)))
 
     const yesterday = extractDateRange("yesterday's chat")
-    expect(yesterday?.from.getDate()).toBe(9)
-    expect(yesterday?.from.getHours()).toBe(0)
-    expect(yesterday?.to.getHours()).toBe(23)
+    expect(yesterday?.from.getUTCDate()).toBe(9)
+    expect(yesterday?.from.getUTCHours()).toBe(0)
+    expect(yesterday?.to.getUTCHours()).toBe(23)
 
-    expect(extractDateRange("la conversación de ayer")?.from.getDate()).toBe(9)
-    expect(extractDateRange("last week")?.from.getDate()).toBe(3)
-    expect(extractDateRange("la semana pasada")?.from.getDate()).toBe(3)
-    expect(extractDateRange("last month")?.from.getMonth()).toBe(4)
-    expect(extractDateRange("el mes pasado")?.from.getMonth()).toBe(4)
+    expect(extractDateRange("la conversación de ayer")?.from.getUTCDate()).toBe(
+      9
+    )
+    expect(extractDateRange("last week")?.from.getUTCDate()).toBe(3)
+    expect(extractDateRange("la semana pasada")?.from.getUTCDate()).toBe(3)
+    expect(extractDateRange("last month")?.from.getUTCMonth()).toBe(4)
+    expect(extractDateRange("el mes pasado")?.from.getUTCMonth()).toBe(4)
+
+    jest.useRealTimers()
+  })
+
+  it("rolls a bare month back to last year's own last day", () => {
+    jest.useFakeTimers().setSystemTime(new Date(Date.UTC(2025, 0, 15)))
+
+    // Moving 2025-02-28 back a year used to miss 2024's leap day.
+    const range = extractDateRange("the february conversation")
+    expect(range?.to.toISOString().slice(0, 10)).toBe("2024-02-29")
 
     jest.useRealTimers()
   })

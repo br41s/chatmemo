@@ -193,7 +193,7 @@ export const ProfileSettings: FC<ProfileSettingsProps> = ({}) => {
     if (!profile) return
 
     let imageUrl = profile.image_url
-    let imagePath = ""
+    let imagePath = profile.image_path
 
     if (profileImageFile) {
       const uploaded = await uploadProfileImage(profile, profileImageFile)

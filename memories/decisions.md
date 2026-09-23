@@ -189,3 +189,12 @@ Cuatro PRs apilados sobre la rama de auditoría, uno por hallazgo, en orden de d
 - Decidido: `indexChars` entra en la clave de caché del blob base, como el resto de cuotas.
 - Verificado: las tres pruebas nuevas fallan contra el comportamiento anterior y pasan contra el corregido; 352 pruebas en 35 suites, type-check en clon limpio y build de producción.
 - Pendiente: que el importador escriba varias filas índice más pequeñas en vez de una gigante sería el arreglo de fondo.
+
+## 2026-09-24 — Recuperación tras auditar un `main` desactualizado
+
+- Descubierto: la auditoría y el PR #40 se hicieron sobre un checkout local 70 commits por detrás de `origin/main`. `main` ya tenía su propia fábrica (`createChatRoute`), el guardado de límites, el stream de Google y el error de Azure.
+- Decidido: no resolver el conflicto de #40; recuperar sobre `main` solo lo que seguía roto, usando `createChatRoute` y `chatErrorMessage` en vez de la fábrica y `http-error.ts` de #40.
+- Recuperado: temperatura en Groq/Mistral/Perplexity; 400 para JSON mal formado en el sobre y en `command`; `command` usa `chatErrorMessage`; la ruta custom usa el `readLimitedJson` compartido; `image_path` se conserva al guardar el perfil; dos commits de documentación que quedaron sin fusionar en `claude/chatmemo-server-global-state` (cierre de ARCH-07).
+- Decidido: los rangos de fecha del recall se construyen en UTC. En local (UTC+7) la prueba fallaba y el hook pre-push bloqueaba todos los pushes; además el mes sin año perdía el 29 de febrero.
+- Descartado de #40: `getServerProfile` → 401 (solo cambia el código en rutas de chat, el resto responde 500 igualmente; va con `requireUser()`), y el cambio `||` → `&&` del foco (sin síntoma observado y comportamiento pretendido dudoso).
+- Verificado: 632 pruebas en 65 suites, type-check, lint sin avisos nuevos, `format:check` y build de producción; la prueba de fechas pasa en Bangkok, UTC, Los Ángeles y Kiritimati.

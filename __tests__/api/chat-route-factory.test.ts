@@ -149,6 +149,29 @@ describe("createChatRoute", () => {
     expect(respond).not.toHaveBeenCalled()
   })
 
+  it("rejects a malformed body with 400 before loading the profile", async () => {
+    const respond = jest.fn()
+    const POST = createChatRoute({
+      provider: "OpenAI",
+      apiKey: p => p.openai_api_key,
+      respond
+    })
+
+    const response = await POST(
+      new Request("http://localhost/api/chat/test", {
+        method: "POST",
+        body: "{not json"
+      })
+    )
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({
+      message: "Request body must be valid JSON"
+    })
+    expect(getServerProfileMock).not.toHaveBeenCalled()
+    expect(respond).not.toHaveBeenCalled()
+  })
+
   it("names the provider when the key is missing", async () => {
     checkApiKeyMock.mockImplementation(() => {
       throw new Error("OpenAI API Key not found")

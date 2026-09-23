@@ -17,6 +17,7 @@ export const POST = createChatRoute({
     const response = await mistral.chat.completions.create({
       model: chatSettings.model,
       messages,
+      temperature: chatSettings.temperature,
       max_tokens: budget.outputTokens,
       stream: true
     })
