@@ -5,3 +5,4 @@
 - Al cerrar una actualización documental, comprobar también los metadatos visibles del repositorio en GitHub (descripción, URL y topics); actualizar README y guías no actualiza automáticamente la página del proyecto.
 - Revisar el README también como landing page para una persona que descubre el proyecto: propuesta de valor, captura o demo, capacidades, privacidad, instalación y siguiente acción deben entenderse antes del detalle operativo.
 - Si una auditoría documental descubre una carencia de producto pero el usuario limita el alcance a documentación, no convertirla en una implementación: describir la limitación con precisión y registrarla como trabajo futuro.
+- Antes de auditar o abrir una rama, ejecutar `git fetch` y comprobar `git log HEAD..origin/main`. Un `main` local desactualizado produjo una auditoría obsoleta y un PR que duplicaba trabajo ya fusionado.
