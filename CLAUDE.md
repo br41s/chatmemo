@@ -22,8 +22,9 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
   written once rather than edited — there is no `updated_at` and no UPDATE
   policy — but they are deletable: the memory panel offers delete, clear-all
   and restore (`20260518000000_summaries_delete_policy`).
-- `lib/server/inject-memory.ts`: shared injector — every provider chat route
-  prepends the user's memory block to the system prompt. Three layers run in
+- `lib/server/inject-memory.ts`: shared injector — every provider chat route,
+  the tools route included, prepends the user's memory block to the system
+  prompt (`custom` and Ollama do not yet). Three layers run in
   parallel per turn:
   1. baseline blob (`get-latest-summary.ts`) — lessons + personal rows +
      truncated bulk rows, ~100k char budget;

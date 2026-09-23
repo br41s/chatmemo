@@ -2,6 +2,7 @@
 
 import { POST } from "../../app/api/chat/tools/route"
 import { openapiToFunctions } from "../../lib/openapi-conversion"
+import { injectMemoryOpenAIFormat } from "../../lib/server/inject-memory"
 import {
   checkApiKey,
   getServerProfile
@@ -25,6 +26,12 @@ jest.mock("../../lib/server/safe-tool-request", () => {
 jest.mock("../../lib/server/streaming", () => ({
   openAIStreamResponse: jest.fn(() => new Response("stream"))
 }))
+jest.mock("../../lib/server/inject-memory", () => ({
+  injectMemoryOpenAIFormat: jest.fn()
+}))
+jest.mock("../../lib/server/memory-report-headers", () => ({
+  memoryReportHeaders: jest.fn(() => ({ "x-chatmemo-memory": "report" }))
+}))
 jest.mock("../../lib/supabase/server", () => ({
   createClient: jest.fn()
 }))
@@ -46,6 +53,7 @@ const mockSafeToolRequest = jest.mocked(safeToolRequest)
 const mockOpenAIStreamResponse = jest.mocked(openAIStreamResponse)
 const mockCreateClient = jest.mocked(createClient)
 const mockOpenAI = jest.mocked(OpenAI)
+const mockInjectMemory = jest.mocked(injectMemoryOpenAIFormat)
 
 function createRequest(body: Record<string, unknown>) {
   return new Request("http://localhost/api/chat/tools", {
@@ -86,6 +94,10 @@ describe("POST /api/chat/tools", () => {
         }) as any
     )
     mockSafeToolRequest.mockResolvedValue({ ok: true })
+    mockInjectMemory.mockImplementation(async messages => ({
+      messages: [{ role: "system", content: "memory" }, ...messages],
+      report: { injected: true } as any
+    }))
     mockOpenapiToFunctions.mockResolvedValue({
       info: {
         title: "Stored tool",
@@ -427,7 +439,52 @@ describe("POST /api/chat/tools", () => {
         timeoutMs: expect.any(Number)
       }
     )
-    expect(mockOpenAIStreamResponse).toHaveBeenCalledWith(streamedResponse)
+    expect(mockOpenAIStreamResponse).toHaveBeenCalledWith(streamedResponse, {
+      "x-chatmemo-memory": "report"
+    })
+  })
+
+  it("gives both model calls the memory block, sized by the client's hint", async () => {
+    mockStoredTools([{ id: TOOL_ID, schema: { source: "database" } }])
+    completionsCreate
+      .mockResolvedValueOnce({
+        choices: [
+          {
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                {
+                  id: "call-1",
+                  type: "function",
+                  function: { name: "getData", arguments: "{}" }
+                }
+              ]
+            }
+          }
+        ]
+      })
+      .mockResolvedValueOnce({ stream: true })
+    const contextBudget = { contextLength: 128_000 }
+
+    await POST(
+      createRequest({
+        chatSettings: { model: "gpt-4o" },
+        messages: [{ role: "user", content: "hi" }],
+        contextBudget,
+        selectedToolIds: [TOOL_ID]
+      })
+    )
+
+    expect(mockInjectMemory).toHaveBeenCalledWith(
+      [{ role: "user", content: "hi" }],
+      OWNER_ID,
+      contextBudget
+    )
+    expect(completionsCreate).toHaveBeenCalledTimes(2)
+    for (const [params] of completionsCreate.mock.calls) {
+      expect(params.messages[0]).toEqual({ role: "system", content: "memory" })
+    }
   })
 
   it("uses the method and body mode of the exact selected operation", async () => {

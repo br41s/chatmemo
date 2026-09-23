@@ -1,3 +1,6 @@
+import { ContextBudgetHint } from "@/lib/context-budget"
+import { injectMemoryOpenAIFormat } from "@/lib/server/inject-memory"
+import { memoryReportHeaders } from "@/lib/server/memory-report-headers"
 import { HttpError } from "@/lib/server/http-error"
 import { openapiToFunctions } from "@/lib/openapi-conversion"
 import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
@@ -70,11 +73,13 @@ export async function POST(request: Request) {
     const {
       chatSettings,
       messages,
+      contextBudget,
       selectedToolIds,
       selectedTools: legacySelectedTools
     } = json as {
       chatSettings: ChatSettings
       messages: any[]
+      contextBudget?: ContextBudgetHint
       selectedToolIds: unknown
       selectedTools?: Array<{ id?: unknown }>
     }
@@ -195,17 +200,27 @@ export async function POST(request: Request) {
       }
     }
 
+    // The same memory block every other chat route prepends. A retrieval
+    // failure degrades to no memory inside the injector, never to a failed
+    // tool call.
+    const { messages: conversation, report } = await injectMemoryOpenAIFormat(
+      messages,
+      profile.user_id,
+      contextBudget
+    )
+    const memoryHeaders = memoryReportHeaders(report)
+
     const firstResponse = await openai.chat.completions.create(
       {
         model: chatSettings.model as ChatCompletionCreateParamsBase["model"],
-        messages,
+        messages: conversation,
         tools: allTools.length > 0 ? allTools : undefined
       },
       { signal: request.signal }
     )
 
     const message = firstResponse.choices[0].message
-    messages.push(message)
+    conversation.push(message)
     const toolCalls = message.tool_calls || []
 
     if (toolCalls.length > MAX_TOOL_CALLS) {
@@ -218,7 +233,8 @@ export async function POST(request: Request) {
     if (toolCalls.length === 0) {
       return new Response(message.content, {
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          ...memoryHeaders
         }
       })
     }
@@ -288,7 +304,7 @@ export async function POST(request: Request) {
           timeoutMs: remainingToolExecutionTime()
         })
 
-        messages.push({
+        conversation.push({
           tool_call_id: toolCall.id,
           role: "tool",
           name: functionName,
@@ -300,13 +316,13 @@ export async function POST(request: Request) {
     const secondResponse = await openai.chat.completions.create(
       {
         model: chatSettings.model as ChatCompletionCreateParamsBase["model"],
-        messages,
+        messages: conversation,
         stream: true
       },
       { signal: request.signal }
     )
 
-    return openAIStreamResponse(secondResponse)
+    return openAIStreamResponse(secondResponse, memoryHeaders)
   } catch (error: any) {
     console.error(error)
     const isExpectedRequestError = error instanceof HttpError
