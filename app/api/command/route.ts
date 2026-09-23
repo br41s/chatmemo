@@ -1,16 +1,14 @@
 import { CHAT_SETTING_LIMITS } from "@/lib/chat-setting-limits"
+import { providerErrorResponse, readJsonBody } from "@/lib/server/http-error"
 import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
 import OpenAI from "openai"
 
 export const runtime = "edge"
 
 export async function POST(request: Request) {
-  const json = await request.json()
-  const { input } = json as {
-    input: string
-  }
-
   try {
+    const { input } = await readJsonBody<{ input: string }>(request)
+
     const profile = await getServerProfile()
 
     checkApiKey(profile.openai_api_key, "OpenAI")
@@ -44,11 +42,7 @@ export async function POST(request: Request) {
     return new Response(JSON.stringify({ content }), {
       status: 200
     })
-  } catch (error: any) {
-    const errorMessage = error.error?.message || "An unexpected error occurred"
-    const errorCode = error.status || 500
-    return new Response(JSON.stringify({ message: errorMessage }), {
-      status: errorCode
-    })
+  } catch (error) {
+    return providerErrorResponse(error, "OpenAI")
   }
 }

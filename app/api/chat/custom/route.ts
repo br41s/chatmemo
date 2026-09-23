@@ -3,6 +3,8 @@ import {
   logSafeModelFailure,
   SafeModelRequestError
 } from "@/lib/server/safe-model-stream"
+import { HttpError } from "@/lib/server/http-error"
+import { readLimitedJson } from "@/lib/server/read-limited-json"
 import { textStreamResponse } from "@/lib/server/streaming"
 import { createClient } from "@/lib/supabase/server"
 import { ServerRuntime } from "next"
@@ -79,86 +81,6 @@ const legacyRequestSchema = z
 
 const requestSchema = z.union([currentRequestSchema, legacyRequestSchema])
 
-class CustomModelRouteError extends Error {
-  status: number
-
-  constructor(message: string, status: number) {
-    super(message)
-    this.name = "CustomModelRouteError"
-    this.status = status
-  }
-}
-
-async function readLimitedJson(request: Request) {
-  const rawContentLength = request.headers.get("content-length")
-  if (rawContentLength) {
-    const contentLength = Number(rawContentLength)
-    if (
-      !Number.isSafeInteger(contentLength) ||
-      contentLength < 0 ||
-      contentLength > MAX_REQUEST_BYTES
-    ) {
-      throw new CustomModelRouteError("Request body is too large", 413)
-    }
-  }
-
-  if (!request.body) {
-    throw new CustomModelRouteError("Request body is required", 400)
-  }
-
-  const reader = request.body.getReader()
-  const chunks: Uint8Array[] = []
-  let totalBytes = 0
-  const deadline = Date.now() + REQUEST_BODY_TIMEOUT_MS
-
-  while (true) {
-    const remaining = deadline - Date.now()
-    if (remaining <= 0) {
-      await reader.cancel()
-      throw new CustomModelRouteError("Request body timed out", 408)
-    }
-    const { done, value } = await new Promise<
-      ReadableStreamReadResult<Uint8Array>
-    >((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        void reader.cancel()
-        reject(new CustomModelRouteError("Request body timed out", 408))
-      }, remaining)
-      reader.read().then(
-        result => {
-          clearTimeout(timeout)
-          resolve(result)
-        },
-        error => {
-          clearTimeout(timeout)
-          reject(error)
-        }
-      )
-    })
-    if (done) break
-    totalBytes += value.byteLength
-    if (totalBytes > MAX_REQUEST_BYTES) {
-      await reader.cancel()
-      throw new CustomModelRouteError("Request body is too large", 413)
-    }
-    chunks.push(value)
-  }
-
-  const body = new Uint8Array(totalBytes)
-  let offset = 0
-  for (const chunk of chunks) {
-    body.set(chunk, offset)
-    offset += chunk.byteLength
-  }
-
-  try {
-    const text = new TextDecoder("utf-8", { fatal: true }).decode(body)
-    return JSON.parse(text) as unknown
-  } catch {
-    throw new CustomModelRouteError("Request body must be valid JSON", 400)
-  }
-}
-
 function errorResponse(message: string, status: number, correlationId: string) {
   return new Response(JSON.stringify({ message }), {
     status,
@@ -173,10 +95,13 @@ export async function POST(request: Request) {
   const correlationId = crypto.randomUUID()
 
   try {
-    const json = await readLimitedJson(request)
+    const json = await readLimitedJson(request, {
+      maxBytes: MAX_REQUEST_BYTES,
+      timeoutMs: REQUEST_BODY_TIMEOUT_MS
+    })
     const parsed = requestSchema.safeParse(json)
     if (!parsed.success) {
-      throw new CustomModelRouteError("Custom model request is invalid", 400)
+      throw new HttpError("Custom model request is invalid", 400)
     }
 
     const { customModelId, messages } = parsed.data
@@ -191,7 +116,7 @@ export async function POST(request: Request) {
     } = await supabase.auth.getUser()
 
     if (authError || !user) {
-      throw new CustomModelRouteError("Authentication required", 401)
+      throw new HttpError("Authentication required", 401)
     }
 
     const { data: customModel, error: modelError } = await supabase
@@ -201,14 +126,14 @@ export async function POST(request: Request) {
       .maybeSingle()
 
     if (modelError) {
-      throw new CustomModelRouteError("Custom model lookup failed", 500)
+      throw new HttpError("Custom model lookup failed", 500)
     }
 
     if (
       !customModel ||
       (customModel.user_id !== user.id && customModel.api_key !== "")
     ) {
-      throw new CustomModelRouteError("Custom model is unavailable", 403)
+      throw new HttpError("Custom model is unavailable", 403)
     }
 
     const stream = await createSafeModelTextStream({
@@ -225,7 +150,7 @@ export async function POST(request: Request) {
     response.headers.set("X-Request-ID", correlationId)
     return response
   } catch (error) {
-    if (error instanceof CustomModelRouteError) {
+    if (error instanceof HttpError) {
       return errorResponse(error.message, error.status, correlationId)
     }
 

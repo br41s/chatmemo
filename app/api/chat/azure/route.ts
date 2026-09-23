@@ -1,3 +1,4 @@
+import { providerErrorResponse, readJsonBody } from "@/lib/server/http-error"
 import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
 import { injectMemoryOpenAIFormat } from "@/lib/server/inject-memory"
 import { ChatAPIPayload } from "@/types"
@@ -8,10 +9,10 @@ import { ChatCompletionCreateParamsBase } from "openai/resources/chat/completion
 export const runtime = "edge"
 
 export async function POST(request: Request) {
-  const json = await request.json()
-  const { chatSettings, messages } = json as ChatAPIPayload
-
   try {
+    const { chatSettings, messages } =
+      await readJsonBody<ChatAPIPayload>(request)
+
     const profile = await getServerProfile()
 
     checkApiKey(profile.azure_openai_api_key, "Azure OpenAI")
@@ -66,11 +67,7 @@ export async function POST(request: Request) {
     })
 
     return openAIStreamResponse(response)
-  } catch (error: any) {
-    const errorMessage = error.error?.message || "An unexpected error occurred"
-    const errorCode = error.status || 500
-    return new Response(JSON.stringify({ message: errorMessage }), {
-      status: errorCode
-    })
+  } catch (error) {
+    return providerErrorResponse(error, "Azure OpenAI")
   }
 }
