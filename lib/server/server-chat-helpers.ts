@@ -1,3 +1,4 @@
+import { HttpError } from "@/lib/server/http-error"
 import { Database, Tables } from "@/supabase/types"
 import { VALID_ENV_KEYS } from "@/types/valid-keys"
 import { createServerClient } from "@supabase/ssr"
@@ -19,7 +20,7 @@ export async function getServerProfile() {
 
   const user = (await supabase.auth.getUser()).data.user
   if (!user) {
-    throw new Error("User not found")
+    throw new HttpError("Authentication required", 401)
   }
 
   const { data: profile } = await supabase
@@ -29,7 +30,7 @@ export async function getServerProfile() {
     .single()
 
   if (!profile) {
-    throw new Error("Profile not found")
+    throw new HttpError("Profile not found", 404)
   }
 
   const profileWithKeys = addApiKeysToProfile(profile)
@@ -68,6 +69,9 @@ function addApiKeysToProfile(profile: Tables<"profiles">) {
 
 export function checkApiKey(apiKey: string | null, keyName: string) {
   if (apiKey === null || apiKey === "") {
-    throw new Error(`${keyName} API Key not found`)
+    throw new HttpError(
+      `${keyName} API Key not found. Please set it in your profile settings.`,
+      400
+    )
   }
 }

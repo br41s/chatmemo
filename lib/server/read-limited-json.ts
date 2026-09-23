@@ -1,10 +1,9 @@
-export class LimitedJsonError extends Error {
-  status: number
+import { HttpError } from "@/lib/server/http-error"
 
+export class LimitedJsonError extends HttpError {
   constructor(message: string, status: number) {
-    super(message)
+    super(message, status)
     this.name = "LimitedJsonError"
-    this.status = status
   }
 }
 
