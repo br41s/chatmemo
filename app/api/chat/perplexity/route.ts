@@ -17,6 +17,7 @@ export const POST = createChatRoute({
     const response = await perplexity.chat.completions.create({
       model: chatSettings.model,
       messages,
+      temperature: chatSettings.temperature,
       stream: true
     })
 
