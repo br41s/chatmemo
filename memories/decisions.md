@@ -87,3 +87,11 @@
 - Verificado: `format:check`, `type-check`, 223 pruebas Jest (11 nuevas) y build de producción. La build borra `public/worker-development.js` y se restauró con `git checkout --`.
 - Publicado: tres commits atómicos en `claude/chatmemo-audit-review-60c4f6` y el PR [#6](https://github.com/braisntext/chatmemo/pull/6).
 - Sin cambios: migraciones, módulos SSRF y los cambios de comportamiento deliberados de la auditoría (herramientas y modelos compartidos ya no son visibles para `anon`; un fallo de retrieval aborta el envío en vez de degradar a cero fuentes).
+
+## 2026-09-24 — PR A: fábrica de rutas de chat y errores HTTP
+
+- Decidido: las cinco rutas compatibles con OpenAI son configuración sobre `createOpenAICompatibleRoute`; la temperatura se envía siempre y `max_tokens` se omite para modelos fuera de `CHAT_SETTING_LIMITS`.
+- Decidido: los errores del proveedor pasan su mensaje y estado al usuario; solo una clave rechazada (401, o el 400 "API key not valid" de Google) se reescribe como aviso de ajustes. Estados fuera de 400–599 → 500.
+- Decidido: `getServerProfile` lanza `HttpError` 401/404 y `checkApiKey` un 400 con el mensaje final; las rutas ya no comparan cadenas "api key not found".
+- Rechazado: aplicar `readLimitedJson` a las rutas hosted; los mensajes con imágenes base64 pueden superar cualquier límite razonable y sería un cambio de comportamiento.
+- Aplazado: `requireUser()` en las ~20 rutas no-chat (siguen devolviendo 500 sin sesión) y las clases de error locales de retrieval.

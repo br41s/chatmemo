@@ -113,3 +113,18 @@ Trabajo futuro fuera de este cambio:
 
 - [ ] Inyectar memoria persistente en Ollama manteniendo la inferencia local.
 - [ ] Inyectar memoria persistente en modelos remotos personalizados.
+
+## PR A — Rutas de chat: fábrica compartida y errores HTTP
+
+- [x] `HttpError`, `readJsonBody` y `providerErrorResponse` en `lib/server/http-error.ts`.
+- [x] `getServerProfile` devuelve 401/404 y `checkApiKey` un 400 con mensaje para el usuario.
+- [x] Fábrica `createOpenAICompatibleRoute` para OpenAI, Groq, Mistral, Perplexity y OpenRouter (temperatura siempre enviada; `max_tokens` sin crash para modelos desconocidos).
+- [x] Anthropic, Azure, Google y `command`: JSON dentro del `try`, errores unificados; Google cierra el stream al fallar.
+- [x] La ruta custom usa el `readLimitedJson` compartido.
+- [x] UI: `image_path` se conserva al guardar el perfil; el foco del input solo vuelve con todos los pickers cerrados.
+- [x] Pruebas de la fábrica.
+- [x] `describeProviderError`: clave rechazada → mensaje de ajustes; el resto pasa el mensaje y el estado del proveedor + pruebas.
+- [x] `format:check`, `type-check`, 234 pruebas Jest, lint (sin avisos nuevos) y `npm run build`.
+- [ ] Commits atómicos, push y PR (con confirmación).
+
+Aplazado: `requireUser()` en las ~20 rutas no-chat (siguen devolviendo 500 sin sesión) y las clases de error locales de las rutas de retrieval.

@@ -15,6 +15,10 @@ with a persistent cross-provider memory system. Deployed on Vercel
 Next.js 14 App Router + TypeScript + Supabase + Tailwind + shadcn/ui.
 Chat providers: OpenAI, Anthropic, Google, Mistral, Groq, Perplexity, Azure,
 OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
+OpenAI-compatible providers (OpenAI, Groq, Mistral, Perplexity, OpenRouter)
+are config over `lib/server/openai-compatible-route.ts`; chat routes report
+failures through `providerErrorResponse` (`lib/server/http-error.ts`) and
+throw `HttpError` for user-facing errors.
 
 ## Architecture — memory system (the core feature)
 
