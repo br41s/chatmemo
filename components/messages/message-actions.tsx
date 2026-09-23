@@ -111,8 +111,6 @@ export const MessageActions: FC<MessageActionsProps> = ({
           }
         />
       )}
-
-      {/* {1 > 0 && isAssistant && <MessageReplies />} */}
     </div>
   )
 }
