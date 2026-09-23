@@ -2,6 +2,7 @@
  * @jest-environment node
  */
 import { chatErrorMessage, createChatRoute } from "../../lib/server/chat-route"
+import { HttpError } from "../../lib/server/http-error"
 import {
   injectMemoryGoogleFormat,
   injectMemoryOpenAIFormat
@@ -272,6 +273,12 @@ describe("chatErrorMessage", () => {
         error: { message: "deployment gone" }
       }).message
     ).toBe("deployment gone")
+  })
+
+  it("does not mistake a missing session for a rejected key", () => {
+    expect(
+      chatErrorMessage("Groq", new HttpError("Authentication required", 401))
+    ).toEqual({ message: "Authentication required", status: 401 })
   })
 
   it("passes an unrecognised failure through as the provider worded it", () => {

@@ -1,12 +1,10 @@
+import { HttpError } from "@/lib/server/http-error"
 import {
   createSafeModelTextStream,
   logSafeModelFailure,
   SafeModelRequestError
 } from "@/lib/server/safe-model-stream"
-import {
-  LimitedJsonError,
-  readLimitedJson
-} from "@/lib/server/read-limited-json"
+import { readLimitedJson } from "@/lib/server/read-limited-json"
 import { textStreamResponse } from "@/lib/server/streaming"
 import { createClient } from "@/lib/supabase/server"
 import { ServerRuntime } from "next"
@@ -83,16 +81,6 @@ const legacyRequestSchema = z
 
 const requestSchema = z.union([currentRequestSchema, legacyRequestSchema])
 
-class CustomModelRouteError extends Error {
-  status: number
-
-  constructor(message: string, status: number) {
-    super(message)
-    this.name = "CustomModelRouteError"
-    this.status = status
-  }
-}
-
 function errorResponse(message: string, status: number, correlationId: string) {
   return new Response(JSON.stringify({ message }), {
     status,
@@ -113,7 +101,7 @@ export async function POST(request: Request) {
     })
     const parsed = requestSchema.safeParse(json)
     if (!parsed.success) {
-      throw new CustomModelRouteError("Custom model request is invalid", 400)
+      throw new HttpError("Custom model request is invalid", 400)
     }
 
     const { customModelId, messages } = parsed.data
@@ -128,7 +116,7 @@ export async function POST(request: Request) {
     } = await supabase.auth.getUser()
 
     if (authError || !user) {
-      throw new CustomModelRouteError("Authentication required", 401)
+      throw new HttpError("Authentication required", 401)
     }
 
     const { data: customModel, error: modelError } = await supabase
@@ -138,14 +126,14 @@ export async function POST(request: Request) {
       .maybeSingle()
 
     if (modelError) {
-      throw new CustomModelRouteError("Custom model lookup failed", 500)
+      throw new HttpError("Custom model lookup failed", 500)
     }
 
     if (
       !customModel ||
       (customModel.user_id !== user.id && customModel.api_key !== "")
     ) {
-      throw new CustomModelRouteError("Custom model is unavailable", 403)
+      throw new HttpError("Custom model is unavailable", 403)
     }
 
     const stream = await createSafeModelTextStream({
@@ -162,10 +150,7 @@ export async function POST(request: Request) {
     response.headers.set("X-Request-ID", correlationId)
     return response
   } catch (error) {
-    if (
-      error instanceof CustomModelRouteError ||
-      error instanceof LimitedJsonError
-    ) {
+    if (error instanceof HttpError) {
       return errorResponse(error.message, error.status, correlationId)
     }
 

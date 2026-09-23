@@ -1,3 +1,4 @@
+import { HttpError } from "@/lib/server/http-error"
 import { generateLocalEmbeddings } from "@/lib/generate-local-embedding"
 import { MAX_FILE_ITEM_CHUNKS } from "@/lib/retrieval/limits"
 import {
@@ -7,14 +8,8 @@ import {
   processPdf,
   processTxt
 } from "@/lib/retrieval/processing"
-import {
-  EmbeddingRequestError,
-  generateOpenAIEmbeddings
-} from "@/lib/server/openai-embeddings"
-import {
-  LimitedJsonError,
-  readLimitedFormData
-} from "@/lib/server/read-limited-json"
+import { generateOpenAIEmbeddings } from "@/lib/server/openai-embeddings"
+import { readLimitedFormData } from "@/lib/server/read-limited-json"
 import { getServerProfile } from "@/lib/server/server-chat-helpers"
 import { createClient as createSessionClient } from "@/lib/supabase/server"
 import { Json } from "@/supabase/types"
@@ -34,16 +29,6 @@ const requestSchema = z
     embeddingsProvider: z.enum(["openai", "local"])
   })
   .strict()
-
-class ProcessRouteError extends Error {
-  status: number
-
-  constructor(message: string, status: number) {
-    super(message)
-    this.name = "ProcessRouteError"
-    this.status = status
-  }
-}
 
 function fileSizeLimit() {
   const configured = Number(process.env.NEXT_PUBLIC_USER_FILE_SIZE_LIMIT)
@@ -74,7 +59,7 @@ export async function POST(req: Request) {
       embeddingsProvider: formData.get("embeddingsProvider")
     })
     if (!parsed.success) {
-      throw new ProcessRouteError("File processing request is invalid", 400)
+      throw new HttpError("File processing request is invalid", 400)
     }
     const { file_id, embeddingsProvider } = parsed.data
 
@@ -85,15 +70,15 @@ export async function POST(req: Request) {
       .maybeSingle()
 
     if (metadataError) {
-      throw new ProcessRouteError("File lookup failed", 500)
+      throw new HttpError("File lookup failed", 500)
     }
 
     if (!fileMetadata || fileMetadata.user_id !== profile.user_id) {
-      throw new ProcessRouteError("File is unavailable", 403)
+      throw new HttpError("File is unavailable", 403)
     }
     const maxFileBytes = fileSizeLimit()
     if (fileMetadata.size > maxFileBytes) {
-      throw new ProcessRouteError("File is too large to process", 413)
+      throw new HttpError("File is too large to process", 413)
     }
 
     const pathSeparator = fileMetadata.file_path.lastIndexOf("/")
@@ -104,7 +89,7 @@ export async function POST(req: Request) {
       fileMetadata.file_path.split("/", 1)[0] !== profile.user_id ||
       !storageName
     ) {
-      throw new ProcessRouteError("File storage path is invalid", 403)
+      throw new HttpError("File storage path is invalid", 403)
     }
 
     const fileStorage = supabase.storage.from("files")
@@ -123,10 +108,10 @@ export async function POST(req: Request) {
       !Number.isSafeInteger(storedSize) ||
       storedSize < 0
     ) {
-      throw new ProcessRouteError("File storage metadata is unavailable", 500)
+      throw new HttpError("File storage metadata is unavailable", 500)
     }
     if (storedSize > maxFileBytes) {
-      throw new ProcessRouteError("File is too large to process", 413)
+      throw new HttpError("File is too large to process", 413)
     }
 
     const { data: file, error: fileError } = await fileStorage.download(
@@ -134,10 +119,10 @@ export async function POST(req: Request) {
     )
 
     if (fileError || !file) {
-      throw new ProcessRouteError("File could not be downloaded", 500)
+      throw new HttpError("File could not be downloaded", 500)
     }
     if (file.size > maxFileBytes) {
-      throw new ProcessRouteError("File is too large to process", 413)
+      throw new HttpError("File is too large to process", 413)
     }
 
     const fileExtension = fileMetadata.name.split(".").pop()?.toLowerCase()
@@ -161,11 +146,11 @@ export async function POST(req: Request) {
         chunks = await processTxt(file)
         break
       default:
-        throw new ProcessRouteError("Unsupported file type", 400)
+        throw new HttpError("Unsupported file type", 400)
     }
 
     if (chunks.length === 0 || chunks.length > MAX_FILE_ITEM_CHUNKS) {
-      throw new ProcessRouteError("File produced an invalid chunk count", 400)
+      throw new HttpError("File produced an invalid chunk count", 400)
     }
 
     let embeddings: unknown[][]
@@ -205,18 +190,14 @@ export async function POST(req: Request) {
       p_total_tokens: totalTokens
     })
     if (replaceError) {
-      throw new ProcessRouteError("File items could not be saved", 500)
+      throw new HttpError("File items could not be saved", 500)
     }
 
     return new NextResponse("Embed Successful", {
       status: 200
     })
   } catch (error) {
-    if (
-      error instanceof ProcessRouteError ||
-      error instanceof EmbeddingRequestError ||
-      error instanceof LimitedJsonError
-    ) {
+    if (error instanceof HttpError) {
       return errorResponse(error.message, error.status)
     }
 

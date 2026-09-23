@@ -1,17 +1,12 @@
+import { HttpError } from "@/lib/server/http-error"
 import { generateLocalEmbeddings } from "@/lib/generate-local-embedding"
 import { processDocX } from "@/lib/retrieval/processing"
 import {
   MAX_DOCX_TEXT_CHARS,
   MAX_LOCAL_DOCX_TEXT_CHARS
 } from "@/lib/retrieval/limits"
-import {
-  LimitedJsonError,
-  readLimitedJson
-} from "@/lib/server/read-limited-json"
-import {
-  EmbeddingRequestError,
-  generateOpenAIEmbeddings
-} from "@/lib/server/openai-embeddings"
+import { readLimitedJson } from "@/lib/server/read-limited-json"
+import { generateOpenAIEmbeddings } from "@/lib/server/openai-embeddings"
 import { getServerProfile } from "@/lib/server/server-chat-helpers"
 import { createClient } from "@/lib/supabase/server"
 import { Json } from "@/supabase/types"
@@ -51,16 +46,6 @@ const requestSchema = z
     }
   })
 
-class DocxRouteError extends Error {
-  status: number
-
-  constructor(message: string, status: number) {
-    super(message)
-    this.name = "DocxRouteError"
-    this.status = status
-  }
-}
-
 function errorResponse(message: string, status: number) {
   return new Response(JSON.stringify({ message }), {
     status,
@@ -77,7 +62,7 @@ export async function POST(req: Request) {
     } = await supabase.auth.getUser()
 
     if (authError || !user) {
-      throw new DocxRouteError("Authentication required", 401)
+      throw new HttpError("Authentication required", 401)
     }
 
     const json = await readLimitedJson(req, {
@@ -86,7 +71,7 @@ export async function POST(req: Request) {
     })
     const parsed = requestSchema.safeParse(json)
     if (!parsed.success) {
-      throw new DocxRouteError("DOCX processing request is invalid", 400)
+      throw new HttpError("DOCX processing request is invalid", 400)
     }
 
     const { text, fileId, embeddingsProvider } = parsed.data
@@ -98,16 +83,16 @@ export async function POST(req: Request) {
       .maybeSingle()
 
     if (fileError) {
-      throw new DocxRouteError("File lookup failed", 500)
+      throw new HttpError("File lookup failed", 500)
     }
 
     if (!file || file.user_id !== user.id) {
-      throw new DocxRouteError("File is unavailable", 403)
+      throw new HttpError("File is unavailable", 403)
     }
 
     const profile = await getServerProfile()
     if (profile.user_id !== user.id) {
-      throw new DocxRouteError("Authenticated profile is inconsistent", 403)
+      throw new HttpError("Authenticated profile is inconsistent", 403)
     }
 
     const chunks: FileItemChunk[] = await processDocX(text)
@@ -150,18 +135,14 @@ export async function POST(req: Request) {
     })
 
     if (replaceError) {
-      throw new DocxRouteError("File items could not be saved", 500)
+      throw new HttpError("File items could not be saved", 500)
     }
 
     return new NextResponse("Embed Successful", {
       status: 200
     })
   } catch (error) {
-    if (
-      error instanceof DocxRouteError ||
-      error instanceof EmbeddingRequestError ||
-      error instanceof LimitedJsonError
-    ) {
+    if (error instanceof HttpError) {
       return errorResponse(error.message, error.status)
     }
 

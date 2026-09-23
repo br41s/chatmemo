@@ -1,3 +1,4 @@
+import { HttpError } from "@/lib/server/http-error"
 import { openapiToFunctions } from "@/lib/openapi-conversion"
 import { checkApiKey, getServerProfile } from "@/lib/server/server-chat-helpers"
 import { isShareableToolConfig } from "@/lib/tool-sharing"
@@ -10,10 +11,7 @@ import {
   sanitizeToolHeaders,
   UnsafeToolRequestError
 } from "@/lib/server/safe-tool-request"
-import {
-  LimitedJsonError,
-  readLimitedJson
-} from "@/lib/server/read-limited-json"
+import { readLimitedJson } from "@/lib/server/read-limited-json"
 import { createClient } from "@/lib/supabase/server"
 import { cookies } from "next/headers"
 import OpenAI from "openai"
@@ -311,9 +309,7 @@ export async function POST(request: Request) {
     return openAIStreamResponse(secondResponse)
   } catch (error: any) {
     console.error(error)
-    const isExpectedRequestError =
-      error instanceof UnsafeToolRequestError ||
-      error instanceof LimitedJsonError
+    const isExpectedRequestError = error instanceof HttpError
     const errorMessage = isExpectedRequestError
       ? error.message
       : error.error?.message || "An unexpected error occurred"

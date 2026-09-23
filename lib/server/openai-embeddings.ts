@@ -1,3 +1,4 @@
+import { HttpError } from "@/lib/server/http-error"
 import { Tables } from "@/supabase/types"
 import { VALID_ENV_KEYS } from "@/types/valid-keys"
 import OpenAI from "openai"
@@ -16,13 +17,10 @@ type EmbeddingProfile = Pick<
   | "use_azure_openai"
 >
 
-export class EmbeddingRequestError extends Error {
-  status: number
-
+export class EmbeddingRequestError extends HttpError {
   constructor(message: string, status: number) {
-    super(message)
+    super(message, status)
     this.name = "EmbeddingRequestError"
-    this.status = status
   }
 }
 
