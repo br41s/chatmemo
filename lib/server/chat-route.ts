@@ -132,7 +132,9 @@ function jsonResponse(message: string, status: number): Response {
  */
 export function createChatRoute(config: ChatRouteConfig) {
   return async function POST(request: Request): Promise<Response> {
-    const json = await request.json()
+    const json = await request.json().catch(() => null)
+    if (!json) return jsonResponse("Request body must be valid JSON", 400)
+
     const { chatSettings, messages, contextBudget } = json as {
       chatSettings: ChatSettings
       messages: any[]
