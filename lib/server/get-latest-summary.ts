@@ -106,7 +106,7 @@ export async function getLatestSummaryForUser(
   userId: string,
   budget: ContextBudget = resolveContextBudget()
 ): Promise<string | null> {
-  const supabase = createClient(cookies())
+  const supabase = createClient(await cookies())
 
   // The budget is part of the cache key, not just the query: the same rows
   // assembled under a different allowance are a different blob, so switching

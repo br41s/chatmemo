@@ -123,7 +123,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const supabase = createClient(cookies())
+    const supabase = createClient(await cookies())
     const openai = createOpenRouterClient(openrouterKey, 30_000)
     let inserted = 0
     let rawInserted = 0

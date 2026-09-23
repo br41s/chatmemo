@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
       TIMELINE_PAGE
     )
 
-    const supabase = createClient(cookies())
+    const supabase = createClient(await cookies())
 
     // One row past the page, so hasMore needs no second query.
     const { data, error } = await supabase

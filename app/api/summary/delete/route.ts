@@ -15,7 +15,7 @@ export async function DELETE(request: NextRequest) {
       )
     }
 
-    const supabase = createClient(cookies())
+    const supabase = createClient(await cookies())
     const { error } = await supabase
       .from("summaries")
       .delete()

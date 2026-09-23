@@ -21,9 +21,9 @@ const APP_DESCRIPTION =
 
 interface RootLayoutProps {
   children: ReactNode
-  params: {
+  params: Promise<{
     locale: string
-  }
+  }>
 }
 
 export const metadata: Metadata = {
@@ -70,9 +70,10 @@ const i18nNamespaces = ["translation"]
 
 export default async function RootLayout({
   children,
-  params: { locale }
+  params
 }: RootLayoutProps) {
-  const cookieStore = cookies()
+  const { locale } = await params
+  const cookieStore = await cookies()
   const supabase = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,

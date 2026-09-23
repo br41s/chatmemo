@@ -7,7 +7,10 @@ import { cookies } from "next/headers"
 // and return type — which is how `user_lessons` stayed missing from
 // supabase/types.ts while six places queried it, with nothing to say so.
 
-export const createClient = (cookieStore: ReturnType<typeof cookies>) => {
+// Takes the awaited store: `cookies()` is async from Next 15.
+export const createClient = (
+  cookieStore: Awaited<ReturnType<typeof cookies>>
+) => {
   return createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,

@@ -25,14 +25,14 @@ import { ReactNode } from "react"
  */
 interface WorkspaceLayoutProps {
   children: ReactNode
-  params: { workspaceid: string }
+  params: Promise<{ workspaceid: string }>
 }
 
 export default async function WorkspaceLayout({
   children,
   params
 }: WorkspaceLayoutProps) {
-  const supabase = createClient(cookies())
+  const supabase = createClient(await cookies())
 
   // `getUser` rather than `getSession`: this decides whether to serve the
   // workspace, so it has to be the answer the auth server gives, not whatever
@@ -45,7 +45,7 @@ export default async function WorkspaceLayout({
     redirect("/login")
   }
 
-  const data = await getWorkspaceData(params.workspaceid)
+  const data = await getWorkspaceData((await params).workspaceid)
 
   if (!data) {
     notFound()

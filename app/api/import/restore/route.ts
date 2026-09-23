@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
   try {
     const profile = await getServerProfile()
     const userId = profile.user_id
-    const supabase = createClient(cookies())
+    const supabase = createClient(await cookies())
 
     let body: { rows?: unknown }
     try {

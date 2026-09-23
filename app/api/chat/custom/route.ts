@@ -121,7 +121,7 @@ export async function POST(request: Request) {
       "temperature" in parsed.data
         ? parsed.data.temperature
         : parsed.data.chatSettings.temperature
-    const supabase = createClient(cookies())
+    const supabase = createClient(await cookies())
     const {
       data: { user },
       error: authError

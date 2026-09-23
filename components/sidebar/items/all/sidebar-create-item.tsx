@@ -34,7 +34,7 @@ interface SidebarCreateItemProps {
   isTyping: boolean
   onOpenChange: (isOpen: boolean) => void
   contentType: ContentType
-  renderInputs: () => JSX.Element
+  renderInputs: () => React.JSX.Element
   createState: any
 }
 

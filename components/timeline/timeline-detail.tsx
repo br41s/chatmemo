@@ -20,7 +20,7 @@ interface TimelineDetailProps {
   entries: TimelineEntry[]
   window: DetailWindow
   total: number
-  focusedRef: RefObject<HTMLDivElement>
+  focusedRef: RefObject<HTMLDivElement | null>
   onClose: () => void
   onLoadAbove: () => void
   onLoadBelow: () => void

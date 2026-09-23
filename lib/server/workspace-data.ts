@@ -42,7 +42,7 @@ export interface WorkspaceData {
 export async function getWorkspaceData(
   workspaceId: string
 ): Promise<WorkspaceData | null> {
-  const supabase = createClient(cookies())
+  const supabase = createClient(await cookies())
 
   const [
     workspace,

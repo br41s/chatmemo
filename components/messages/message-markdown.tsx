@@ -32,7 +32,7 @@ export const MessageMarkdown: FC<MessageMarkdownProps> = ({ content }) => {
           const childArray = React.Children.toArray(children)
           const firstChild = childArray[0] as React.ReactElement
           const firstChildAsString = React.isValidElement(firstChild)
-            ? (firstChild as React.ReactElement).props.children
+            ? (firstChild as React.ReactElement<{ children?: React.ReactNode }>).props.children
             : firstChild
 
           if (firstChildAsString === "▍") {

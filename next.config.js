@@ -58,15 +58,13 @@ module.exports = withBundleAnalyzer(
         }
       ]
     },
-    experimental: {
-      // NEVER externalize or bundle @huggingface/transformers: Vercel
-      // whole-copies externalized packages into functions (356MB > 250MB
-      // limit, proven with a cache-free build), and its pre-bundled dist
-      // breaks webpack on wasm/webgpu refs. It is loaded via an eval-hidden
-      // dynamic import in lib/generate-local-embedding.ts instead, so no
-      // build tool ever sees it. sharp/onnxruntime-node stay external for
-      // self-hosted runtimes where the hidden import resolves them.
-      serverComponentsExternalPackages: ["sharp", "onnxruntime-node"]
-    }
+    // NEVER externalize or bundle @huggingface/transformers: Vercel
+    // whole-copies externalized packages into functions (356MB > 250MB
+    // limit, proven with a cache-free build), and its pre-bundled dist
+    // breaks webpack on wasm/webgpu refs. It is loaded via an eval-hidden
+    // dynamic import in lib/generate-local-embedding.ts instead, so no
+    // build tool ever sees it. sharp/onnxruntime-node stay external for
+    // self-hosted runtimes where the hidden import resolves them.
+    serverExternalPackages: ["sharp", "onnxruntime-node"]
   })
 )

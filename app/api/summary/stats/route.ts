@@ -20,7 +20,7 @@ export const runtime: ServerRuntime = "nodejs"
 export async function GET() {
   try {
     const profile = await getServerProfile()
-    const supabase = createClient(cookies())
+    const supabase = createClient(await cookies())
 
     const { count, error } = await supabase
       .from("summaries")

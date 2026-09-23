@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
   try {
     const profile = await getServerProfile()
     const userId = profile.user_id
-    const supabase = createClient(cookies())
+    const supabase = createClient(await cookies())
 
     const { limit, offset } = parsePageParams(
       request.nextUrl.searchParams,
