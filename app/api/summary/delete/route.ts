@@ -1,11 +1,11 @@
-import { getServerProfile } from "@/lib/server/server-chat-helpers"
-import { createClient } from "@/lib/supabase/server"
-import { cookies } from "next/headers"
+import { requireUser } from "@/lib/server/require-user"
 import { NextRequest, NextResponse } from "next/server"
 
 export async function DELETE(request: NextRequest) {
   try {
-    const profile = await getServerProfile()
+    const auth = await requireUser()
+    if ("response" in auth) return auth.response
+    const { supabase, userId } = auth
     const { id } = await request.json()
 
     if (!id || typeof id !== "string") {
@@ -15,12 +15,11 @@ export async function DELETE(request: NextRequest) {
       )
     }
 
-    const supabase = createClient(await cookies())
     const { error } = await supabase
       .from("summaries")
       .delete()
       .eq("id", id)
-      .eq("user_id", profile.user_id)
+      .eq("user_id", userId)
 
     if (error) {
       return NextResponse.json(

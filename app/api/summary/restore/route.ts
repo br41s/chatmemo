@@ -1,7 +1,5 @@
-import { getServerProfile } from "@/lib/server/server-chat-helpers"
-import { createClient } from "@/lib/supabase/server"
+import { requireUser } from "@/lib/server/require-user"
 import { insertSummary } from "@/db/summaries"
-import { cookies } from "next/headers"
 import { NextRequest, NextResponse } from "next/server"
 import { ServerRuntime } from "next"
 
@@ -9,8 +7,9 @@ export const runtime: ServerRuntime = "nodejs"
 
 export async function POST(request: NextRequest) {
   try {
-    const profile = await getServerProfile()
-    const userId = profile.user_id
+    const auth = await requireUser()
+    if ("response" in auth) return auth.response
+    const { supabase, userId } = auth
 
     const body = await request.json()
     const id = body?.id
@@ -21,8 +20,6 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
-
-    const supabase = createClient(await cookies())
 
     // Fetch the target row and verify ownership in a single query
     const { data: row, error: fetchError } = await supabase

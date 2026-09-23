@@ -9,10 +9,8 @@
  * Returns: { success: boolean; inserted: number; skipped: number }
  */
 
-import { getServerProfile } from "@/lib/server/server-chat-helpers"
-import { createClient } from "@/lib/supabase/server"
+import { requireUser } from "@/lib/server/require-user"
 import { summaryMetadataColumns } from "@/lib/summary-metadata"
-import { cookies } from "next/headers"
 import { NextRequest, NextResponse } from "next/server"
 import { ServerRuntime } from "next"
 
@@ -22,9 +20,9 @@ const MAX_ROWS = 50_000 // safety cap
 
 export async function POST(request: NextRequest) {
   try {
-    const profile = await getServerProfile()
-    const userId = profile.user_id
-    const supabase = createClient(await cookies())
+    const auth = await requireUser()
+    if ("response" in auth) return auth.response
+    const { supabase, userId } = auth
 
     let body: { rows?: unknown }
     try {
