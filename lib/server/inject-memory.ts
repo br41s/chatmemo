@@ -10,6 +10,10 @@ import {
   resolveContextBudget
 } from "@/lib/context-budget"
 import { buildMemoryReport, MemoryReport } from "@/lib/memory-report"
+import { buildAugmentedOpenAIMessages, MEMORY_TAG } from "@/lib/memory-block"
+
+// Re-exported so existing importers keep one entry point for injection.
+export { buildAugmentedOpenAIMessages }
 
 // ---------------------------------------------------------------------------
 // Shared memory injection
@@ -28,8 +32,6 @@ import { buildMemoryReport, MemoryReport } from "@/lib/memory-report"
 //     adapted to role "user" with a text part (see adaptMessagesForGoogleGemini
 //     in lib/build-prompt.ts).
 // ---------------------------------------------------------------------------
-
-const MEMORY_TAG = "[CHATMEMO_MEMORY]"
 
 const MEMORY_INSTRUCTIONS = `\
 You are a personal AI assistant with access to several persistent knowledge sources about this user:
@@ -152,34 +154,6 @@ async function fetchMemoryBlock(
 // ---------------------------------------------------------------------------
 
 /**
- * Prepend a memory block to OpenAI-format messages ({ role, content }). The
- * block is prepended to the existing system message, or a new system message is
- * inserted when there is none. Idempotent: if the system message already
- * carries the memory tag (e.g. on a regeneration/retry) the input is returned
- * unchanged.
- */
-export function buildAugmentedOpenAIMessages(
-  messages: any[],
-  memoryBlock: string
-): any[] {
-  const first = messages[0]
-
-  if (first?.role === "system") {
-    // Can't inject into non-string content (array of parts) — leave unchanged
-    if (typeof first.content !== "string") return messages
-    // Already injected — skip to prevent duplication on retries
-    if (first.content.includes(MEMORY_TAG)) return messages
-    return [
-      { ...first, content: `${memoryBlock}${first.content}` },
-      ...messages.slice(1)
-    ]
-  }
-
-  // No system message — insert one
-  return [{ role: "system", content: memoryBlock }, ...messages]
-}
-
-/**
  * Prepend a memory block to Google Gemini-format messages
  * ({ role, parts: [{ text }] }). The block is prepended to the first message's
  * first text part (the adapted system prompt), or a new user message carrying
@@ -217,6 +191,22 @@ export function buildAugmentedGoogleMessages(
  * Inject memory into OpenAI-format messages ({ role, content }). Used by
  * openrouter/openai/anthropic/mistral/groq/perplexity/azure routes.
  */
+/**
+ * The memory block alone, for a caller that places it itself — the Ollama
+ * path, which runs in the browser and calls localhost directly.
+ */
+export async function memoryBlockFor(
+  userId: string,
+  lastUserText: string,
+  budgetHint?: ContextBudgetHint
+): Promise<MemoryInjection> {
+  return fetchMemoryBlock(
+    userId,
+    lastUserText,
+    resolveContextBudget(budgetHint)
+  )
+}
+
 export interface InjectedMessages {
   messages: any[]
   report: MemoryReport
