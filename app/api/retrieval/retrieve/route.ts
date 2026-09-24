@@ -1,17 +1,12 @@
+import { HttpError } from "@/lib/server/http-error"
 import { generateLocalEmbedding } from "@/lib/generate-local-embedding"
 import {
   MAX_RETRIEVAL_FILE_IDS,
   MAX_RETRIEVAL_QUERY_CHARS,
   MAX_RETRIEVAL_SOURCE_COUNT
 } from "@/lib/retrieval/limits"
-import {
-  LimitedJsonError,
-  readLimitedJson
-} from "@/lib/server/read-limited-json"
-import {
-  EmbeddingRequestError,
-  generateOpenAIEmbeddings
-} from "@/lib/server/openai-embeddings"
+import { readLimitedJson } from "@/lib/server/read-limited-json"
+import { generateOpenAIEmbeddings } from "@/lib/server/openai-embeddings"
 import { getServerProfile } from "@/lib/server/server-chat-helpers"
 import { createClient } from "@/lib/supabase/server"
 import { cookies } from "next/headers"
@@ -29,16 +24,6 @@ const requestSchema = z
   })
   .strict()
 
-class RetrievalRouteError extends Error {
-  status: number
-
-  constructor(message: string, status: number) {
-    super(message)
-    this.name = "RetrievalRouteError"
-    this.status = status
-  }
-}
-
 function errorResponse(message: string, status: number) {
   return new Response(JSON.stringify({ message }), {
     status,
@@ -54,7 +39,7 @@ export async function POST(request: Request) {
     })
     const parsed = requestSchema.safeParse(json)
     if (!parsed.success) {
-      throw new RetrievalRouteError("Retrieval request is invalid", 400)
+      throw new HttpError("Retrieval request is invalid", 400)
     }
 
     const { userInput, fileIds, embeddingsProvider, sourceCount } = parsed.data
@@ -66,7 +51,7 @@ export async function POST(request: Request) {
     } = await supabase.auth.getUser()
 
     if (authError || !user) {
-      throw new RetrievalRouteError("Authentication required", 401)
+      throw new HttpError("Authentication required", 401)
     }
 
     const { data: visibleFiles, error: filesError } = await supabase
@@ -75,7 +60,7 @@ export async function POST(request: Request) {
       .in("id", uniqueFileIds)
 
     if (filesError) {
-      throw new RetrievalRouteError("File lookup failed", 500)
+      throw new HttpError("File lookup failed", 500)
     }
 
     const visibleIds = new Set((visibleFiles || []).map(file => file.id))
@@ -83,7 +68,7 @@ export async function POST(request: Request) {
       visibleIds.size !== uniqueFileIds.length ||
       uniqueFileIds.some(fileId => !visibleIds.has(fileId))
     ) {
-      throw new RetrievalRouteError("One or more files are unavailable", 403)
+      throw new HttpError("One or more files are unavailable", 403)
     }
 
     const profile = await getServerProfile()
@@ -140,11 +125,7 @@ export async function POST(request: Request) {
       headers: { "Content-Type": "application/json" }
     })
   } catch (error) {
-    if (
-      error instanceof EmbeddingRequestError ||
-      error instanceof LimitedJsonError ||
-      error instanceof RetrievalRouteError
-    ) {
+    if (error instanceof HttpError) {
       return errorResponse(error.message, error.status)
     }
 

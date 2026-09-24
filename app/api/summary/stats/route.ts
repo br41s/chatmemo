@@ -1,6 +1,4 @@
-import { getServerProfile } from "@/lib/server/server-chat-helpers"
-import { createClient } from "@/lib/supabase/server"
-import { cookies } from "next/headers"
+import { requireUser } from "@/lib/server/require-user"
 import { NextResponse } from "next/server"
 import { ServerRuntime } from "next"
 
@@ -19,13 +17,14 @@ export const runtime: ServerRuntime = "nodejs"
  */
 export async function GET() {
   try {
-    const profile = await getServerProfile()
-    const supabase = createClient(await cookies())
+    const auth = await requireUser()
+    if ("response" in auth) return auth.response
+    const { supabase, userId } = auth
 
     const { count, error } = await supabase
       .from("summaries")
       .select("id", { count: "exact", head: true })
-      .eq("user_id", profile.user_id)
+      .eq("user_id", userId)
       .in("kind", ["conversation", "summary"])
 
     if (error) {

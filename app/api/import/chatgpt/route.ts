@@ -1,3 +1,4 @@
+import { HttpError } from "@/lib/server/http-error"
 import {
   importTooLargeMessage,
   MAX_IMPORT_FILE_BYTES
@@ -233,6 +234,7 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected error"
-    return NextResponse.json({ success: false, message }, { status: 500 })
+    const status = error instanceof HttpError ? error.status : 500
+    return NextResponse.json({ success: false, message }, { status })
   }
 }

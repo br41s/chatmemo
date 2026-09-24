@@ -1,3 +1,4 @@
+import { HttpError } from "@/lib/server/http-error"
 import {
   ContextBudget,
   ContextBudgetHint,
@@ -89,6 +90,12 @@ export function chatErrorMessage(
   error: any,
   incorrectKey: IncorrectKeySignal = DEFAULT_INCORRECT_KEY
 ): { message: string; status: number } {
+  // Our own errors already say what happened. A missing session is a 401 too,
+  // and must not be read as the provider rejecting the key.
+  if (error instanceof HttpError) {
+    return { message: error.message, status: error.status }
+  }
+
   // Azure's SDK nests it; the rest put it on the error itself.
   const raw: string =
     error?.message || error?.error?.message || "An unexpected error occurred"

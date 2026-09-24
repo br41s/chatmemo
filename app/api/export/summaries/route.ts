@@ -19,11 +19,9 @@
  * }
  */
 
-import { getServerProfile } from "@/lib/server/server-chat-helpers"
+import { requireUser } from "@/lib/server/require-user"
 import { classifySummaryContent } from "@/lib/summary-metadata"
 import { EXPORT_PAGE, parsePageParams, takePage } from "@/lib/server/pagination"
-import { createClient } from "@/lib/supabase/server"
-import { cookies } from "next/headers"
 import { NextRequest, NextResponse } from "next/server"
 import { ServerRuntime } from "next"
 
@@ -33,9 +31,9 @@ type Row = { content: string; created_at: string }
 
 export async function GET(request: NextRequest) {
   try {
-    const profile = await getServerProfile()
-    const userId = profile.user_id
-    const supabase = createClient(await cookies())
+    const auth = await requireUser()
+    if ("response" in auth) return auth.response
+    const { supabase, userId } = auth
 
     const { limit, offset } = parsePageParams(
       request.nextUrl.searchParams,

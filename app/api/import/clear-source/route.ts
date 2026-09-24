@@ -1,6 +1,4 @@
-import { getServerProfile } from "@/lib/server/server-chat-helpers"
-import { createClient } from "@/lib/supabase/server"
-import { cookies } from "next/headers"
+import { requireUser } from "@/lib/server/require-user"
 import { NextRequest, NextResponse } from "next/server"
 import { ServerRuntime } from "next"
 
@@ -24,9 +22,9 @@ export async function DELETE(request: NextRequest) {
       )
     }
 
-    const profile = await getServerProfile()
-    const userId = profile.user_id
-    const supabase = createClient(await cookies())
+    const auth = await requireUser()
+    if ("response" in auth) return auth.response
+    const { supabase, userId } = auth
 
     // One predicate replaces the four content patterns this used to sweep for.
     // The typed source column already covers the tagged rows, their `:summary`

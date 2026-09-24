@@ -1,3 +1,4 @@
+import { HttpError } from "@/lib/server/http-error"
 /**
  * POST /api/import/conversation
  *
@@ -226,7 +227,14 @@ export async function POST(request: NextRequest) {
       : raw
     return NextResponse.json(
       { success: false, message },
-      { status: isRateLimit ? 429 : 500, headers }
+      {
+        status: isRateLimit
+          ? 429
+          : error instanceof HttpError
+            ? error.status
+            : 500,
+        headers
+      }
     )
   }
 }

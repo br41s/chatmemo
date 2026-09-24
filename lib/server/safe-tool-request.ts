@@ -1,3 +1,4 @@
+import { HttpError } from "@/lib/server/http-error"
 import { lookup as dnsLookup } from "node:dns/promises"
 import { IncomingHttpHeaders, IncomingMessage } from "node:http"
 import { request as httpsRequest, RequestOptions } from "node:https"
@@ -81,13 +82,10 @@ const blockedHostnameSuffixes = [
 
 const redirectStatuses = new Set([301, 302, 303, 307, 308])
 
-export class UnsafeToolRequestError extends Error {
-  status: number
-
+export class UnsafeToolRequestError extends HttpError {
   constructor(message: string, status = 400) {
-    super(message)
+    super(message, status)
     this.name = "UnsafeToolRequestError"
-    this.status = status
   }
 }
 

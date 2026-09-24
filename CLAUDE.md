@@ -55,6 +55,11 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
   LangChain's `CSVLoader` (CSV uploads break without it, no compile error).
 - Routes must never break chat on memory failure: memory retrieval errors are
   caught and degrade to no-memory (see `fetchMemoryBlock`).
+- **Route auth and errors:** a route that only needs the user calls
+  `requireUser()` (`lib/server/require-user.ts`), which returns the 401 itself;
+  `getServerProfile()` is for routes that need the stored API keys. Throw
+  `HttpError` (`lib/server/http-error.ts`), or a subclass, for anything the
+  user should read; routes answer it with its status and log the rest as 500.
 - **Request APIs are async (Next 15):** `cookies()`, `headers()`, `params`
   and `searchParams` are Promises — `createClient(await cookies())`.
 - Never commit `.env.local`; bearer-token import auth is configured by

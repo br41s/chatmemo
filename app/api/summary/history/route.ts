@@ -1,12 +1,10 @@
-import { getServerProfile } from "@/lib/server/server-chat-helpers"
+import { requireUser } from "@/lib/server/require-user"
 import {
   HISTORY_PAGE,
   parsePageParams,
   takePage
 } from "@/lib/server/pagination"
-import { createClient } from "@/lib/supabase/server"
 import { Database } from "@/supabase/types"
-import { cookies } from "next/headers"
 import { NextRequest, NextResponse } from "next/server"
 import { ServerRuntime } from "next"
 
@@ -16,15 +14,14 @@ export type SummaryRow = Database["public"]["Tables"]["summaries"]["Row"]
 
 export async function GET(request: NextRequest) {
   try {
-    const profile = await getServerProfile()
-    const userId = profile.user_id
+    const auth = await requireUser()
+    if ("response" in auth) return auth.response
+    const { supabase, userId } = auth
 
     const { limit, offset } = parsePageParams(
       request.nextUrl.searchParams,
       HISTORY_PAGE
     )
-
-    const supabase = createClient(await cookies())
 
     // One row past the page, so hasMore needs no second query.
     const { data, error } = await supabase
