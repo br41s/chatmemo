@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const supabase = createClient(cookies())
+    const supabase = createClient(await cookies())
 
     // Fetch the target row and verify ownership in a single query
     const { data: row, error: fetchError } = await supabase

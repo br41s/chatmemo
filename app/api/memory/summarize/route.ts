@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
     const userId = profile.user_id
     const openrouterKey = resolveOpenRouterKey(profile)
 
-    const supabase = createClient(cookies())
+    const supabase = createClient(await cookies())
 
     // Verify the chat belongs to the authenticated user
     const { data: chat, error: chatError } = await supabase

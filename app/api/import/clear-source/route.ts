@@ -26,7 +26,7 @@ export async function DELETE(request: NextRequest) {
 
     const profile = await getServerProfile()
     const userId = profile.user_id
-    const supabase = createClient(cookies())
+    const supabase = createClient(await cookies())
 
     // One predicate replaces the four content patterns this used to sweep for.
     // The typed source column already covers the tagged rows, their `:summary`

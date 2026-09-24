@@ -59,7 +59,7 @@ export async function POST(request: Request) {
 
     const { userInput, fileIds, embeddingsProvider, sourceCount } = parsed.data
     const uniqueFileIds = [...new Set(fileIds)]
-    const supabase = createClient(cookies())
+    const supabase = createClient(await cookies())
     const {
       data: { user },
       error: authError

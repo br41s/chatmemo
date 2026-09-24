@@ -70,7 +70,7 @@ function errorResponse(message: string, status: number) {
 
 export async function POST(req: Request) {
   try {
-    const supabase = createClient(cookies())
+    const supabase = createClient(await cookies())
     const {
       data: { user },
       error: authError

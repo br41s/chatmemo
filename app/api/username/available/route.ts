@@ -42,7 +42,7 @@ export async function POST(request: Request) {
       return jsonResponse({ message: "Username is invalid" }, 400)
     }
 
-    const supabase = createClient(cookies())
+    const supabase = createClient(await cookies())
     const {
       data: { user },
       error: authError

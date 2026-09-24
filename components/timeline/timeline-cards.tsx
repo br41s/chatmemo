@@ -92,7 +92,7 @@ export function ConvCard({
 }: {
   entry: TimelineEntry
   focused: boolean
-  focusedRef?: React.RefObject<HTMLDivElement>
+  focusedRef?: React.RefObject<HTMLDivElement | null>
 }) {
   const hasContent = entry.content.trim().length > 0
 

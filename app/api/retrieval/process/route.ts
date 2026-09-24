@@ -63,7 +63,7 @@ function errorResponse(message: string, status: number) {
 export async function POST(req: Request) {
   try {
     const profile = await getServerProfile()
-    const supabase = createSessionClient(cookies())
+    const supabase = createSessionClient(await cookies())
 
     const formData = await readLimitedFormData(req, {
       maxBytes: MAX_FORM_BYTES,

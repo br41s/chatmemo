@@ -6,7 +6,7 @@ interface TextareaAutosizeProps {
   value: string
   onValueChange: (value: string) => void
 
-  textareaRef?: React.RefObject<HTMLTextAreaElement>
+  textareaRef?: React.RefObject<HTMLTextAreaElement | null>
   className?: string
 
   placeholder?: string

@@ -13,7 +13,7 @@ interface SidebarItemProps {
   contentType: ContentType
   icon: React.ReactNode
   updateState: any
-  renderInputs: (renderState: any) => JSX.Element
+  renderInputs: (renderState: any) => React.JSX.Element
 }
 
 export const SidebarItem: FC<SidebarItemProps> = ({

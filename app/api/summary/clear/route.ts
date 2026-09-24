@@ -6,7 +6,7 @@ import { NextResponse } from "next/server"
 export async function DELETE() {
   try {
     const profile = await getServerProfile()
-    const supabase = createClient(cookies())
+    const supabase = createClient(await cookies())
 
     const { error, count } = await supabase
       .from("summaries")

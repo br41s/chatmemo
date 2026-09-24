@@ -187,7 +187,7 @@ See the [User Guide](docs/USER_GUIDE.md#3-importing-conversations) for source-sp
 
 ## Tech stack
 
-- **Application:** Next.js 14 App Router, TypeScript, Tailwind CSS, shadcn/ui
+- **Application:** Next.js 15 App Router, React 19, TypeScript, Tailwind CSS, shadcn/ui
 - **Database and auth:** Supabase Postgres, Storage, Auth, and Row Level Security
 - **Memory summarisation:** OpenRouter
 - **Chat providers:** OpenAI, Anthropic, Gemini, Mistral, Groq, Perplexity, Azure OpenAI, and OpenRouter

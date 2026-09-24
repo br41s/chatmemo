@@ -35,7 +35,7 @@ export interface InitialData {
 export async function getInitialData(
   userId: string
 ): Promise<InitialData | null> {
-  const supabase = createClient(cookies())
+  const supabase = createClient(await cookies())
 
   const [profile, workspaces] = await Promise.all([
     supabase.from("profiles").select("*").eq("user_id", userId).single(),

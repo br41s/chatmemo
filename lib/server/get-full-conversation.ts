@@ -163,7 +163,7 @@ export async function getFullConversationForUser(
 
   const maxTotalChars = budget.fullConversationChars
 
-  const supabase = createClient(cookies())
+  const supabase = createClient(await cookies())
   const isoDate = extractIsoDate(userMessage)
   const quoted = extractQuotedPhrases(userMessage)
   const topicWords = extractTopicWords(userMessage)

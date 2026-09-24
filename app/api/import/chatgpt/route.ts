@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const supabase = createClient(cookies())
+    const supabase = createClient(await cookies())
 
     // ------------------------------------------------------------------
     // Incremental import: skip conversations already seen in a prior import.

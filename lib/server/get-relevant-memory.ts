@@ -106,7 +106,7 @@ export async function getRelevantMemoryForUser(
   const terms = buildRelevantTerms(userMessage)
   if (terms.length === 0) return null
 
-  const supabase = createClient(cookies())
+  const supabase = createClient(await cookies())
 
   interface Candidate {
     content: string

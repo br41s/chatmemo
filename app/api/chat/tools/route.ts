@@ -85,7 +85,7 @@ export async function POST(request: Request) {
       legacySelectedTools?.map(selectedTool => selectedTool?.id)
     const toolIds = validateSelectedToolIds(requestedToolIds)
     const profile = await getServerProfile()
-    const supabase = createClient(cookies())
+    const supabase = createClient(await cookies())
 
     const { data: storedTools, error: toolsError } = await supabase
       .from("tools")

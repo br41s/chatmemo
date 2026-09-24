@@ -11,7 +11,7 @@ Paths are workspace-relative — never hardcode an absolute home directory.
 
 ## Stack
 
-Next.js 14 App Router + TypeScript + Supabase + Tailwind + shadcn/ui.
+Next.js 15 App Router + React 19 + TypeScript + Supabase + Tailwind + shadcn/ui.
 Chat providers: OpenAI, Anthropic, Google, Mistral, Groq, Perplexity, Azure,
 OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
 
@@ -55,6 +55,8 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
   LangChain's `CSVLoader` (CSV uploads break without it, no compile error).
 - Routes must never break chat on memory failure: memory retrieval errors are
   caught and degrade to no-memory (see `fetchMemoryBlock`).
+- **Request APIs are async (Next 15):** `cookies()`, `headers()`, `params`
+  and `searchParams` are Promises — `createClient(await cookies())`.
 - Never commit `.env.local`; bearer-token import auth is configured by
   `npm run setup:sync`.
 
