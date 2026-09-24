@@ -13,6 +13,11 @@
 //
 // The migration's backfill mirrors these rules in SQL. `__tests__/lib/
 // summary-metadata.test.ts` pins the fixtures both sides must agree on.
+//
+// So does the `summaries_derive_metadata` trigger
+// (20260924000000_summaries_metadata_trigger.sql), which fills the columns for
+// any row inserted without them — the Claude Code session scripts POST content
+// only. Change a rule here and change it there.
 
 export type SummarySource = "claude" | "chatgpt" | "perplexity" | "other"
 
