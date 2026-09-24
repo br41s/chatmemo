@@ -42,8 +42,9 @@ const REQUIRED_COLUMNS = ["user_id", "content"] as const
  *
  * So a rejection for an unknown column is not fatal here. The row is written
  * again with only the columns the table is guaranteed to have, and the memory
- * survives with less metadata attached. The next reader derives what it needs
- * from `content`, which is where all of it came from in the first place.
+ * survives. The `summaries_derive_metadata` trigger fills the dropped columns
+ * back in from `content`, which is where all of it came from in the first
+ * place — without them the memory reads, which filter on `kind`, never see it.
  *
  * Anything else — a constraint violation, an RLS refusal, a dead connection —
  * still throws. Those are not schema lag and must not be papered over.

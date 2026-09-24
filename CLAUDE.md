@@ -21,7 +21,10 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
   sessions, bulk imports from ChatGPT/Claude/Perplexity/Gemini). Rows are
   written once rather than edited — there is no `updated_at` and no UPDATE
   policy — but they are deletable: the memory panel offers delete, clear-all
-  and restore (`20260518000000_summaries_delete_policy`).
+  and restore (`20260518000000_summaries_delete_policy`). Every memory read
+  filters on the typed `kind` column; a trigger derives `kind`/`source`/
+  `title`/`occurred_at` from `content` for writers that send content only
+  (the Claude Code session scripts), so a row without them is never invisible.
 - `lib/server/inject-memory.ts`: shared injector — every provider chat route,
   the tools route included, prepends the user's memory block to the system
   prompt. `custom` injects only for the user's own models (a shared model is
