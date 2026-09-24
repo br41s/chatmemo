@@ -378,6 +378,7 @@ export const useChatHandler = () => {
             regenerationTarget,
             newAbortController,
             budget,
+            budgetHint,
             setIsGenerating,
             setFirstTokenReceived,
             setChatMessages,

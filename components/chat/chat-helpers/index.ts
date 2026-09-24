@@ -16,6 +16,7 @@ import {
   MemoryReport
 } from "@/lib/memory-report"
 import { consumeReadableStream } from "@/lib/consume-stream"
+import { buildAugmentedOpenAIMessages } from "@/lib/memory-block"
 import {
   MAX_RETRIEVAL_FILE_IDS,
   MAX_RETRIEVAL_QUERY_CHARS
@@ -245,6 +246,31 @@ export const rollbackFailedChatMessages = (
   })
 }
 
+/**
+ * The memory block for a local (Ollama) turn. Any failure means no memory,
+ * never a failed chat — the same rule the server routes follow.
+ */
+const fetchLocalMemory = async (
+  messages: any[],
+  contextBudget: ContextBudgetHint
+): Promise<{ block: string | null; report: MemoryReport | null }> => {
+  const lastUser = [...messages].reverse().find(m => m.role === "user")
+  const lastUserText =
+    typeof lastUser?.content === "string" ? lastUser.content : ""
+
+  try {
+    const response = await fetch("/api/memory/block", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lastUserText, contextBudget })
+    })
+    if (!response.ok) return { block: null, report: null }
+    return await response.json()
+  } catch {
+    return { block: null, report: null }
+  }
+}
+
 export const handleLocalChat = async (
   payload: ChatPayload,
   profile: Tables<"profiles">,
@@ -254,18 +280,22 @@ export const handleLocalChat = async (
   regenerationTarget: RegenerationTarget | null,
   newAbortController: AbortController,
   budget: ContextBudget,
+  budgetHint: ContextBudgetHint,
   setIsGenerating: React.Dispatch<React.SetStateAction<boolean>>,
   setFirstTokenReceived: React.Dispatch<React.SetStateAction<boolean>>,
   setChatMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
   setToolInUse: React.Dispatch<React.SetStateAction<string>>,
   onMemoryReport?: (report: MemoryReport) => void
 ) => {
-  const formattedMessages = await buildFinalMessages(
-    payload,
-    profile,
-    [],
-    budget
-  )
+  const draftMessages = await buildFinalMessages(payload, profile, [], budget)
+
+  // The server never sees this request, so the memory block is fetched here
+  // and prepended before the conversation goes to localhost.
+  const memory = await fetchLocalMemory(draftMessages, budgetHint)
+  if (memory.report) onMemoryReport?.(memory.report)
+  const formattedMessages = memory.block
+    ? buildAugmentedOpenAIMessages(draftMessages, memory.block)
+    : draftMessages
 
   // Ollama API: https://github.com/jmorganca/ollama/blob/main/docs/api.md
   const response = await fetchChatResponse(
