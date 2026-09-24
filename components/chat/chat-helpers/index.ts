@@ -346,7 +346,8 @@ export const handleHostedChat = async (
       ? {
           customModelId: modelData.hostedId,
           temperature: payload.chatSettings.temperature,
-          messages: formattedMessages
+          messages: formattedMessages,
+          contextBudget: budgetHint
         }
       : {
           chatSettings: payload.chatSettings,

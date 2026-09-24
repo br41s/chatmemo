@@ -1,6 +1,7 @@
 /** @jest-environment node */
 
 import { POST } from "../../app/api/chat/custom/route"
+import { injectMemoryOpenAIFormat } from "../../lib/server/inject-memory"
 import { createSafeModelTextStream } from "../../lib/server/safe-model-stream"
 import { textStreamResponse } from "../../lib/server/streaming"
 import { createClient } from "../../lib/supabase/server"
@@ -17,6 +18,15 @@ jest.mock("../../lib/server/safe-model-stream", () => {
 jest.mock("../../lib/server/streaming", () => ({
   textStreamResponse: jest.fn(() => new Response("stream"))
 }))
+jest.mock("../../lib/server/inject-memory", () => ({
+  injectMemoryOpenAIFormat: jest.fn(async (messages: unknown[]) => ({
+    messages: [{ role: "system", content: "memory" }, ...messages],
+    report: { injected: true }
+  }))
+}))
+jest.mock("../../lib/server/memory-report-headers", () => ({
+  memoryReportHeaders: jest.fn(() => ({ "x-chatmemo-memory": "report" }))
+}))
 jest.mock("../../lib/supabase/server", () => ({
   createClient: jest.fn()
 }))
@@ -32,6 +42,7 @@ const mockCreateSafeModelTextStream = jest.mocked(createSafeModelTextStream)
 const mockTextStreamResponse = jest.mocked(textStreamResponse)
 const mockCreateClient = jest.mocked(createClient)
 const mockCookies = jest.mocked(cookies)
+const mockInjectMemory = jest.mocked(injectMemoryOpenAIFormat)
 
 function validBody(overrides: Record<string, unknown> = {}) {
   return {
@@ -214,8 +225,11 @@ describe("POST /api/chat/custom", () => {
     const response = await POST(createRequest(validBody({ messages })))
 
     expect(response.status).toBe(200)
+    // The owner's memory is prepended; the image parts pass through intact.
     expect(mockCreateSafeModelTextStream).toHaveBeenCalledWith(
-      expect.objectContaining({ messages })
+      expect.objectContaining({
+        messages: [{ role: "system", content: "memory" }, ...messages]
+      })
     )
   })
 
@@ -258,11 +272,12 @@ describe("POST /api/chat/custom", () => {
       }
     })
 
-    const request = createRequest(validBody())
+    const contextBudget = { windowTokens: 32_000 }
+    const request = createRequest(validBody({ contextBudget }))
     const response = await POST(request)
 
     expect(response.status).toBe(200)
-    expect(mockCreateClient).toHaveBeenCalledWith(mockCookies())
+    expect(mockCreateClient).toHaveBeenCalledWith(await mockCookies())
     expect(query.select).toHaveBeenCalledWith(
       "id, user_id, api_key, base_url, model_id"
     )
@@ -271,12 +286,22 @@ describe("POST /api/chat/custom", () => {
       apiKey: "stored-secret",
       baseUrl: "https://api.example.com/v1",
       correlationId: expect.any(String),
-      messages: [{ role: "user", content: "Hello" }],
+      messages: [
+        { role: "system", content: "memory" },
+        { role: "user", content: "Hello" }
+      ],
       model: "stored-model",
       signal: request.signal,
       temperature: 0.7
     })
-    expect(mockTextStreamResponse).toHaveBeenCalledTimes(1)
+    expect(mockInjectMemory).toHaveBeenCalledWith(
+      [{ role: "user", content: "Hello" }],
+      OWNER_ID,
+      contextBudget
+    )
+    expect(mockTextStreamResponse).toHaveBeenCalledWith(expect.anything(), {
+      "x-chatmemo-memory": "report"
+    })
   })
 
   it("allows an authenticated user to execute a shared keyless model", async () => {
@@ -295,7 +320,13 @@ describe("POST /api/chat/custom", () => {
 
     expect(response.status).toBe(200)
     expect(mockCreateSafeModelTextStream).toHaveBeenCalledWith(
-      expect.objectContaining({ apiKey: "", model: "public-model" })
+      expect.objectContaining({
+        apiKey: "",
+        model: "public-model",
+        // Someone else's endpoint never receives this user's memory.
+        messages: [{ role: "user", content: "Hello" }]
+      })
     )
+    expect(mockInjectMemory).not.toHaveBeenCalled()
   })
 })
