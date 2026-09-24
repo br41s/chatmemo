@@ -67,7 +67,7 @@ import { toast } from "sonner"
 import { SidebarDeleteItem } from "./sidebar-delete-item"
 import { syncItemLinks } from "./sync-item-links"
 import { useItemLinks } from "./use-item-links"
-import { useItemWorkspaces } from "./use-item-workspaces"
+import { ItemWorkspaceLink, useItemWorkspaces } from "./use-item-workspaces"
 
 interface SidebarUpdateItemProps {
   isTyping: boolean
@@ -142,10 +142,10 @@ export const SidebarUpdateItem: FC<SidebarUpdateItemProps> = ({
    * Reassign workspaces, and drop the item from the sidebar if it just left the
    * one being viewed.
    */
-  const applyWorkspaces = async (
-    itemIdKey: string,
+  const applyWorkspaces = async <K extends string>(
+    itemIdKey: K,
     removeLink: (itemId: string, workspaceId: string) => Promise<boolean>,
-    createLinks: (links: any[]) => Promise<void>
+    createLinks: (links: ItemWorkspaceLink<K>[]) => Promise<unknown>
   ) => {
     const { leftCurrentWorkspace } = await itemWorkspaces.applyChanges(
       item.id,
@@ -171,7 +171,7 @@ export const SidebarUpdateItem: FC<SidebarUpdateItemProps> = ({
       await applyWorkspaces(
         "preset_id",
         deletePresetWorkspace,
-        createPresetWorkspaces as any
+        createPresetWorkspaces
       )
       return updated
     },
@@ -181,7 +181,7 @@ export const SidebarUpdateItem: FC<SidebarUpdateItemProps> = ({
       await applyWorkspaces(
         "prompt_id",
         deletePromptWorkspace,
-        createPromptWorkspaces as any
+        createPromptWorkspaces
       )
       return updated
     },
@@ -191,7 +191,7 @@ export const SidebarUpdateItem: FC<SidebarUpdateItemProps> = ({
       await applyWorkspaces(
         "file_id",
         deleteFileWorkspace,
-        createFileWorkspaces as any
+        createFileWorkspaces
       )
       return updated
     },
@@ -214,7 +214,7 @@ export const SidebarUpdateItem: FC<SidebarUpdateItemProps> = ({
       await applyWorkspaces(
         "collection_id",
         deleteCollectionWorkspace,
-        createCollectionWorkspaces as any
+        createCollectionWorkspaces
       )
 
       return updated
@@ -284,7 +284,7 @@ export const SidebarUpdateItem: FC<SidebarUpdateItemProps> = ({
       await applyWorkspaces(
         "assistant_id",
         deleteAssistantWorkspace,
-        createAssistantWorkspaces as any
+        createAssistantWorkspaces
       )
 
       return updated
@@ -295,7 +295,7 @@ export const SidebarUpdateItem: FC<SidebarUpdateItemProps> = ({
       await applyWorkspaces(
         "tool_id",
         deleteToolWorkspace,
-        createToolWorkspaces as any
+        createToolWorkspaces
       )
       return updated
     },
@@ -305,7 +305,7 @@ export const SidebarUpdateItem: FC<SidebarUpdateItemProps> = ({
       await applyWorkspaces(
         "model_id",
         deleteModelWorkspace,
-        createModelWorkspaces as any
+        createModelWorkspaces
       )
       return updated
     }

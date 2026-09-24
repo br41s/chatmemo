@@ -14,6 +14,12 @@ import { useState } from "react"
 
 type WorkspaceReader = (itemId: string) => Promise<Tables<"workspaces">[]>
 
+/** A link-table row keyed by the item's own column, e.g. `preset_id`. */
+export type ItemWorkspaceLink<K extends string> = {
+  user_id: string
+  workspace_id: string
+} & Record<K, string>
+
 const READERS: Partial<Record<ContentType, WorkspaceReader>> = {
   presets: async id => (await getPresetWorkspacesByPresetId(id)).workspaces,
   prompts: async id => (await getPromptWorkspacesByPromptId(id)).workspaces,
@@ -56,14 +62,12 @@ export function useItemWorkspaces(contentType: ContentType) {
    * Returns whether the item left the workspace currently being viewed — the
    * caller drops it from the sidebar when it has, since it is no longer here.
    */
-  const applyChanges = async (
+  const applyChanges = async <K extends string>(
     itemId: string,
-    itemIdKey: string,
+    itemIdKey: K,
     currentWorkspaceId: string | undefined,
     removeLink: (itemId: string, workspaceId: string) => Promise<boolean>,
-    createLinks: (
-      links: { user_id: string; item_id: string; workspace_id: string }[]
-    ) => Promise<void>
+    createLinks: (links: ItemWorkspaceLink<K>[]) => Promise<unknown>
   ): Promise<{ leftCurrentWorkspace: boolean }> => {
     if (!currentWorkspaceId) return { leftCurrentWorkspace: false }
 
@@ -74,14 +78,12 @@ export function useItemWorkspaces(contentType: ContentType) {
     }
 
     await createLinks(
-      toAdd.map(
-        workspace =>
-          ({
-            user_id: workspace.user_id,
-            [itemIdKey]: itemId,
-            workspace_id: workspace.id
-          }) as any
-      )
+      toAdd.map(workspace => ({
+        user_id: workspace.user_id,
+        workspace_id: workspace.id,
+        // TypeScript widens a computed key to `string`; the key is K.
+        ...({ [itemIdKey]: itemId } as Record<K, string>)
+      }))
     )
 
     return {
