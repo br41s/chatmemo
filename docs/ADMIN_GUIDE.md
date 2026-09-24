@@ -72,24 +72,25 @@ Local Ollama models follow a separate path: the browser discovers models at `NEX
 
 **Claude Code scripts** (run outside the Next.js server, talk to Supabase/OpenRouter directly):
 
-| Script | Purpose |
-|---|---|
-| `scripts/sync-to-chatmemo.mjs` | Stop hook — fires after every VS Code turn |
-| `scripts/import-claude-sessions.mjs` | One-shot bulk import of all past sessions |
-| `scripts/watch-claude-sessions.mjs` | Background daemon for macOS app auto-sync |
-| `scripts/claude-sessions-shared.mjs` | Shared utilities for the above three |
+| Script                               | Purpose                                    |
+| ------------------------------------ | ------------------------------------------ |
+| `scripts/sync-to-chatmemo.mjs`       | Stop hook — fires after every VS Code turn |
+| `scripts/import-claude-sessions.mjs` | One-shot bulk import of all past sessions  |
+| `scripts/watch-claude-sessions.mjs`  | Background daemon for macOS app auto-sync  |
+| `scripts/claude-sessions-shared.mjs` | Shared utilities for the above three       |
 
 All scripts use `~/.chatmemo/config.json` (written by `setup:sync`) and track imported sessions in `~/.chatmemo/imported-sessions.json`.
 
 ### Memory retrieval (three layers)
 
-Memory injection is centralised in **`lib/server/inject-memory.ts`** and shared by **every** provider chat route (openrouter, openai, anthropic, mistral, groq, perplexity, azure, google) — so the model knows about the user regardless of which model is selected. The injector handles both message shapes (OpenAI `{ role, content }` and Google Gemini `{ role, parts:[{text}] }`) and fails open: if any retrieval query throws, the chat continues with no memory rather than erroring. The three retrieval layers run in parallel before the completion call:
+Memory injection is centralised in **`lib/server/inject-memory.ts`** and shared by **every** provider chat route (openrouter, openai, anthropic, mistral, groq, perplexity, azure, google, and the tools route) — so the model knows about the user regardless of which model is selected. The injector handles both message shapes (OpenAI `{ role, content }` and Google Gemini `{ role, parts:[{text}] }`) and fails open: if any retrieval query throws, the chat continues with no memory rather than erroring. Two paths place the block differently. `custom` injects only when the model belongs to the requesting user; a shared model is another user's endpoint and receives no memory. Ollama runs in the browser against `localhost`, so the browser fetches the block from `POST /api/memory/block` and prepends it itself, keeping inference local. The three retrieval layers run in parallel before the completion call:
 
 1. **Baseline — compact summaries** (`lib/server/get-latest-summary.ts`). Every chat gets up to ~100 k chars of context: the lessons document, personal rows (capped 1 500 chars each), and bulk import rows (Perplexity/ChatGPT, capped **400 chars** each). Keeps the prompt small but bulk rows are title-only.
 
-2. **Always-on — relevance retrieval** (`lib/server/get-relevant-memory.ts`). On **every** turn, searches **all** summaries by the quoted phrases + topic words of the user's latest message, ranks candidates by distinct-term coverage (`rankByTermCoverage`, shared with layer 3), and injects the top matches **untruncated** (per-row cap 2 000 chars, total budget 6 000) as a `[RELEVANT MEMORY]` block. This is what surfaces bulk-import **detail** (flight numbers, dates, prices, decisions) for ordinary questions — the baseline blob only carries titles. **Cost control:** returns immediately with **no DB call** when the message has no meaningful topic words (greetings, acks, and conversational filler like *thanks*/*hola* are filtered). Skipped when layer 3 finds a match (the verbatim transcript already answers).
+2. **Always-on — relevance retrieval** (`lib/server/get-relevant-memory.ts`). On **every** turn, searches **all** summaries by the quoted phrases + topic words of the user's latest message, ranks candidates by distinct-term coverage (`rankByTermCoverage`, shared with layer 3), and injects the top matches **untruncated** (per-row cap 2 000 chars, total budget 6 000) as a `[RELEVANT MEMORY]` block. This is what surfaces bulk-import **detail** (flight numbers, dates, prices, decisions) for ordinary questions — the baseline blob only carries titles. **Cost control:** returns immediately with **no DB call** when the message has no meaningful topic words (greetings, acks, and conversational filler like _thanks_/_hola_ are filtered). Skipped when layer 3 finds a match (the verbatim transcript already answers).
 
-3. **On-demand — full conversation recall** (`lib/server/get-full-conversation.ts`). Only fires when the user's message contains an explicit "full conversation" intent (English or Spanish — e.g. *"recover the full conversation"*, *"recupera la conversación completa"*, *"transcript"*, *"recupera la primera del 2026-03-31"*). Intent detection is pure string/regex matching with **no DB cost** unless triggered. When it fires it searches, untruncated:
+3. **On-demand — full conversation recall** (`lib/server/get-full-conversation.ts`). Only fires when the user's message contains an explicit "full conversation" intent (English or Spanish — e.g. _"recover the full conversation"_, _"recupera la conversación completa"_, _"transcript"_, _"recupera la primera del 2026-03-31"_). Intent detection is pure string/regex matching with **no DB cost** unless triggered. When it fires it searches, untruncated:
+
    - the **`summaries`** table — where imported full text lives. Perplexity and Claude store the complete conversation; ChatGPT stores a copy truncated at import time. Matched by quoted title prefix, topic words, or an explicit `YYYY-MM-DD` date (matched against the embedded `### [YYYY-MM-DD]` header).
    - the **`messages`** table — full transcripts of in-app ChatMemo chats, matched by `chats.name` and/or date.
 
@@ -99,12 +100,12 @@ Memory injection is centralised in **`lib/server/inject-memory.ts`** and shared 
 
 ## 2. Prerequisites
 
-| Tool | Version |
-|---|---|
-| Node.js | 18 or later |
-| npm | 9 or later |
-| Git | any recent |
-| Supabase account | free tier sufficient |
+| Tool               | Version              |
+| ------------------ | -------------------- |
+| Node.js            | 18 or later          |
+| npm                | 9 or later           |
+| Git                | any recent           |
+| Supabase account   | free tier sufficient |
 | OpenRouter account | free tier sufficient |
 
 ---
@@ -190,17 +191,17 @@ npm run db-types-remote  # regenerate types from the linked database
 
 ### Key tables
 
-| Table | Purpose |
-|---|---|
-| `summaries` | Memory rows. Append-only. Includes raw conversation excerpts, LLM summaries, and date-index rows. |
-| `user_lessons` | Self-improving knowledge doc. One row per user, upserted after each session. |
-| `profiles` | User profile (display name, API keys, settings). |
-| `chats` | Chat sessions. |
-| `messages` | Individual messages within a chat. |
-| `models` | Remote OpenAI-compatible model definitions. Shared rows cannot contain API keys. |
-| `tools` | OpenAPI tool definitions. Shared rows must contain public, credential-free configuration. |
-| `files` / `file_items` | Uploaded files and versioned retrieval chunks. Only active chunks are retrieved or shared. |
-| `collections` / `collection_files` | File grouping and the ownership-checked links used for collection sharing. |
+| Table                              | Purpose                                                                                           |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `summaries`                        | Memory rows. Append-only. Includes raw conversation excerpts, LLM summaries, and date-index rows. |
+| `user_lessons`                     | Self-improving knowledge doc. One row per user, upserted after each session.                      |
+| `profiles`                         | User profile (display name, API keys, settings).                                                  |
+| `chats`                            | Chat sessions.                                                                                    |
+| `messages`                         | Individual messages within a chat.                                                                |
+| `models`                           | Remote OpenAI-compatible model definitions. Shared rows cannot contain API keys.                  |
+| `tools`                            | OpenAPI tool definitions. Shared rows must contain public, credential-free configuration.         |
+| `files` / `file_items`             | Uploaded files and versioned retrieval chunks. Only active chunks are retrieved or shared.        |
+| `collections` / `collection_files` | File grouping and the ownership-checked links used for collection sharing.                        |
 
 ### Performance indexes
 
@@ -224,11 +225,11 @@ The production project is synchronized through `20260728020000_file_items_visibl
 
 All operations are scoped to `auth.uid() = user_id`:
 
-| Operation | Policy |
-|---|---|
-| SELECT | `user_id = auth.uid()` |
-| INSERT | `user_id = auth.uid()` |
-| DELETE | `user_id = auth.uid()` |
+| Operation | Policy                 |
+| --------- | ---------------------- |
+| SELECT    | `user_id = auth.uid()` |
+| INSERT    | `user_id = auth.uid()` |
+| DELETE    | `user_id = auth.uid()` |
 
 The **service role key** bypasses RLS — used by the bookmarklet import and the sync hook.
 
@@ -270,6 +271,7 @@ npm run setup:sync
 ```
 
 This script:
+
 1. Reads credentials from `.env.local`.
 2. Fetches your Supabase user ID via the admin API.
 3. Writes `CHATMEMO_IMPORT_USER_ID` to `.env.local`.
@@ -283,17 +285,18 @@ Copy the printed URL and add it to your browser bookmarks bar (right-click → A
 
 The bookmarklet uses three fallback strategies to detect messages on claude.ai:
 
-| Priority | Selector | Notes |
-|---|---|---|
-| 1 | `[data-message-author-role]` | Future-proof attribute |
-| 2 | `[class*="font-user-message"]` + `[class*="font-claude-response"]` | Current claude.ai classes (May 2026) |
-| 3 | `[class*="human-turn"]` etc. | Generic fallback |
+| Priority | Selector                                                           | Notes                                |
+| -------- | ------------------------------------------------------------------ | ------------------------------------ |
+| 1        | `[data-message-author-role]`                                       | Future-proof attribute               |
+| 2        | `[class*="font-user-message"]` + `[class*="font-claude-response"]` | Current claude.ai classes (May 2026) |
+| 3        | `[class*="human-turn"]` etc.                                       | Generic fallback                     |
 
 If claude.ai changes its HTML structure, update the selector constants in `scripts/chatmemo-hook-setup.mjs` and re-run `npm run setup:sync`.
 
 ### Claude Code Hook (VS Code)
 
 The Stop hook fires automatically after every Claude Code turn in VS Code. It:
+
 - Reads the JSONL transcript from `~/.claude/projects/<slug>/<session-id>.jsonl`.
 - Requires at least 3 user messages before importing.
 - Tracks imported session IDs in `~/.chatmemo/imported-sessions.json` to avoid duplicates.
@@ -346,11 +349,13 @@ The daemon polls every 5 minutes and processes sessions idle for 10+ minutes. It
 There are two separate model constants to update:
 
 **Server routes** — defined in `lib/server/openrouter.ts`:
+
 ```typescript
 export const SUMMARIZE_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
 ```
 
 **Claude Code scripts** — defined in `scripts/claude-sessions-shared.mjs`:
+
 ```javascript
 export const SUMMARIZE_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
 ```
@@ -359,11 +364,11 @@ export const SUMMARIZE_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
 
 ### Recommended free models on OpenRouter
 
-| Model | Speed | Quality | Notes |
-|---|---|---|---|
-| `meta-llama/llama-3.3-70b-instruct:free` | fast | high | Current default |
-| `google/gemini-2.5-flash-preview:free` | fast | good | Good alternative |
-| `openai/gpt-oss-120b:free` | medium | high | Can be slow under load |
+| Model                                    | Speed  | Quality | Notes                  |
+| ---------------------------------------- | ------ | ------- | ---------------------- |
+| `meta-llama/llama-3.3-70b-instruct:free` | fast   | high    | Current default        |
+| `google/gemini-2.5-flash-preview:free`   | fast   | good    | Good alternative       |
+| `openai/gpt-oss-120b:free`               | medium | high    | Can be slow under load |
 
 > **Note:** Free-tier models share a public quota. If you hit rate limits frequently, add credits to your OpenRouter account and remove the `:free` suffix from the model name.
 
@@ -412,61 +417,84 @@ After upgrading, re-run `npm run setup:sync` if the setup script was changed.
 ## 10. Troubleshooting
 
 ### "User not found" on bookmarklet
+
 The Bearer token is wrong or the server hasn't reloaded the new `.env.local`. Re-run `npm run setup:sync` and restart the dev server.
 
 ### "OpenRouter rate limit — wait a moment and try again"
+
 The free model quota is exhausted. Wait 60 seconds. For production use, fund your OpenRouter account and use a paid model.
 
 ### "404 No endpoints found for …"
+
 The model ID is invalid or the model was removed from OpenRouter. Update `SUMMARIZE_MODEL` in `lib/server/openrouter.ts` and the mirror in `scripts/sync-to-chatmemo.mjs`, then restart.
 
 ### Bookmarklet shows no toast / finds no messages
+
 Claude.ai changed its HTML structure. Run the DOM probe in DevTools:
+
 ```js
-document.querySelectorAll('[class*="font-user-message"],[class*="font-claude-response"]').length
+document.querySelectorAll(
+  '[class*="font-user-message"],[class*="font-claude-response"]'
+).length
 ```
+
 If it returns 0, update the selectors in `scripts/chatmemo-hook-setup.mjs` and re-run `setup:sync`.
 
 ### Memory not showing in chat
+
 Memory is injected at **chat start**. Open a **new chat** after importing. Verify the summary exists in Memory History (clock icon in sidebar).
 
 ### ChatGPT import shows wrong dates / 0 conversations
+
 The 2025 ChatGPT export format dropped `children` arrays from mapping nodes. The importer uses parent-link traversal from `current_node` — if it returns 0, the file may be malformed. Check that each conversation object has a `mapping` key and a valid `current_node`.
 
 ### Lessons document not updating
+
 The lessons update runs after the session summariser. Ensure the chat has at least 4 messages and the OpenRouter API key is valid. Check server logs for `[summarize] Lessons update failed:`. The lessons update is non-fatal — a failure here does not affect the session summary.
 
 ### Claude Code hook not firing (VS Code)
+
 Check that the hook is registered:
+
 ```bash
 cat ~/.claude/settings.json
 ```
+
 Look for an entry with `sync-to-chatmemo.mjs`. If missing, re-run `npm run setup:sync`.
 
 ### Claude Code macOS app sessions not syncing
+
 The macOS app uses the background daemon, not the Stop hook. Check it is running:
+
 ```bash
 launchctl list | grep chatmemo   # should show a PID
 tail -f ~/.chatmemo/watch.log
 ```
+
 If missing, reinstall: `npm run watch:claude:install` then `launchctl load ~/Library/LaunchAgents/com.chatmemo.watch-claude-sessions.plist`.
 
 ### `import:claude` stops with LLM timeouts
+
 The free OpenRouter model is rate-limited. The script automatically retries on the next run (LLM failures are not marked as done). Re-run `npm run import:claude` after a few minutes. Increasing `DELAY_BETWEEN_CALLS_MS` in `scripts/import-claude-sessions.mjs` also helps.
 
 ### Perplexity import shows today's date for all conversations
+
 Perplexity exports use Unix timestamps (seconds), not ISO strings, and only at the entry level — not the conversation level. The parser handles this automatically. If dates still appear wrong, the export file may use an unexpected format. Check that `entry.created_at` is a numeric Unix timestamp in the 1–10 billion range.
 
 ### Perplexity "✕ Perplexity" clear only removes some rows
+
 Only rows imported after source tagging was introduced carry the `[source:perplexity]` prefix or the `Source: Perplexity /` line. Legacy rows from the very first import (stored via `buildRawRows` without any marker) cannot be selectively deleted — use **Clear all** and reimport all sources if a full reset is needed.
 
 ### Incremental import not picking up new conversations
+
 Each source stores a watermark row `[chatmemo:watermark:source=X ts=N]` in the summaries table. If the watermark gets corrupted or points to a future timestamp, new conversations will be skipped. Fix: run **✕ Source** (clear that source) then reimport — this deletes the watermark and starts fresh.
 
 ### Timeline shows no Perplexity entries after import
+
 The timeline parser skips watermark rows and date-index rows automatically. Perplexity entries require either the `[source:perplexity]` prefix or `Source: Perplexity /` text in the content body. If entries still don't appear, check the Memory History panel to confirm the rows were inserted, then reload the timeline.
 
 ### Ollama models do not appear in the Local tab
+
 Confirm that `NEXT_PUBLIC_OLLAMA_URL` is present when Next.js starts and that `curl http://localhost:11434/api/tags` returns the downloaded models. Restart `npm run dev` after changing `.env.local`. If ChatMemo is opened from a different origin, inspect the browser console for an Ollama CORS or private-network error; prefer running ChatMemo on `http://localhost:3000` rather than exposing Ollama beyond loopback.
 
 ---
@@ -496,6 +524,7 @@ ChatMemo has two complementary backup strategies. Use both for full coverage.
 The Memory History panel has a built-in **Export all** button that downloads one JSON backup file per source. This requires no database credentials and produces files that can be re-uploaded through the same panel.
 
 **To export:**
+
 1. Open the Memory History panel (clock icon in the sidebar).
 2. Scroll to the bottom — **Backup & Restore** section.
 3. Click **Export all**.
@@ -506,6 +535,7 @@ The Memory History panel has a built-in **Export all** button that downloads one
    - `chatmemo-backup-other-YYYY-MM-DD.json` — VS Code sync-hook entries, in-app chat summaries
 
 **To restore:**
+
 1. Open Memory History → Backup & Restore.
 2. Click **Restore backup**.
 3. Select one backup file (repeat for each source file).
@@ -542,6 +572,7 @@ chmod 600 ~/.pgpass
 ```
 
 Verify:
+
 ```bash
 cat ~/.pgpass
 # Should print: db.YOUR-PROJECT-REF.supabase.co:5432:postgres:postgres:YOUR-DB-PASSWORD
@@ -606,6 +637,7 @@ Replace `YOUR-PROJECT-REF` with your actual Supabase project reference (the subd
 ```
 
 Expected output:
+
 ```
 [2026-05-28 03:00:00] Starting backup...
 [2026-05-28 03:00:02] Backup written to /Users/brais/backups/chatmemo/chatmemo-2026-05-28.sql
@@ -613,6 +645,7 @@ Expected output:
 ```
 
 Inspect the file:
+
 ```bash
 head -20 ~/backups/chatmemo/chatmemo-2026-05-28.sql
 # Should show SQL INSERT statements for summaries rows
@@ -662,11 +695,13 @@ Create `~/Library/LaunchAgents/com.chatmemo.backup.plist`:
 ```
 
 Load it:
+
 ```bash
 launchctl load ~/Library/LaunchAgents/com.chatmemo.backup.plist
 ```
 
 Verify it is scheduled:
+
 ```bash
 launchctl list | grep chatmemo
 # Should print a line with com.chatmemo.backup
@@ -703,12 +738,12 @@ psql "postgresql://postgres@db.YOUR-PROJECT-REF.supabase.co:5432/postgres" \
 
 ### 12.4 Which strategy to use
 
-| Situation | Use |
-|---|---|
-| Back up memory data, want to restore via UI | In-app Export all (section 12.1) |
-| Scheduled automated daily backup | pg_dump via launchd (section 12.2) |
-| Migrate to a new Supabase project | pg_dump → psql restore |
-| Accidentally cleared a source, want to re-import | In-app Restore backup |
-| Supabase Pro plan | Built-in PITR (no setup needed) |
+| Situation                                        | Use                                |
+| ------------------------------------------------ | ---------------------------------- |
+| Back up memory data, want to restore via UI      | In-app Export all (section 12.1)   |
+| Scheduled automated daily backup                 | pg_dump via launchd (section 12.2) |
+| Migrate to a new Supabase project                | pg_dump → psql restore             |
+| Accidentally cleared a source, want to re-import | In-app Restore backup              |
+| Supabase Pro plan                                | Built-in PITR (no setup needed)    |
 
 The in-app export is the fastest way to recover from an accidental **Clear all** or source clear. The pg_dump job is the safety net for hardware failure or database corruption.

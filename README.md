@@ -62,16 +62,16 @@ The browser stores authenticated chat history in Supabase. Built-in cloud routes
 | Model path                        | Where inference runs             | Persistent memory injection |             API tools |
 | --------------------------------- | -------------------------------- | --------------------------: | --------------------: |
 | Built-in providers and OpenRouter | Provider API                     |                         Yes | OpenAI and OpenRouter |
-| Remote OpenAI-compatible model    | Configured public HTTPS endpoint |                     Not yet |                    No |
-| Ollama                            | Your Mac via `localhost`         |                     Not yet |                    No |
+| Remote OpenAI-compatible model    | Configured public HTTPS endpoint |            Your own models¹ |                    No |
+| Ollama                            | Your Mac via `localhost`         |                         Yes |                    No |
 
-### Current Ollama limitations
+¹ A model someone shared with you points at their endpoint, so ChatMemo never sends your memory to it.
+
+### How Ollama gets memory while staying local
 
 Ollama model discovery and inference run directly between the browser and `localhost:11434`. No Ollama API key is stored or proxied through the ChatMemo server.
 
-However, the current local path does **not** inject ChatMemo's persistent lessons, conversation memory, or full-conversation recall into the Ollama request. API tools are also unavailable with Ollama. The conversation itself is still saved to Supabase through the normal authenticated flow.
-
-Use any built-in cloud route when a chat needs persistent memory. Use OpenAI or OpenRouter when tools are also required. Closing the Ollama gap while keeping inference local is planned follow-up work.
+Before each local turn the browser asks ChatMemo for the memory block for your latest message (`POST /api/memory/block`), prepends it to the system prompt, and sends the conversation to `localhost` itself. The conversation is not routed through the server for inference; if the memory request fails, the chat continues without memory. API tools are unavailable with Ollama. The conversation is still saved to Supabase through the normal authenticated flow.
 
 ## Privacy and security boundaries
 

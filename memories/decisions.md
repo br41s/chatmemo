@@ -209,3 +209,10 @@ Cuatro PRs apilados sobre la rama de auditoría, uno por hallazgo, en orden de d
 - Fábrica `workspaceItems(table)`: supabase-js no tipa consultas con nombre de tabla genérico, así que la fábrica usa un cliente sin tipos por dentro y aplica Insert/Update/Row en la frontera. Rechazado: mantener seis copias tipadas.
 - Tools inyecta memoria como el resto de rutas; `custom` y Ollama siguen sin ella.
 - Pendiente: los `as any` de `createXWorkspaces` en `sidebar-update-item` ocultan que `applyChanges` tipa las filas con una clave literal `item_id`; `<html lang="en">` fijo en todas las locales.
+
+## 2026-09-24 — Memoria para modelos custom y Ollama
+
+- Decidido: `custom` inyecta memoria solo si el modelo es del propio usuario. Un modelo compartido apunta al endpoint de otra persona; enviarle la memoria filtraría historial privado a un tercero.
+- Decidido: Ollama obtiene el bloque desde el navegador (`POST /api/memory/block`) y lo antepone con `lib/memory-block.ts`; la inferencia sigue navegador → localhost y la conversación no pasa por el servidor.
+- Rechazado: devolver al servidor los mensajes completos para aumentarlos allí — duplica el payload (imágenes base64) contra el límite de cuerpo de Vercel.
+- Decidido: cualquier fallo al pedir el bloque deja el turno local sin memoria, nunca falla el chat.
