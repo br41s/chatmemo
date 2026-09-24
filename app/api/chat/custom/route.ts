@@ -1,3 +1,5 @@
+import { injectMemoryOpenAIFormat } from "@/lib/server/inject-memory"
+import { memoryReportHeaders } from "@/lib/server/memory-report-headers"
 import { HttpError } from "@/lib/server/http-error"
 import {
   createSafeModelTextStream,
@@ -53,11 +55,21 @@ const messagesSchema = z
   .min(1)
   .max(200)
 
+const budgetTokens = z.number().int().positive().nullable().optional()
+
 const currentRequestSchema = z
   .object({
     customModelId: z.string().uuid(),
     temperature: z.number().finite().min(0).max(2),
-    messages: messagesSchema
+    messages: messagesSchema,
+    contextBudget: z
+      .object({
+        windowTokens: budgetTokens,
+        requestedHistoryTokens: budgetTokens,
+        outputTokens: budgetTokens
+      })
+      .strict()
+      .optional()
   })
   .strict()
 
@@ -136,17 +148,31 @@ export async function POST(request: Request) {
       throw new HttpError("Custom model is unavailable", 403)
     }
 
+    // Memory goes only to the user's own endpoint. A shared model is someone
+    // else's server, and the block is this user's private history.
+    const ownModel = customModel.user_id === user.id
+    const memory = ownModel
+      ? await injectMemoryOpenAIFormat(
+          messages,
+          user.id,
+          "contextBudget" in parsed.data ? parsed.data.contextBudget : undefined
+        )
+      : null
+
     const stream = await createSafeModelTextStream({
       apiKey: customModel.api_key,
       baseUrl: customModel.base_url,
       correlationId,
-      messages,
+      messages: memory ? memory.messages : messages,
       model: customModel.model_id,
       signal: request.signal,
       temperature
     })
 
-    const response = textStreamResponse(stream)
+    const response = textStreamResponse(
+      stream,
+      memory ? memoryReportHeaders(memory.report) : undefined
+    )
     response.headers.set("X-Request-ID", correlationId)
     return response
   } catch (error) {

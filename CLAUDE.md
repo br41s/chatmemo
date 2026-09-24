@@ -24,7 +24,10 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
   and restore (`20260518000000_summaries_delete_policy`).
 - `lib/server/inject-memory.ts`: shared injector — every provider chat route,
   the tools route included, prepends the user's memory block to the system
-  prompt (`custom` and Ollama do not yet). Three layers run in
+  prompt. `custom` injects only for the user's own models (a shared model is
+  someone else's endpoint). Ollama runs browser → localhost, so the browser
+  fetches the block from `/api/memory/block` and prepends it with
+  `lib/memory-block.ts`. Three layers run in
   parallel per turn:
   1. baseline blob (`get-latest-summary.ts`) — lessons + personal rows +
      truncated bulk rows, ~100k char budget;
