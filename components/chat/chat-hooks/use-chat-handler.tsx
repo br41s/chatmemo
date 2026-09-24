@@ -317,9 +317,8 @@ export const useChatHandler = () => {
       if (selectedTools.length > 0 && isToolsCompatible) {
         setToolInUse("Tools")
 
-        // History is trimmed to the same budget, but no hint is sent: the
-        // tools route injects no memory, so there is no memory block for the
-        // server to size.
+        // History is trimmed to its share of the budget; the hint lets the
+        // tools route size the memory block to the rest, as the chat routes do.
         const formattedMessages = await buildFinalMessages(
           payload,
           profile!,
@@ -335,6 +334,7 @@ export const useChatHandler = () => {
           body: JSON.stringify({
             chatSettings: payload.chatSettings,
             messages: formattedMessages,
+            contextBudget: budgetHint,
             selectedToolIds: selectedTools.map(tool => tool.id)
           }),
           signal: newAbortController.signal
@@ -360,7 +360,12 @@ export const useChatHandler = () => {
           newAbortController,
           setFirstTokenReceived,
           setChatMessages,
-          setToolInUse
+          setToolInUse,
+          report =>
+            recordMemoryReport(
+              reportTargetId ?? tempAssistantChatMessage.message.id,
+              report
+            )
         )
       } else {
         if (modelData!.provider === "ollama") {

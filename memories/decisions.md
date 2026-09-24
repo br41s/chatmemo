@@ -198,3 +198,14 @@ Cuatro PRs apilados sobre la rama de auditoría, uno por hallazgo, en orden de d
 - Decidido: los rangos de fecha del recall se construyen en UTC. En local (UTC+7) la prueba fallaba y el hook pre-push bloqueaba todos los pushes; además el mes sin año perdía el 29 de febrero.
 - Descartado de #40: `getServerProfile` → 401 (solo cambia el código en rutas de chat, el resto responde 500 igualmente; va con `requireUser()`), y el cambio `||` → `&&` del foco (sin síntoma observado y comportamiento pretendido dudoso).
 - Verificado: 632 pruebas en 65 suites, type-check, lint sin avisos nuevos, `format:check` y build de producción; la prueba de fechas pasa en Bangkok, UTC, Los Ángeles y Kiritimati.
+
+## 2026-09-24 — Cinco seguimientos de la re-auditoría (PRs apiladas)
+
+- Código muerto: 29 archivos inalcanzables (grafo de imports desde los entrypoints de Next) y 19 paquetes eliminados. Se conserva `/api/username/get` aunque nadie lo llama: se endureció a propósito en la auditoría de seguridad; borrarlo es decisión de producto.
+- Next 15.5.26 + React 19, no Next 16. Las dos críticas no alcanzan este despliegue (el servicio de imágenes de Vercel tiene AVIF desactivado; Vercel no es Windows), pero 14.2.35 no recibe más parches para ~20 avisos de DoS/SSRF/caché. Next 16 añade la eliminación del acceso síncrono y el renombrado de middleware: se aplaza.
+- `@typescript-eslint/parser` se declara explícitamente: `.eslintrc.json` lo nombra y `eslint-config-next` 15 ya no lo eleva; sin él `next lint` fallaba con 0 avisos aparentes.
+- `HttpError` es la base de los errores de ruta visibles; `SafeModelRequestError` queda aparte porque la ruta custom lo registra con su correlation id antes de responder. `chatErrorMessage` deja pasar los `HttpError`: un 401 de sesión no es una clave incorrecta (lo detectó la prueba en navegador).
+- `requireUser()` para rutas que solo necesitan `user_id`; `getServerProfile()` para las que necesitan claves.
+- Fábrica `workspaceItems(table)`: supabase-js no tipa consultas con nombre de tabla genérico, así que la fábrica usa un cliente sin tipos por dentro y aplica Insert/Update/Row en la frontera. Rechazado: mantener seis copias tipadas.
+- Tools inyecta memoria como el resto de rutas; `custom` y Ollama siguen sin ella.
+- Pendiente: los `as any` de `createXWorkspaces` en `sidebar-update-item` ocultan que `applyChanges` tipa las filas con una clave literal `item_id`; `<html lang="en">` fijo en todas las locales.
