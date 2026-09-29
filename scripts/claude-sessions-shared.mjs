@@ -33,13 +33,11 @@ export const LOCKS_DIR = join(CONFIG_DIR, "locks")
 
 export const MIN_USER_MESSAGES = 3
 export const MAX_MESSAGES = 200
-// Primary is the free model; on a hard failure (commonly a free-tier 429) we
-// fall back to the paid variant so the session still imports instead of being
-// retried forever. Keep in sync with lib/server/openrouter.ts.
-export const SUMMARIZE_MODELS = [
-  "openai/gpt-oss-120b:free",
-  "openai/gpt-oss-120b"
-]
+// Tried in order until one answers. The free variant was listed first until
+// OpenRouter withdrew it (404 "unavailable for free", 2026-09-29): every call
+// then paid for the fallback anyway, after a request that could only fail.
+// Keep in sync with lib/server/openrouter.ts.
+export const SUMMARIZE_MODELS = ["openai/gpt-oss-120b"]
 export const SUMMARIZE_MODEL = SUMMARIZE_MODELS[0]
 
 // ---------------------------------------------------------------------------
@@ -155,7 +153,10 @@ export function parseJSONL(filePath) {
       if (!text || text.length < 15) continue
       messages.push({
         role: entry.type === "user" ? "user" : "assistant",
-        text
+        text,
+        // When it was said. The session is dated by its last message, not by
+        // the file's mtime, which moves whenever anything touches the file.
+        at: typeof entry.timestamp === "string" ? entry.timestamp : undefined
       })
     } catch {
       // skip malformed lines
@@ -195,6 +196,21 @@ export function mtimeToDate(mtime) {
   return mtime > 0
     ? new Date(mtime).toISOString().slice(0, 10)
     : new Date().toISOString().slice(0, 10)
+}
+
+/**
+ * The UTC date of a session's last message, or of the file's mtime when no
+ * message carries a timestamp (Copilot transcripts, older formats).
+ *
+ * Dating by mtime put a session worked on yesterday under today as soon as
+ * anything touched its file, and "yesterday's conversations" found nothing.
+ */
+export function activityDate(messages, mtime) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const at = Date.parse(messages[i].at ?? "")
+    if (!Number.isNaN(at)) return new Date(at).toISOString().slice(0, 10)
+  }
+  return mtimeToDate(mtime)
 }
 
 export function sleep(ms) {
@@ -506,7 +522,7 @@ export async function syncSession({
       return "skipped"
     }
 
-    const date = mtimeToDate(mtime)
+    const date = activityDate(messages, mtime)
     const factsText = await summarize(
       openrouterKey,
       title,

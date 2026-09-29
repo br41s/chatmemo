@@ -15,14 +15,11 @@ import { checkApiKey } from "@/lib/server/server-chat-helpers"
 // Constants
 // ---------------------------------------------------------------------------
 
-// Primary is the free model; on a hard failure (commonly a free-tier 429) we
-// fall back to the paid variant so a single summarise call still succeeds
-// instead of failing the whole import. A free-tier rate limit is the most
-// common cause of the daemon's "LLM failed" retry storm.
-export const SUMMARIZE_MODELS = [
-  "openai/gpt-oss-120b:free",
-  "openai/gpt-oss-120b"
-]
+// Tried in order until one answers. The free variant was listed first until
+// OpenRouter withdrew it (404 "unavailable for free", 2026-09-29): every
+// summary then paid for the fallback anyway, after a request that could only
+// fail. Keep in sync with scripts/claude-sessions-shared.mjs.
+export const SUMMARIZE_MODELS = ["openai/gpt-oss-120b"]
 // Kept as an alias for the primary model for backward compatibility.
 export const SUMMARIZE_MODEL = SUMMARIZE_MODELS[0]
 export const MIN_SUMMARY_WORDS = 10

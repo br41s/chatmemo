@@ -121,6 +121,14 @@ describe("syncDecision", () => {
   })
 })
 
+describe("activityDate", () => {
+  it("falls back to the file's mtime when no message has a timestamp", () => {
+    expect(
+      shared.activityDate([{ role: "user", text: "x" }], Date.UTC(2026, 8, 20))
+    ).toBe("2026-09-20")
+  })
+})
+
 describe("hasChangedSince", () => {
   it("re-reads only files modified after they were last seen", () => {
     expect(shared.hasChangedSince(undefined, 5)).toBe(true)
@@ -165,6 +173,27 @@ describe("syncSession", () => {
     expect(insert?.body.content).toMatch(
       /^\[source:claude\]\n### \[2026-09-28\] chatmemo\n\n- Worked on/
     )
+  })
+
+  it("dates the row by its last message, not by when the file was touched", async () => {
+    // The recovered session: last worked on the 28th, file touched on the 29th.
+    await shared.syncSession({
+      config,
+      key: "session-b",
+      messages: [
+        ...transcript(3),
+        { role: "user", text: "one more thing", at: "2026-09-27T09:00:00Z" },
+        { role: "assistant", text: "done with it", at: "2026-09-28T21:30:00Z" }
+      ],
+      mtime: Date.UTC(2026, 8, 29, 5),
+      title: "[Claude Code] chatmemo",
+      header: (date: string) => `### [${date}] chatmemo`
+    })
+
+    const insert = calls.find(
+      c => c.method === "POST" && !c.url.includes("openrouter")
+    )
+    expect(insert?.body.content).toMatch(/^### \[2026-09-28\] chatmemo/)
   })
 
   it("logs why an insert failed and retries next time", async () => {

@@ -206,3 +206,39 @@ describe("classifySummaryContent — totality", () => {
     expect(m.title).toHaveLength(200)
   })
 })
+
+describe("classifySummaryContent — bracketless date headers", () => {
+  // The Claude Code Stop hook asked its summariser for `### [date] Title` and
+  // mostly got `### date Title`. Mirrored by the trigger in
+  // 20260929000000_summaries_bracketless_dates.sql and pinned there by
+  // `__tests__/migrations/summaries-bracketless-dates.integration.sql`.
+  it("reads the date, title and source of an untagged session row", () => {
+    expect(
+      classifySummaryContent(
+        "### 2026-09-23 FinView Audit\n\n- **Project:** FinView"
+      )
+    ).toEqual({
+      source: "claude",
+      kind: "conversation",
+      title: "FinView Audit",
+      occurredAt: "2026-09-23"
+    })
+  })
+
+  it("keeps a tag's source", () => {
+    expect(
+      classifySummaryContent("[source:chatgpt]\n### 2025-11-05 Tax questions")
+    ).toMatchObject({
+      source: "chatgpt",
+      title: "Tax questions",
+      occurredAt: "2025-11-05"
+    })
+  })
+
+  it("does not read a timestamp as a header date", () => {
+    expect(classifySummaryContent("### 2026-09-27T10:00 notes")).toMatchObject({
+      source: "other",
+      occurredAt: null
+    })
+  })
+})
