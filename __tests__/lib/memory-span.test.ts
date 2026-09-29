@@ -33,6 +33,16 @@ describe("history date span", () => {
     expect(layer!.span).toEqual({ oldest: "2024-03-11", newest: "2026-08-19" })
   })
 
+  it("counts the bracketless headers the old Claude Code hook wrote", () => {
+    // Skipping them made the panel say "→ 2026-09-19" while a week of
+    // sessions, written as `### 2026-09-27 Title`, sat in the same section.
+    const { history: layer } = report(
+      history(entry("2026-09-19"), "### 2026-09-27 Repurpose Agents\n- body")
+    )
+
+    expect(layer!.span).toEqual({ oldest: "2026-09-19", newest: "2026-09-27" })
+  })
+
   it("collapses a single date rather than repeating it", () => {
     const { history: layer } = report(history(entry("2026-09-05")))
 

@@ -94,8 +94,12 @@ function countEntries(section: string): number {
   return section.split(ENTRY_SEPARATOR).filter(part => part.trim()).length
 }
 
-/** The `### [YYYY-MM-DD]` headers the importers and the summariser write. */
-const ENTRY_DATE_RE = /^###\s+\[(\d{4}-\d{2}-\d{2})\]/gm
+/** The `### [YYYY-MM-DD]` headers the importers and the summariser write,
+ *  and the bracketless `### YYYY-MM-DD` the old Stop hook wrote. Missing the
+ *  second made the span stop at the last bracketed row: "→ 2026-09-19" while
+ *  a week of Claude Code sessions sat in the same section. */
+const ENTRY_DATE_RE =
+  /^###\s+(?:\[(\d{4}-\d{2}-\d{2})\]|(\d{4}-\d{2}-\d{2})\b)/gm
 
 /**
  * The range of conversation dates a section covers.
@@ -108,7 +112,10 @@ const ENTRY_DATE_RE = /^###\s+\[(\d{4}-\d{2}-\d{2})\]/gm
 function dateSpan(
   section: string
 ): { oldest: string; newest: string } | undefined {
-  const dates = Array.from(section.matchAll(ENTRY_DATE_RE), match => match[1])
+  const dates = Array.from(
+    section.matchAll(ENTRY_DATE_RE),
+    match => match[1] ?? match[2]
+  )
   if (dates.length === 0) return undefined
 
   // ISO dates sort lexicographically, so no parsing is needed — and none is

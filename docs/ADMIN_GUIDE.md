@@ -353,31 +353,23 @@ The daemon polls every 5 minutes and processes sessions idle for 10+ minutes. It
 
 ### Summarisation model
 
-There are two separate model constants to update:
+There are two separate model lists to update — the scripts run on your laptop and cannot import the server's TypeScript:
 
 **Server routes** — defined in `lib/server/openrouter.ts`:
 
 ```typescript
-export const SUMMARIZE_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
+export const SUMMARIZE_MODELS = ["openai/gpt-oss-120b"]
 ```
 
 **Claude Code scripts** — defined in `scripts/claude-sessions-shared.mjs`:
 
 ```javascript
-export const SUMMARIZE_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
+export const SUMMARIZE_MODELS = ["openai/gpt-oss-120b"]
 ```
 
-**To change the model**, update both constants and restart the server + daemon.
+Each list is tried in order until a model answers, so a cheaper model can go first with a fallback after it. **To change the model**, update both lists, redeploy, and restart the watcher.
 
-### Recommended free models on OpenRouter
-
-| Model                                    | Speed  | Quality | Notes                  |
-| ---------------------------------------- | ------ | ------- | ---------------------- |
-| `meta-llama/llama-3.3-70b-instruct:free` | fast   | high    | Current default        |
-| `google/gemini-2.5-flash-preview:free`   | fast   | good    | Good alternative       |
-| `openai/gpt-oss-120b:free`               | medium | high    | Can be slow under load |
-
-> **Note:** Free-tier models share a public quota. If you hit rate limits frequently, add credits to your OpenRouter account and remove the `:free` suffix from the model name.
+> **Note:** `openai/gpt-oss-120b:free` was the first entry until OpenRouter withdrew it (it now answers 404 "unavailable for free"). Free models come and go; check one is still listed on OpenRouter before putting it first.
 
 ### Local chat models with Ollama
 

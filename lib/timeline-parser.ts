@@ -37,7 +37,9 @@ export interface TimelineEntry {
 // ---------------------------------------------------------------------------
 // Header regex: ### [2026-03-01] Some title
 // ---------------------------------------------------------------------------
-const HEADER_RE = /^###\s+\[(\d{4}-\d{2}-\d{2})\]\s+(.+)$/gm
+// Bracketless `### 2026-03-01 Some title` too: the old Stop hook wrote it.
+const HEADER_RE =
+  /^###\s+(?:\[(\d{4}-\d{2}-\d{2})\]|(\d{4}-\d{2}-\d{2})\b)\s+(.+)$/gm
 
 // [source:X] prefix written by all tagged importers
 const SOURCE_TAG_RE = /^\[source:(\w+)\]\n/
@@ -138,8 +140,8 @@ export function parseSummariesToEntries(
     // Split into sections by header
     for (let i = 0; i < headerMatches.length; i++) {
       const match = headerMatches[i]
-      const date = match[1]
-      const title = match[2].trim()
+      const date = match[1] ?? match[2]
+      const title = match[3].trim()
       const bodyStart = match.index! + match[0].length
       const bodyEnd =
         i + 1 < headerMatches.length ? headerMatches[i + 1].index! : text.length

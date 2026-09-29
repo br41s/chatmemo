@@ -24,7 +24,7 @@ import {
   findAllJSONLFiles,
   parseJSONL,
   slugToProjectName,
-  mtimeToDate,
+  activityDate,
   sleep,
   summarize,
   insertSummary
@@ -73,7 +73,7 @@ async function main() {
 
     const capped = messages.slice(-MAX_MESSAGES)
     const projectName = slugToProjectName(projectSlug)
-    const date = mtimeToDate(mtime)
+    const date = activityDate(messages, mtime)
     const title = `[Claude Code] ${projectName} — ${date}`
 
     process.stdout.write(

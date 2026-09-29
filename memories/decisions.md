@@ -234,7 +234,7 @@ Cuatro PRs apilados sobre la rama de auditoría, uno por hallazgo, en orden de d
 
 - Descubierto: el hook Stop se dispara tras cada turno e importaba la sesión en cuanto alcanzaba tres mensajes del usuario, marcándola como hecha. El watcher la saltaba después. Una sesión larga quedaba recordada solo por su comienzo.
 - Descubierto: el hook no registraba nada. Una clave rotada, un proyecto movido o un fallo de OpenRouter no dejaban rastro.
-- Sospecha sin confirmar (sin acceso a Supabase desde la sesión): la migración `20260924000000_summaries_metadata_trigger` no está aplicada en producción, así que las filas de Claude Code desde 2026-08-25 existen con `kind` NULL y ninguna lectura las ve. Comprobar con `select count(*) from summaries where kind is null`; si es > 0, `npm run db-push`.
+- Sospecha descartada: se creyó que la migración `20260924000000_summaries_metadata_trigger` no estaba aplicada en producción. `select count(*) from summaries where kind is null` devolvió 0; las filas de Claude Code llegaban a diario. Ver la entrada siguiente.
 - Decidido: la sesión se resume de nuevo al crecer (cada 5 mensajes del usuario en Stop, cualquier crecimiento en SessionEnd o tras 10 min inactiva en el watcher) y la fila nueva sustituye a la anterior: insertar primero, borrar después, como `replaceChatSummary`.
 - Decidido: el id de la fila se guarda en `imported-sessions.json`. Rechazado: un marcador en `content` para encontrar la fila — ensucia el bloque inyectado. Las entradas antiguas (cadena ISO, sin id) se dejan como están: sin id, re-sincronizar duplicaría la fila.
 - Decidido: el hook delega en un proceso hijo desacoplado; Claude Code no espera al resumidor, ni en Stop ni al cerrar la sesión.
@@ -243,3 +243,13 @@ Cuatro PRs apilados sobre la rama de auditoría, uno por hallazgo, en orden de d
 - Rechazado: que los scripts escriban `kind`/`source` ellos mismos. El trigger es el único clasificador para escritores de solo-contenido (#49); una segunda copia en .mjs volvería a divergir.
 - Añadido: `CHATMEMO_CONFIG_DIR` sustituye `~/.chatmemo`. La prueba lo necesita: el `process.env` del sandbox de Jest no llega a `os.homedir()`, y la primera ejecución escribió en el `~/.chatmemo` real del contenedor (limpiado).
 - Verificado: 671 pruebas en 70 suites (9 nuevas), type-check, lint y build; el hook real devuelve en ~60 ms y el proceso hijo registra el fallo en `sync.log`.
+
+## 2026-09-29 — Sesiones sin corchetes en la fecha y fechadas por mtime
+
+- Corrección de la entrada anterior: la memoria no estaba bloqueada por una migración. Las filas llegaban; al 28 no le correspondía ninguna porque la única sesión con actividad ese día (`551dab39`) se había resumido el 26 en su tercer turno — el corte que arregló #52.
+- Descubierto: el resumidor del hook Stop escribía `### 2026-09-27 Título`, sin corchetes. Ningún clasificador lo reconocía: `occurred_at` NULL, `source` `other` en vez de `claude`, y el título empezaba por la fecha. El panel de memoria tampoco las contaba y mostraba «→ 2026-09-19» con una semana de sesiones en la misma sección.
+- Decidido: aceptar las dos formas en el clasificador, el trigger (migración `20260929000000`, que además re-deriva las filas existentes), el informe del panel, el timeline y las etiquetas de fecha del bloque base. La fecha pelada exige límite de palabra, así que `2026-09-27T10:00` no cuenta como cabecera.
+- Descubierto al recuperar `551dab39`: el importador fechaba por el mtime del fichero, y algo lo había tocado el 29; la sesión del 28 quedó bajo el 29. Decidido: fechar por la marca de tiempo del último mensaje del transcript, con el mtime como respaldo.
+- Descubierto: OpenRouter retiró `openai/gpt-oss-120b:free` (404 «unavailable for free»). Cada resumen pagaba ya el modelo de respaldo tras una petición que solo podía fallar. Decidido: quitarlo de las dos listas (servidor y scripts).
+- Pendiente: el nombre de proyecto en worktrees sale del id de la carpeta (`1eef95`, `93ad16`).
+- Verificado: pruebas de integración SQL del trigger (#49 y la nueva) contra un PostgreSQL 16 desechable; las 21 fixtures de #49 siguen igual con la migración nueva salvo la fila del hook, que es el cambio buscado. Seis pruebas nuevas fallan contra el código anterior.

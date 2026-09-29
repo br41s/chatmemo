@@ -188,7 +188,9 @@ interface SummaryRow {
 }
 
 // The header may follow a `[source:X]` tag on the same line.
-const DATE_HEADER_RE = /^\s*(\[source:[\w:]+\]\s*)?###\s+\[\d{4}-\d{2}-\d{2}\]/m
+// Bracketed or not — the old Stop hook wrote `### 2026-09-27 Title`.
+const DATE_HEADER_RE =
+  /^\s*(\[source:[\w:]+\]\s*)?###\s+(\[\d{4}-\d{2}-\d{2}\]|\d{4}-\d{2}-\d{2}\b)/m
 
 /**
  * A row's content, dated.

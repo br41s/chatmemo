@@ -35,7 +35,11 @@ export interface SummaryMetadata {
 const WATERMARK_RE = /^\[chatmemo:watermark:source=(\w+)/
 const SOURCE_TAG_RE = /^\[source:(\w+)(:summary)?\]/
 const INDEX_RE = /^\[(Claude|ChatGPT|Perplexity) Conversation Index/
-const HEADER_RE = /^\s*###\s+\[(\d{4}-\d{2}-\d{2})\]\s*(.*)$/m
+// `### [2026-03-01] Title`, or `### 2026-03-01 Title` without the brackets —
+// the form the Claude Code Stop hook's summariser wrote until 2026-09-29, when
+// the hook began writing the header itself. The date is group 1 or 2.
+const HEADER_RE =
+  /^\s*###\s+(?:\[(\d{4}-\d{2}-\d{2})\]|(\d{4}-\d{2}-\d{2})\b)\s*(.*)$/m
 
 const INDEX_MARKER = "Conversation Index"
 
@@ -85,8 +89,8 @@ export function classifySummaryContent(content: string): SummaryMetadata {
   }
 
   const header = body.match(HEADER_RE)
-  const occurredAt = header ? header[1] : null
-  const headerTitle = header ? header[2].trim() : ""
+  const occurredAt = header ? header[1] ?? header[2] : null
+  const headerTitle = header ? header[3].trim() : ""
 
   const title =
     headerTitle ||
@@ -98,7 +102,8 @@ export function classifySummaryContent(content: string): SummaryMetadata {
     null
 
   // An untagged row carrying a `### [date]` header came from the Claude bulk
-  // importer or the bookmarklet, both of which predate source tagging.
+  // importer or the bookmarklet, both of which predate source tagging; one
+  // without the brackets, from the Claude Code Stop hook.
   const source = tag ? normaliseSource(tag[1]) : header ? "claude" : "other"
 
   return {

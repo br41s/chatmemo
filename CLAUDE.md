@@ -41,7 +41,8 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
 - `lib/server/streaming.ts`: local text-stream helpers used by all chat
   routes (replaced the legacy `ai@2.x` package — do not reintroduce it).
 - All LLM summarization goes through OpenRouter (`lib/server/openrouter.ts`),
-  free model with paid fallback.
+  `openai/gpt-oss-120b` (paid; the `:free` variant was withdrawn). The laptop
+  scripts keep their own copy of the list in `scripts/claude-sessions-shared.mjs`.
 
 ## Commands
 

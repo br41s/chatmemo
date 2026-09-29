@@ -313,7 +313,7 @@ ChatMemo supports hosted provider models, OpenRouter, remote OpenAI-compatible m
 | Reasoning | `anthropic/claude-3-5-sonnet` |
 | Free tier | `meta-llama/llama-3.3-70b-instruct:free` |
 
-> The model used for **summarising memories** is separate and configured by the admin. It defaults to `meta-llama/llama-3.3-70b-instruct:free`.
+> The model used for **summarising memories** is separate and configured by the admin. It defaults to `openai/gpt-oss-120b` on OpenRouter.
 
 ### Using a model locally on macOS
 
