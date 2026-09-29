@@ -1141,6 +1141,7 @@ export type Database = {
           chat_id: string | null
           content: string
           created_at: string
+          effective_at: string | null
           id: string
           kind: string | null
           occurred_at: string | null

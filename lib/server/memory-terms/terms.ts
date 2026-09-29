@@ -1,4 +1,4 @@
-import { MONTHS } from "./dates"
+import { MONTHS, RELATIVE_DATE_PATTERN } from "./dates"
 import { STOP } from "./stopwords"
 
 // What in a message is worth searching for.
@@ -42,6 +42,7 @@ export function extractTopicWords(message: string): string[] {
     .replace(/\b202\d\b/g, " ")
     .replace(/\b20\d{2}-\d{2}-\d{2}\b/g, " ")
     .replace(monthPattern, " ")
+    .replace(RELATIVE_DATE_PATTERN, " ")
     .replace(/[^a-z0-9áéíóúñü\s]/g, " ")
 
   const words = cleaned.split(/\s+/).filter(w => w.length > 3 && !STOP.has(w))

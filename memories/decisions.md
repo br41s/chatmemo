@@ -216,3 +216,16 @@ Cuatro PRs apilados sobre la rama de auditoría, uno por hallazgo, en orden de d
 - Decidido: Ollama obtiene el bloque desde el navegador (`POST /api/memory/block`) y lo antepone con `lib/memory-block.ts`; la inferencia sigue navegador → localhost y la conversación no pasa por el servidor.
 - Rechazado: devolver al servidor los mensajes completos para aumentarlos allí — duplica el payload (imágenes base64) contra el límite de cuerpo de Vercel.
 - Decidido: cualquier fallo al pedir el bloque deja el turno local sin memoria, nunca falla el chat.
+
+## 2026-09-29 — «conversaciones de ayer» respondía que no había nada
+
+- Síntoma: preguntar «conversaciones de ayer» devolvía «no encuentro ninguna conversación», con 100 entradas de memoria inyectadas.
+- Causa 1 (regresión de c40fccd, 2026-09-11): la recuperación de chats in-app ordenaba `chats` por `MEMORY_ORDER_COLUMN` (`effective_at`), columna que solo existe en `summaries`. Cada consulta fallaba y el error se descartaba junto con `data`: desde entonces ningún chat in-app se recuperó por transcripción.
+- Causa 2: la petición no activaba la recuperación completa (ninguna frase disparadora), y «ayer» acababa como término de búsqueda de relevancia, trayendo filas que contenían la palabra.
+- Causa 3: los resúmenes in-app no llevan cabecera `### [fecha]`, así que en el bloque base el modelo no podía distinguir los de ayer de los de mayo.
+- Decidido: pedir conversaciones/chats/resumen de un día o periodo (ayer, anteayer, hoy, semana/mes pasado, EN y ES) activa la recuperación; las palabras de fecha relativa se quitan de los términos de búsqueda.
+- Decidido: con rango de fechas, `summaries` se busca por `effective_at` dentro del rango (ordenado por términos si los hay), no por texto en todo el historial; los chats filtrados por tema caen a solo-fecha si el tema no está en el nombre.
+- Decidido: el bloque base antepone `### [YYYY-MM-DD]` (de `effective_at`) a las filas sin fecha propia; las que ya la tienen no se tocan.
+- Decidido: un día ISO explícito se interpreta en UTC, como el resto de rangos.
+- Aceptado: con «hoy», el propio chat actual ocupa uno de los tres huecos de chats.
+- Verificado: las cuatro pruebas nuevas de recuperación fallan contra el código anterior; 662 pruebas en 69 suites, type-check, lint, format y build.

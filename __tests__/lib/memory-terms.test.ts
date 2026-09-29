@@ -1,4 +1,5 @@
 import {
+  detectFullConversationIntent,
   extractDateRange,
   extractIsoDate,
   extractQuotedPhrases,
@@ -141,5 +142,62 @@ describe("extractTopicWords", () => {
 
   it("returns nothing when the message is only filler", () => {
     expect(extractTopicWords("recover the full conversation")).toEqual([])
+  })
+})
+
+describe("day-anchored recall", () => {
+  beforeEach(() => {
+    jest
+      .useFakeTimers()
+      .setSystemTime(new Date(Date.UTC(2026, 8, 29, 2, 50, 0)))
+  })
+  afterEach(() => jest.useRealTimers())
+
+  it("asks for transcripts when conversations are named by their day", () => {
+    // The request that answered "nothing stored" in production: no "full
+    // conversation" phrase, only a day.
+    for (const message of [
+      "conversaciones de ayer",
+      "resumen de ayer",
+      "resumen de las conversaciones de hoy",
+      "¿de qué hablé ayer?",
+      "las conversaciones de la semana pasada",
+      "yesterday's chats",
+      "summarize today's conversations"
+    ]) {
+      expect(detectFullConversationIntent(message)).toBe(true)
+    }
+  })
+
+  it("does not fire on a day alone", () => {
+    expect(detectFullConversationIntent("ayer fui al médico")).toBe(false)
+    expect(detectFullConversationIntent("what's the weather today")).toBe(false)
+  })
+
+  it("reads today and the day before yesterday", () => {
+    expect(extractDateRange("conversaciones de hoy")?.from.toISOString()).toBe(
+      "2026-09-29T00:00:00.000Z"
+    )
+    expect(
+      extractDateRange("conversaciones de anteayer")?.from.toISOString()
+    ).toBe("2026-09-27T00:00:00.000Z")
+    expect(extractDateRange("conversaciones de ayer")?.to.toISOString()).toBe(
+      "2026-09-28T23:59:59.999Z"
+    )
+  })
+
+  it("does not read a word that merely contains 'ayer' as yesterday", () => {
+    expect(extractDateRange("el chat sobre la playera roja")).toBeNull()
+  })
+
+  it("keeps the day out of the search terms", () => {
+    // Left in, "ayer" was searched for and matched unrelated rows that said it.
+    expect(extractTopicWords("conversaciones de ayer")).toEqual([])
+    expect(extractTopicWords("yesterday's chat about flights")).toEqual([
+      "flights"
+    ])
+    expect(extractTopicWords("la semana pasada sobre vuelos")).toEqual([
+      "vuelos"
+    ])
   })
 })

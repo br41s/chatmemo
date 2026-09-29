@@ -8,7 +8,10 @@
  * rows, silently dropping the memory layer the instructions block calls the
  * highest-quality signal.
  */
-import { buildSummarySections } from "@/lib/server/get-latest-summary"
+import {
+  buildSummarySections,
+  withDateHeader
+} from "@/lib/server/get-latest-summary"
 import { resolveContextBudget } from "@/lib/context-budget"
 
 const row = (content: string | null) => ({ content })
@@ -48,11 +51,18 @@ describe("buildSummarySections — layer independence", () => {
   })
 
   it("treats blank-only rows as nothing to inject", () => {
-    expect(buildSummarySections(null, [], [row("   "), row(null)], [])).toBeNull()
+    expect(
+      buildSummarySections(null, [], [row("   "), row(null)], [])
+    ).toBeNull()
   })
 
   it("puts lessons before conversation history", () => {
-    const out = buildSummarySections("LESSON_TEXT", [], [row("HISTORY_TEXT")], [])
+    const out = buildSummarySections(
+      "LESSON_TEXT",
+      [],
+      [row("HISTORY_TEXT")],
+      []
+    )
 
     expect(out!.indexOf("LESSON_TEXT")).toBeLessThan(
       out!.indexOf("HISTORY_TEXT")
@@ -182,8 +192,10 @@ describe("buildSummarySections — index rows cannot crowd out content", () => {
   // rows used to be injected whole and counted against nothing, so those alone
   // consumed roughly three quarters of the allowance before any conversation
   // was considered.
-  const hugeIndex = () => row("[Perplexity Conversation Index]\n" + "i".repeat(58_000))
-  const chatgptIndex = () => row("[ChatGPT Conversation Index]\n" + "c".repeat(4_000))
+  const hugeIndex = () =>
+    row("[Perplexity Conversation Index]\n" + "i".repeat(58_000))
+  const chatgptIndex = () =>
+    row("[ChatGPT Conversation Index]\n" + "c".repeat(4_000))
 
   it("caps a single oversized index row", () => {
     const out = buildSummarySections(null, [hugeIndex()], [], [], large())!
@@ -230,5 +242,37 @@ describe("buildSummarySections — index rows cannot crowd out content", () => {
     const out = buildSummarySections(null, [small], [], [], large())!
     expect(out).toContain("s".repeat(600))
     expect(out).not.toContain("…")
+  })
+})
+
+describe("buildSummarySections — dates", () => {
+  it("dates an in-app summary, which states no date of its own", () => {
+    // Without it the model could not tell yesterday's chat from May's, and
+    // "conversaciones de ayer" was answered with "nothing stored".
+    const out = buildSummarySections(
+      null,
+      [],
+      [
+        {
+          content: "User is planning a trip to Lisbon.",
+          effective_at: "2026-09-28T18:04:11.123+00:00"
+        }
+      ],
+      []
+    )
+
+    expect(out).toContain(
+      "### [2026-09-28]\nUser is planning a trip to Lisbon."
+    )
+  })
+
+  it("leaves a row that already carries a date header as it is", () => {
+    const content = "[source:claude] ### [2026-05-09] Session\nDetails"
+    expect(withDateHeader(content, "2026-09-28T00:00:00Z")).toBe(content)
+  })
+
+  it("leaves a row with no date to give as it is", () => {
+    expect(withDateHeader("Plain", null)).toBe("Plain")
+    expect(withDateHeader("Plain", "garbage")).toBe("Plain")
   })
 })
