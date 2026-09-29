@@ -1,0 +1,67 @@
+name: Upstream watch
+
+# ChatMemo is a fork of mckaywrigley/chatbot-ui. Upstream has been quiet since
+# June 2024, so this is a watchdog, not a merge bot: it stays silent while
+# upstream has nothing we lack, and speaks up the week it moves.
+#
+# On new upstream commits it opens (or comments on) one issue titled
+# "Upstream chatbot-ui has new commits". If issues are disabled on this repo,
+# the run fails instead, so GitHub's failed-workflow email still reaches you.
+# Merging stays a human decision: a Claude session can do it from the issue.
+
+on:
+  schedule:
+    - cron: '23 7 * * 1'   # Mondays 07:23 UTC, off the hour
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  watch:
+    if: github.repository == 'br41s/chatmemo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # ancestry needs real history; shallow makes everything look new
+
+      - name: Compare with upstream
+        id: cmp
+        run: |
+          git remote add upstream https://github.com/mckaywrigley/chatbot-ui.git
+          git fetch --quiet upstream main
+          behind=$(git rev-list --count HEAD..upstream/main)
+          echo "behind=$behind" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Upstream chatbot-ui"
+            echo
+            if [ "$behind" = "0" ]; then
+              echo "Up to date: every upstream commit is already in ChatMemo."
+            else
+              echo "**$behind** upstream commit(s) not yet in ChatMemo:"
+              echo
+              echo '```'
+              git log --no-merges --format='%h %ad %s' --date=short HEAD..upstream/main | head -50
+              echo '```'
+              echo
+              echo "Compare: https://github.com/mckaywrigley/chatbot-ui/compare/$(git merge-base HEAD upstream/main)...main"
+            fi
+          } > report.md
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open or update the issue
+        if: steps.cmp.outputs.behind != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Upstream chatbot-ui has new commits"
+          existing=$(gh issue list --state open --search "in:title \"$title\"" --json number -q '.[0].number' 2>/dev/null || true)
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file report.md
+          elif ! gh issue create --title "$title" --body-file report.md; then
+            echo "::error::Upstream moved, but no issue could be opened (issues disabled?). See the job summary."
+            exit 1
+          fi
