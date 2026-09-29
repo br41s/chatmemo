@@ -25,6 +25,10 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
   filters on the typed `kind` column; a trigger derives `kind`/`source`/
   `title`/`occurred_at` from `content` for writers that send content only
   (the Claude Code session scripts), so a row without them is never invisible.
+  Claude Code **cloud** sessions never reach the laptop sync; a hook served
+  from `public/hooks/chatmemo-cloud-sync.mjs` posts them from the container to
+  `/api/import/conversation` with a `sessionKey`, and `external_id` lets each
+  post replace the session's previous row.
 - `lib/server/inject-memory.ts`: shared injector — every provider chat route,
   the tools route included, prepends the user's memory block to the system
   prompt. `custom` injects only for the user's own models (a shared model is

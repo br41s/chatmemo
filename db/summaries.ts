@@ -53,13 +53,15 @@ export async function insertSummary(
   supabase: SupabaseClient<Database>,
   userId: string,
   content: string,
-  chatId?: string | null
+  chatId?: string | null,
+  externalId?: string | null
 ): Promise<string> {
   const row: TablesInsert<"summaries"> = {
     user_id: userId,
     content,
     ...summaryMetadataColumns(content),
-    ...(chatId ? { chat_id: chatId } : {})
+    ...(chatId ? { chat_id: chatId } : {}),
+    ...(externalId ? { external_id: externalId } : {})
   }
 
   const { data, error } = await supabase
@@ -134,6 +136,44 @@ export async function replaceChatSummary(
   // budget rather than correctness.
   if (error) {
     console.warn(`[replaceChatSummary] could not prune: ${error.message}`)
+  }
+}
+
+/**
+ * Replace the row an outside writer stored earlier for the same thing.
+ *
+ * Claude Code cloud sessions post their summary as they grow, keyed
+ * "claude-code:<session id>". Same order as replaceChatSummary and for the
+ * same reason: insert first, so a failed insert never leaves the session with
+ * no memory at all.
+ *
+ * If the external_id migration has not been applied, insertSummary stores the
+ * row without the key and the prune below fails on the unknown column. That is
+ * logged and tolerated: the memory is kept, it is just not deduplicated yet.
+ */
+export async function replaceSessionSummary(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  externalId: string,
+  content: string
+): Promise<void> {
+  const insertedId = await insertSummary(
+    supabase,
+    userId,
+    content,
+    null,
+    externalId
+  )
+
+  const { error } = await supabase
+    .from("summaries")
+    .delete()
+    .eq("user_id", userId)
+    .eq("external_id", externalId)
+    .neq("id", insertedId)
+
+  if (error) {
+    console.warn(`[replaceSessionSummary] could not prune: ${error.message}`)
   }
 }
 

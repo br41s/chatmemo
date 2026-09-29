@@ -253,3 +253,14 @@ Cuatro PRs apilados sobre la rama de auditoría, uno por hallazgo, en orden de d
 - Descubierto: OpenRouter retiró `openai/gpt-oss-120b:free` (404 «unavailable for free»). Cada resumen pagaba ya el modelo de respaldo tras una petición que solo podía fallar. Decidido: quitarlo de las dos listas (servidor y scripts).
 - Pendiente: el nombre de proyecto en worktrees sale del id de la carpeta (`1eef95`, `93ad16`).
 - Verificado: pruebas de integración SQL del trigger (#49 y la nueva) contra un PostgreSQL 16 desechable; las 21 fixtures de #49 siguen igual con la migración nueva salvo la fila del hook, que es el cambio buscado. Seis pruebas nuevas fallan contra el código anterior.
+
+## 2026-09-29 — Sesiones de Claude Code en la nube
+
+- Descubierto: dos de las tres sesiones del 28 («Search results mixing across users», «bl-site-cliente vs Shoroban features») las lanzó la app de escritorio pero corrieron en la nube (`environment_kind: anthropic_cloud`). Su transcript nunca está en `~/.claude/projects/` del Mac, así que ni el hook ni el watcher las ven. Todas las sesiones en la nube desde el 21 de agosto faltan en la memoria.
+- Decidido: un hook dentro del contenedor en la nube que publica la sesión en `/api/import/conversation` (Bearer token existente). El servidor resume con su propia clave de OpenRouter; el contenedor solo necesita `CHATMEMO_IMPORT_TOKEN` y acceso de red a `chatmemo-one.vercel.app`. Rechazado: dar al contenedor credenciales de Supabase y OpenRouter.
+- Decidido: el hook se sirve desde la app (`public/hooks/chatmemo-cloud-sync.mjs`) y lo instala el script de setup del entorno, para todos los repos a la vez. Rechazado: un hook en `.claude/settings.json` de cada repo — hay una docena de repos.
+- Decidido: columna `summaries.external_id` (clave `claude-code:<session id>`) para reemplazar la fila anterior de la sesión. Rechazado: `chat_id`, que referencia `chats(id)`. Sin la migración, las filas se guardan igual (sin la clave) y solo no se deduplican.
+- Decidido: lock por sesión en el hook. Dos publicaciones simultáneas de la misma sesión insertarían cada una su fila y borrarían la de la otra, dejando la sesión sin ninguna.
+- Decidido: el endpoint responde 401 a un token inválido (antes 500) y tiene `maxDuration = 60` — un transcript de la nube es mucho más largo que una página del bookmarklet. Se envían como máximo los 80 000 caracteres más recientes.
+- Aceptado: las sesiones en la nube anteriores no se recuperan; no hay forma de leer sus transcripts desde el Mac.
+- Verificado: el hook real, ejecutado en una sesión en la nube contra un servidor simulado, devuelve en 83 ms, publica una vez con la clave, título y fecha correctos, y no vuelve a publicar sin crecimiento.

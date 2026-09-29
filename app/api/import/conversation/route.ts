@@ -5,6 +5,11 @@ import { HttpError } from "@/lib/server/http-error"
  * Accepts a single conversation (from the bookmarklet or any client) and
  * stores it as a memory summary.
  *
+ * `sessionKey` (optional) names what the conversation is, for a writer that
+ * posts the same one again as it grows — the Claude Code cloud-session hook
+ * sends "claude-code:<session id>". A post with a key replaces the row the
+ * previous post with that key stored, instead of adding another.
+ *
  * Two auth modes:
  *  1. Bearer token  — bookmarklet sends `Authorization: Bearer <CHATMEMO_IMPORT_TOKEN>`
  *     The server resolves userId from CHATMEMO_IMPORT_USER_ID env var (written by
@@ -21,12 +26,15 @@ import {
   MIN_SUMMARY_WORDS
 } from "@/lib/server/openrouter"
 import { createClient as createServiceClient } from "@supabase/supabase-js"
-import { insertSummary } from "@/db/summaries"
+import { insertSummary, replaceSessionSummary } from "@/db/summaries"
 import { NextRequest, NextResponse } from "next/server"
 import { ServerRuntime } from "next"
 import { timingSafeEqual } from "crypto"
 
 export const runtime: ServerRuntime = "nodejs"
+// A cloud session's transcript is far longer than a bookmarklet page, and the
+// default limit ends the function mid-summary.
+export const maxDuration = 60
 
 // ---------------------------------------------------------------------------
 // CORS — allow claude.ai to POST without cookies
@@ -61,6 +69,11 @@ export async function OPTIONS(request: NextRequest) {
 // ---------------------------------------------------------------------------
 
 const MIN_CHARS = 200
+
+// A key is the writer's own identifier, stored and matched verbatim; nothing
+// here parses it. Bounded and plain so it cannot smuggle a filter into the
+// query that prunes by it.
+const SESSION_KEY_RE = /^[\w:.-]{1,200}$/
 
 const SYSTEM_PROMPT = `You are a memory assistant. You are given a conversation a user had with an AI assistant.
 
@@ -101,8 +114,9 @@ async function resolveUserId(request: NextRequest): Promise<string> {
     const importUserId = process.env.CHATMEMO_IMPORT_USER_ID
 
     if (!importToken || !importUserId) {
-      throw new Error(
-        "Bearer token auth not configured — run npm run setup:sync"
+      throw new HttpError(
+        "Bearer token auth not configured — run npm run setup:sync",
+        500
       )
     }
 
@@ -113,7 +127,9 @@ async function resolveUserId(request: NextRequest): Promise<string> {
       tokenBuf.length === importBuf.length &&
       timingSafeEqual(tokenBuf, importBuf)
     if (!tokensMatch) {
-      throw new Error("Invalid import token")
+      // 401, not the 500 a bare Error became: a caller with a stale token
+      // should be told so, not told the server broke.
+      throw new HttpError("Invalid import token", 401)
     }
 
     return importUserId
@@ -148,6 +164,7 @@ export async function POST(request: NextRequest) {
       title?: string
       date?: string
       messages?: { role: string; text: string }[]
+      sessionKey?: unknown
     }
     try {
       body = await request.json()
@@ -159,6 +176,15 @@ export async function POST(request: NextRequest) {
     }
 
     const { title = "Untitled conversation", date, messages = [] } = body
+
+    const sessionKey =
+      body.sessionKey === undefined ? null : String(body.sessionKey)
+    if (sessionKey !== null && !SESSION_KEY_RE.test(sessionKey)) {
+      return NextResponse.json(
+        { success: false, reason: "Invalid sessionKey" },
+        { status: 400, headers }
+      )
+    }
 
     const validMessages = messages.filter(
       m =>
@@ -193,7 +219,7 @@ export async function POST(request: NextRequest) {
     const inputText = `## ${title} (${convDate})\n\n${fullText}`
 
     // --- Summarize ---
-    const openai = createOpenRouterClient(openrouterKey)
+    const openai = createOpenRouterClient(openrouterKey, 50_000)
     const summaryText = await callSummarizer(
       openai,
       SYSTEM_PROMPT,
@@ -212,7 +238,11 @@ export async function POST(request: NextRequest) {
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
-    await insertSummary(supabase, userId, summaryText)
+    if (sessionKey) {
+      await replaceSessionSummary(supabase, userId, sessionKey, summaryText)
+    } else {
+      await insertSummary(supabase, userId, summaryText)
+    }
 
     return NextResponse.json(
       { success: true, inserted: 1 },
