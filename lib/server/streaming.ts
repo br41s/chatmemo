@@ -49,15 +49,32 @@ interface OpenAIChunkLike {
   // which interfaces like the SDK's Delta would fail to satisfy.
   choices?: {
     delta?: { content?: string | null; role?: unknown; tool_calls?: unknown }
+    finish_reason?: string | null
   }[]
 }
+
+/**
+ * Appended when the model stopped because it reached the reply limit.
+ *
+ * Without it a cut-off reply ended exactly like a finished one: a recovered
+ * transcript stopped mid-sentence ("PR #72 añadió registro de solicitudes
+ * lentas (2") and nothing on screen said anything was missing. Reasoning
+ * models make it likelier, since their hidden reasoning counts against the
+ * same limit.
+ */
+export const CUT_OFF_NOTE =
+  "\n\n_[Reply cut off: it reached the length limit.]_"
 
 async function* openAIText(
   chunks: AsyncIterable<OpenAIChunkLike>
 ): AsyncGenerator<string> {
+  let cutOff = false
   for await (const chunk of chunks) {
-    yield chunk.choices?.[0]?.delta?.content ?? ""
+    const choice = chunk.choices?.[0]
+    if (choice?.finish_reason === "length") cutOff = true
+    yield choice?.delta?.content ?? ""
   }
+  if (cutOff) yield CUT_OFF_NOTE
 }
 
 export function openAIStreamResponse(
@@ -79,13 +96,20 @@ interface AnthropicEventLike {
 async function* anthropicText(
   events: AsyncIterable<AnthropicEventLike>
 ): AsyncGenerator<string> {
+  let cutOff = false
   for await (const event of events) {
+    if (event.type === "message_delta") {
+      const delta = event.delta as { stop_reason?: string | null } | undefined
+      if (delta?.stop_reason === "max_tokens") cutOff = true
+      continue
+    }
     if (event.type !== "content_block_delta") continue
     const delta = event.delta as { type?: string; text?: string } | undefined
     if (delta?.type === "text_delta") {
       yield delta.text ?? ""
     }
   }
+  if (cutOff) yield CUT_OFF_NOTE
 }
 
 export function anthropicStreamResponse(

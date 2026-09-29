@@ -27,6 +27,20 @@ import { LLM, LLMID, OpenRouterLLM } from "@/types"
  * else: a provider that reports no limits contributes no hint, and the lookup
  * falls through to the table rather than inventing a number.
  */
+/**
+ * Reply reservation for an OpenRouter model.
+ *
+ * Its catalogue gives a window but no reply limit, so these fell to the 4 096
+ * default — and many of its models reason first, with the reasoning counted
+ * against that same limit. gpt-oss-120b, answering from a recovered transcript,
+ * spent most of it thinking and stopped mid-sentence after ~250 words.
+ *
+ * The resolver still clamps this to a quarter of the window, so a small model
+ * is unaffected, and on a large one the memory block — capped at
+ * MAX_MEMORY_CHARS — loses nothing: 131k − 16k leaves far more than it uses.
+ */
+export const OPENROUTER_OUTPUT_TOKENS = 16_384
+
 export function resolveModelWindow(
   modelId: string,
   availableOpenRouterModels: OpenRouterLLM[] = [],
@@ -63,6 +77,7 @@ export function resolveModelWindow(
   if (openRouter?.maxContext) {
     return {
       windowTokens: openRouter.maxContext,
+      outputTokens: OPENROUTER_OUTPUT_TOKENS,
       requestedHistoryTokens
     }
   }

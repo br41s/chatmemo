@@ -2,9 +2,15 @@ import {
   CHAT_SETTING_LIMITS,
   ChatSettingLimits
 } from "../../lib/chat-setting-limits"
-import { resolveContextBudget } from "../../lib/context-budget"
-import { resolveModelWindow } from "../../lib/models/model-window"
-import { LLMID } from "../../types"
+import {
+  MAX_MEMORY_CHARS,
+  resolveContextBudget
+} from "../../lib/context-budget"
+import {
+  OPENROUTER_OUTPUT_TOKENS,
+  resolveModelWindow
+} from "../../lib/models/model-window"
+import { LLMID, OpenRouterLLM } from "../../types"
 
 // Every chat route now sizes the reply from the shared budget. Before that,
 // three of them read `MAX_TOKEN_OUTPUT_LENGTH` straight out of the table, and
@@ -73,5 +79,32 @@ describe("an unknown model", () => {
     // A model outside the table used to reach the routes through a helper that
     // fell back to 4096 regardless of the window. The budget clamps instead.
     expect(capFor("some-model-released-next-year")).toBe(2048)
+  })
+})
+
+describe("an OpenRouter model", () => {
+  // The catalogue gives a window but no reply limit, so these fell to the
+  // 4096 default, and a reasoning model spends part of that thinking.
+  const gptOss = {
+    modelId: "openai/gpt-oss-120b",
+    maxContext: 131_072
+  } as unknown as OpenRouterLLM
+
+  it("reserves room for reasoning as well as the reply", () => {
+    const hint = resolveModelWindow("openai/gpt-oss-120b", [gptOss])
+    const budget = resolveContextBudget(hint)
+
+    expect(budget.outputTokens).toBe(OPENROUTER_OUTPUT_TOKENS)
+    // The memory block keeps its full allowance on a large window.
+    expect(budget.memoryChars).toBe(MAX_MEMORY_CHARS)
+  })
+
+  it("still gets no more than a quarter of a small window", () => {
+    const small = { ...gptOss, maxContext: 8_192 } as OpenRouterLLM
+    const budget = resolveContextBudget(
+      resolveModelWindow("openai/gpt-oss-120b", [small])
+    )
+
+    expect(budget.outputTokens).toBe(2_048)
   })
 })
