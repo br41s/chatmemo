@@ -8,6 +8,7 @@
  */
 import {
   anthropicStreamResponse,
+  CUT_OFF_NOTE,
   googleStreamResponse,
   openAIStreamResponse,
   textStreamResponse
@@ -101,5 +102,42 @@ describe("googleStreamResponse", () => {
     ]
     const res = googleStreamResponse(fromArray(chunks))
     await expect(res.text()).rejects.toThrow("response blocked")
+  })
+})
+
+describe("replies cut off at the length limit", () => {
+  // A cut-off reply used to end exactly like a finished one: a recovered
+  // transcript stopped mid-sentence and nothing said anything was missing.
+  it("marks an OpenAI-format reply that stopped at the limit", async () => {
+    const chunks = [
+      { choices: [{ delta: { content: "PR #72 añadió registro (2" } }] },
+      { choices: [{ delta: {}, finish_reason: "length" }] }
+    ]
+    const res = openAIStreamResponse(fromArray(chunks))
+    expect(await res.text()).toBe(`PR #72 añadió registro (2${CUT_OFF_NOTE}`)
+  })
+
+  it("marks an Anthropic reply that stopped at max_tokens", async () => {
+    const events = [
+      {
+        type: "content_block_delta",
+        delta: { type: "text_delta", text: "Hi" }
+      },
+      { type: "message_delta", delta: { stop_reason: "max_tokens" } }
+    ]
+    const res = anthropicStreamResponse(fromArray(events))
+    expect(await res.text()).toBe(`Hi${CUT_OFF_NOTE}`)
+  })
+
+  it("adds nothing to a reply that finished", async () => {
+    const events = [
+      {
+        type: "content_block_delta",
+        delta: { type: "text_delta", text: "Hi" }
+      },
+      { type: "message_delta", delta: { stop_reason: "end_turn" } }
+    ]
+    const res = anthropicStreamResponse(fromArray(events))
+    expect(await res.text()).toBe("Hi")
   })
 })
