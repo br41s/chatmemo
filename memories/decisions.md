@@ -229,3 +229,17 @@ Cuatro PRs apilados sobre la rama de auditoría, uno por hallazgo, en orden de d
 - Decidido: un día ISO explícito se interpreta en UTC, como el resto de rangos.
 - Aceptado: con «hoy», el propio chat actual ocupa uno de los tres huecos de chats.
 - Verificado: las cuatro pruebas nuevas de recuperación fallan contra el código anterior; 662 pruebas en 69 suites, type-check, lint, format y build.
+
+## 2026-09-29 — Las sesiones de Claude Code se quedaban en su tercer turno
+
+- Descubierto: el hook Stop se dispara tras cada turno e importaba la sesión en cuanto alcanzaba tres mensajes del usuario, marcándola como hecha. El watcher la saltaba después. Una sesión larga quedaba recordada solo por su comienzo.
+- Descubierto: el hook no registraba nada. Una clave rotada, un proyecto movido o un fallo de OpenRouter no dejaban rastro.
+- Sospecha sin confirmar (sin acceso a Supabase desde la sesión): la migración `20260924000000_summaries_metadata_trigger` no está aplicada en producción, así que las filas de Claude Code desde 2026-08-25 existen con `kind` NULL y ninguna lectura las ve. Comprobar con `select count(*) from summaries where kind is null`; si es > 0, `npm run db-push`.
+- Decidido: la sesión se resume de nuevo al crecer (cada 5 mensajes del usuario en Stop, cualquier crecimiento en SessionEnd o tras 10 min inactiva en el watcher) y la fila nueva sustituye a la anterior: insertar primero, borrar después, como `replaceChatSummary`.
+- Decidido: el id de la fila se guarda en `imported-sessions.json`. Rechazado: un marcador en `content` para encontrar la fila — ensucia el bloque inyectado. Las entradas antiguas (cadena ISO, sin id) se dejan como están: sin id, re-sincronizar duplicaría la fila.
+- Decidido: el hook delega en un proceso hijo desacoplado; Claude Code no espera al resumidor, ni en Stop ni al cerrar la sesión.
+- Decidido: un lock por sesión en `~/.chatmemo/locks/`; Stop, SessionEnd y el watcher pueden coincidir, y dos reemplazos simultáneos dejarían un duplicado.
+- Decidido: todo resultado, fallos incluidos con su HTTP y cuerpo, va a `~/.chatmemo/sync.log`.
+- Rechazado: que los scripts escriban `kind`/`source` ellos mismos. El trigger es el único clasificador para escritores de solo-contenido (#49); una segunda copia en .mjs volvería a divergir.
+- Añadido: `CHATMEMO_CONFIG_DIR` sustituye `~/.chatmemo`. La prueba lo necesita: el `process.env` del sandbox de Jest no llega a `os.homedir()`, y la primera ejecución escribió en el `~/.chatmemo` real del contenedor (limpiado).
+- Verificado: 671 pruebas en 70 suites (9 nuevas), type-check, lint y build; el hook real devuelve en ~60 ms y el proceso hijo registra el fallo en `sync.log`.

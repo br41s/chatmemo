@@ -295,18 +295,25 @@ If claude.ai changes its HTML structure, update the selector constants in `scrip
 
 ### Claude Code Hook (VS Code)
 
-The Stop hook fires automatically after every Claude Code turn in VS Code. It:
+The hook is registered for two events: `Stop`, which fires after every Claude Code turn, and `SessionEnd`. It:
 
 - Reads the JSONL transcript from `~/.claude/projects/<slug>/<session-id>.jsonl`.
-- Requires at least 3 user messages before importing.
-- Tracks imported session IDs in `~/.chatmemo/imported-sessions.json` to avoid duplicates.
+- Summarises a session once it has 3 user messages, again every 5 user messages after that, and a last time at `SessionEnd`. Each new summary replaces the session's previous row, so memory holds the whole session, not just its opening.
+- Tracks each session's row and size in `~/.chatmemo/imported-sessions.json`. Sessions synced before this format are left as they are.
+- Runs the work in a detached process, so Claude Code never waits on the summariser.
+- Logs every outcome, failures included, to `~/.chatmemo/sync.log`.
 - Calls OpenRouter and Supabase directly — no HTTP to the ChatMemo server.
 
-To verify the hook is registered:
+After updating ChatMemo, re-run `npm run setup:sync` to register `SessionEnd`.
+
+To verify the hook is registered and working:
 
 ```bash
-cat ~/.claude/settings.json | grep sync-to-chatmemo
+grep -c sync-to-chatmemo ~/.claude/settings.json   # 2 = Stop and SessionEnd
+tail -20 ~/.chatmemo/sync.log
 ```
+
+The rows are written with `content` only; the `summaries_derive_metadata` trigger (migration `20260924000000`) classifies them. Without that migration applied, they are stored but never read — check with `select count(*) from summaries where kind is null`.
 
 ### Claude Code Bulk Import
 
@@ -320,7 +327,7 @@ Shows per-session progress. Safe to interrupt and re-run — already-imported se
 
 ### Claude Code Background Daemon (macOS app)
 
-The macOS Claude Code app does not fire the Stop hook. A background daemon handles auto-sync:
+The macOS Claude Code app does not fire the Stop hook. A background daemon handles auto-sync. It syncs sessions idle for 10+ minutes the same way, re-syncing any that have grown since:
 
 ```bash
 # Install and start

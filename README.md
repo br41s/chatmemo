@@ -147,7 +147,7 @@ Open [http://localhost:3000](http://localhost:3000), create an account, and comp
 npm run setup:sync
 ```
 
-This configures the Claude Code Stop hook, writes the import user ID to `.env.local`, and prints the Claude.ai bookmarklet URL.
+This configures the Claude Code Stop and SessionEnd hooks, writes the import user ID to `.env.local`, and prints the Claude.ai bookmarklet URL.
 
 ## Local models with Ollama
 

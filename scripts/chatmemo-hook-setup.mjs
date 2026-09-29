@@ -148,7 +148,11 @@ writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2))
 console.log(`✓ Wrote ${CONFIG_FILE}`)
 
 // ---------------------------------------------------------------------------
-// 5. Register Stop hook in ~/.claude/settings.json
+// 5. Register the sync hook in ~/.claude/settings.json
+//
+// Stop fires after every turn and keeps a long session's summary current;
+// SessionEnd gives it a last sync with the turns since. The hook detaches its
+// work, so neither makes Claude Code wait.
 // ---------------------------------------------------------------------------
 
 let claudeSettings = {}
@@ -156,27 +160,37 @@ if (existsSync(CLAUDE_SETTINGS)) {
   try {
     claudeSettings = JSON.parse(readFileSync(CLAUDE_SETTINGS, "utf8"))
   } catch {
-    console.warn("  Warning: could not parse ~/.claude/settings.json — will overwrite hooks section")
+    console.warn(
+      "  Warning: could not parse ~/.claude/settings.json — will overwrite hooks section"
+    )
   }
 }
 
 if (!claudeSettings.hooks) claudeSettings.hooks = {}
-if (!Array.isArray(claudeSettings.hooks.Stop)) claudeSettings.hooks.Stop = []
 
 const hookCommand = `node ${HOOK_SCRIPT}`
-const alreadyRegistered = claudeSettings.hooks.Stop.some(entry =>
-  entry.hooks?.some(h => h.command === hookCommand)
-)
+let settingsChanged = false
 
-if (!alreadyRegistered) {
-  claudeSettings.hooks.Stop.push({
+for (const event of ["Stop", "SessionEnd"]) {
+  if (!Array.isArray(claudeSettings.hooks[event]))
+    claudeSettings.hooks[event] = []
+  const alreadyRegistered = claudeSettings.hooks[event].some(entry =>
+    entry.hooks?.some(h => h.command === hookCommand)
+  )
+  if (alreadyRegistered) {
+    console.log(`✓ ${event} hook already registered (skipped)`)
+    continue
+  }
+  claudeSettings.hooks[event].push({
     matcher: "",
     hooks: [{ type: "command", command: hookCommand }]
   })
+  settingsChanged = true
+  console.log(`✓ Registered ${event} hook in ~/.claude/settings.json`)
+}
+
+if (settingsChanged) {
   writeFileSync(CLAUDE_SETTINGS, JSON.stringify(claudeSettings, null, 2))
-  console.log("✓ Registered Stop hook in ~/.claude/settings.json")
-} else {
-  console.log("✓ Stop hook already registered (skipped)")
 }
 
 // ---------------------------------------------------------------------------
@@ -330,8 +344,9 @@ printBookmarklet(
 
 console.log("\n✅  Setup complete!")
 console.log("\nHow it works:")
-console.log("  • Claude Code sessions → synced automatically after every session")
-console.log("    (fires when Claude stops, imports once per session with ≥3 turns)")
+console.log("  • Claude Code sessions → synced automatically as they grow and when they end")
+console.log("    (from 3 turns, again every 5, and at session end; each replaces the last)")
+console.log("    Outcomes and failures: ~/.chatmemo/sync.log")
 console.log("  • Claude.ai browser → click the Claude bookmarklet on a conversation")
 console.log("  • Gemini browser → click the Gemini bookmarklet on a conversation")
 console.log("    (ChatMemo does NOT need to be open — uses Bearer token auth)")

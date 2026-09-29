@@ -36,7 +36,7 @@ ChatMemo builds a persistent, growing memory of who you are and what you work on
 
 Together they give the AI up to ~48 000 characters of context about you before you type a single word.
 
-**Recovering a full conversation on demand:** the two layers above are *summaries* — compact by design. When you explicitly ask to recover a **full conversation** (in English or Spanish — e.g. *"recover the full conversation about X"*, *"recupera la conversación completa de …"*, or by date *"recupera la conversación del 2026-03-31"*), ChatMemo pulls the **complete, untruncated transcript** instead of the summary. It works best when you quote the conversation title or give a specific date. Recoverable in full: in-app chats, **Perplexity** imports, and **Claude** imports. ChatGPT imports are stored compressed, so they cannot be recovered word-for-word.
+**Recovering a full conversation on demand:** the two layers above are _summaries_ — compact by design. When you explicitly ask to recover a **full conversation** (in English or Spanish — e.g. _"recover the full conversation about X"_, _"recupera la conversación completa de …"_, or by date _"recupera la conversación del 2026-03-31"_), ChatMemo pulls the **complete, untruncated transcript** instead of the summary. It works best when you quote the conversation title or give a specific date. Recoverable in full: in-app chats, **Perplexity** imports, and **Claude** imports. ChatGPT imports are stored compressed, so they cannot be recovered word-for-word.
 
 Chats, memories, profiles, and private resources are scoped to your account. Only resources you explicitly mark as public or unlisted can be read by another user, and ChatMemo blocks shared models or tools that contain stored credentials.
 
@@ -50,7 +50,7 @@ Chats, memories, profiles, and private resources are scoped to your account. Onl
 4. Choose a model from the model selector in the chat header.
 5. Start typing. The AI will already have your memory context.
 
-> **Important:** memory is injected at chat *start*. If you import a new conversation while a chat is already open, open a **new chat** to pick up the update.
+> **Important:** memory is injected at chat _start_. If you import a new conversation while a chat is already open, open a **new chat** to pick up the update.
 
 ---
 
@@ -61,12 +61,14 @@ Chats, memories, profiles, and private resources are scoped to your account. Onl
 The bookmarklet saves any open claude.ai conversation to ChatMemo with one click. It does **not** require ChatMemo to be open in another tab.
 
 **First-time setup** (done once by the admin — see Admin Guide):
+
 - Run `npm run setup:sync` in the ChatMemo project folder.
 - Copy the bookmarklet URL printed at the end.
 - In your browser, show the bookmarks bar (**⌘ Shift B** on Mac).
 - Right-click the bar → **Add page…** → paste the URL → name it **Save to ChatMemo**.
 
 **Daily use:**
+
 1. Open any conversation on [claude.ai](https://claude.ai).
 2. Click the **Save to ChatMemo** bookmark.
 3. Wait 2–5 seconds for the AI to summarise the conversation.
@@ -76,6 +78,7 @@ The bookmarklet saves any open claude.ai conversation to ChatMemo with one click
    - 🔴 **"✗ ChatMemo error: …"** — something went wrong (see error text).
 
 **Requirements:**
+
 - ChatMemo must be running locally at `http://localhost:3000`.
 - The conversation must have at least one Claude reply and be longer than ~200 characters total.
 
@@ -86,11 +89,13 @@ The bookmarklet saves any open claude.ai conversation to ChatMemo with one click
 Import your entire Claude conversation history in one go.
 
 **Export from Claude:**
+
 1. Go to [claude.ai](https://claude.ai) → **Settings** → **Privacy** → **Export data**.
 2. Wait for the email with the download link.
 3. Download and unzip the file. You will find a `conversations.json` file.
 
 **Import into ChatMemo:**
+
 1. Open ChatMemo → click the **Import** icon in the left sidebar.
 2. Choose **Claude export**.
 3. Select the `conversations.json` file.
@@ -107,17 +112,20 @@ Import your entire Claude conversation history in one go.
 ChatGPT exports come as multiple `.json` files. You can import all of them at once.
 
 **Export from ChatGPT:**
+
 1. Go to ChatGPT → **Settings** → **Data Controls** → **Export data**.
 2. Download the zip file and extract it.
 3. You will find multiple files named `conversations-000.json`, `conversations-001.json`, etc.
 
 **Import into ChatMemo:**
+
 1. Open ChatMemo → Memory History → **ChatGPT** button.
 2. Select **all** the `.json` files at once (Cmd+A in the file picker).
 3. The button shows progress: **"Importing 3/13…"**
 4. When done: **"✓ Imported N memory entries from M conversations"**
 
 **What gets stored:**
+
 - Every conversation is stored with its **real date** (from the ChatGPT export metadata), not the import date.
 - Each conversation appears in the timeline with the correct `[YYYY-MM-DD]` header.
 - No LLM processing is needed — import is fast (seconds, not minutes).
@@ -145,17 +153,19 @@ This scans `~/.claude/projects/` for all JSONL session files, skips ones already
 
 New sessions are synced automatically. The system uses two complementary mechanisms:
 
-| Source | Mechanism |
-|---|---|
-| **VS Code** (Claude Code extension) | Stop hook fires after every turn, imports the session immediately |
-| **macOS app** | Background daemon polls every 5 minutes, picks up sessions idle for 10+ minutes |
+| Source                        | Mechanism                                                                                               |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------- |
+| **Claude Code CLI / VS Code** | Hook summarises the session from its 3rd message, refreshes it every 5 more, and once more when it ends |
+| **macOS app**                 | Background daemon polls every 5 minutes, picks up sessions idle for 10+ minutes                         |
 
 The daemon is managed by macOS **launchd** — it starts at login and runs indefinitely in the background. No manual action is needed after setup.
 
 To check daemon status:
+
 ```bash
 launchctl list | grep chatmemo
 tail -f ~/.chatmemo/watch.log
+tail -f ~/.chatmemo/sync.log   # every sync, and why any failed
 ```
 
 ### 3.5 Perplexity Export (bulk import)
@@ -163,15 +173,18 @@ tail -f ~/.chatmemo/watch.log
 Import your full Perplexity conversation history including COPILOT, DEFAULT, and REASONING mode sessions.
 
 **Export from Perplexity:**
+
 1. Go to [perplexity.ai](https://perplexity.ai) → **Settings** → **Account** → **Export data**.
 2. Download and extract the zip file. You will find a `conversations-*.json` file.
 
 **Import into ChatMemo:**
+
 1. Open ChatMemo → Memory History → **Perplexity** button.
 2. Select one or more `conversations-*.json` files (multi-file supported).
 3. When done: **"✓ Imported N memory entries from M conversations"**
 
 **What gets stored:**
+
 - Every conversation is stored with its **real date** from the export (derived from entry timestamps).
 - The Perplexity **mode** (COPILOT, DEFAULT, REASONING, etc.) is stored alongside each conversation for context.
 - A date index is inserted for fast date-based recall.
@@ -193,7 +206,7 @@ The **Memory History** panel shows all your stored summaries.
 - Click **Clear all** to wipe all memories (asks for confirmation).
 
 **Selective source clear:**
-At the bottom of the panel, under *Clear imported data by source*, there are three buttons — **✕ ChatGPT**, **✕ Claude**, **✕ Perplexity** — that delete only the data imported from that source and reset its watermark. Two-click confirmation required. Use this when you want to fix a bad import without losing data from other sources.
+At the bottom of the panel, under _Clear imported data by source_, there are three buttons — **✕ ChatGPT**, **✕ Claude**, **✕ Perplexity** — that delete only the data imported from that source and reset its watermark. Two-click confirmation required. Use this when you want to fix a bad import without losing data from other sources.
 
 > Deleting a summary is permanent. The AI will stop referencing the deleted context in future chats.
 
@@ -225,12 +238,12 @@ The restore is safe to run at any time — rows that already exist in the databa
 
 #### When to use restore
 
-| Situation | Action |
-|---|---|
-| Accidentally clicked **✕ Claude** / **Clear all** | Restore the matching backup file |
-| Moving to a new Supabase project | Export on old → Restore on new |
-| Corrupted or missing data after an upgrade | Restore the most recent backup |
-| Just want to verify backup integrity | Restore (duplicates are skipped, no harm done) |
+| Situation                                         | Action                                         |
+| ------------------------------------------------- | ---------------------------------------------- |
+| Accidentally clicked **✕ Claude** / **Clear all** | Restore the matching backup file               |
+| Moving to a new Supabase project                  | Export on old → Restore on new                 |
+| Corrupted or missing data after an upgrade        | Restore the most recent backup                 |
+| Just want to verify backup integrity              | Restore (duplicates are skipped, no harm done) |
 
 > **Note:** the backup covers only the `summaries` table (conversation memory). Profiles, chat sessions, and messages are not included.
 
@@ -247,6 +260,7 @@ The **Timeline** panel shows all your conversations — from Claude.ai, Claude C
 - **Source filter**: show only Claude.ai, ChatGPT, Claude Code, Perplexity, etc.
 
 **Reading a conversation:**
+
 - Click any entry to open it in the detail panel.
 - **Desktop**: the detail panel opens to the right — the list stays visible so you can navigate without going back.
 - **Mobile**: the detail replaces the list; tap ← to return.
@@ -261,6 +275,7 @@ The **Timeline** panel shows all your conversations — from Claude.ai, Claude C
 ChatMemo automatically builds and refines a **User Lessons** document from your daily conversations. You don't need to do anything — it runs in the background.
 
 **How it works:**
+
 1. After each chat (once you have 4+ messages), the in-app summariser fires automatically.
 2. It saves a session summary, then runs a second pass comparing the summary against your current lessons document.
 3. If new, meaningful facts were found (new project, preference, pattern), the lessons document is updated.
@@ -268,12 +283,12 @@ ChatMemo automatically builds and refines a **User Lessons** document from your 
 
 **What's in the lessons document:**
 
-| Section | Examples |
-|---|---|
+| Section                           | Examples                                              |
+| --------------------------------- | ----------------------------------------------------- |
 | Preferences & Communication Style | Language preference, technical depth, response format |
-| Active Projects & Work Context | Project names, tech stack, goals, role |
-| Personal Context | Background, interests, stable personal facts |
-| Recurring Patterns & Constraints | Hard requirements, known friction, things that repeat |
+| Active Projects & Work Context    | Project names, tech stack, goals, role                |
+| Personal Context                  | Background, interests, stable personal facts          |
+| Recurring Patterns & Constraints  | Hard requirements, known friction, things that repeat |
 
 **To see your current lessons:** check the `user_lessons` table in your Supabase dashboard, or ask the AI directly — it reads the document at session start and can describe what it knows about you.
 
@@ -319,6 +334,7 @@ The sidebar **Models** section is different: it registers remote APIs compatible
 The **Tools** section (⚡ bolt icon in the left sidebar) lets you register external APIs as callable functions. When an assistant has tools attached, it can decide mid-conversation to call one and use the result in its reply.
 
 **How to add a tool:**
+
 1. Click the ⚡ icon in the left sidebar → **New Tool**.
 2. Give it a name and paste its OpenAPI schema (JSON).
 3. Optionally add custom HTTP headers (e.g. `{"Authorization": "Bearer <token>"}`).
@@ -333,14 +349,16 @@ The **Tools** section (⚡ bolt icon in the left sidebar) lets you register exte
 ## 9. Tips and Limitations
 
 **Tips:**
+
 - Import conversations after a productive session, not during — the bookmarklet captures the full conversation at that moment.
 - If the AI doesn't seem to know something you imported, start a **new chat**. Memory and lessons are injected at chat start.
 - Use the Memory History panel to audit what the AI knows. Delete outdated or wrong summaries.
-- Ask the AI directly what it knows: *"What do you know about my projects?"* or *"What was my first ChatGPT conversation?"*
-- To pull a full past conversation verbatim, say *"recover the full conversation"* (or *"recupera la conversación completa"*) and **quote the title or give the date** — e.g. *"recupera la conversación del 2026-03-31"*. A specific date is the most reliable signal.
+- Ask the AI directly what it knows: _"What do you know about my projects?"_ or _"What was my first ChatGPT conversation?"_
+- To pull a full past conversation verbatim, say _"recover the full conversation"_ (or _"recupera la conversación completa"_) and **quote the title or give the date** — e.g. _"recupera la conversación del 2026-03-31"_. A specific date is the most reliable signal.
 - For ChatGPT imports, select all files at once — the importer processes them sequentially and shows per-file progress.
 
 **Limitations:**
+
 - The bookmarklet relies on CSS class names in claude.ai's HTML. If Anthropic redesigns the UI, the selectors may break until updated.
 - Free OpenRouter models have rate limits. If you get an "OpenRouter rate limit" error, wait 60 seconds and try again.
 - Memory context is capped at ~48 000 characters per chat. Very old conversation rows may be truncated if you have many; the lessons document and date-index rows are always prioritised.
