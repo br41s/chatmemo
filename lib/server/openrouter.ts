@@ -23,6 +23,27 @@ export const SUMMARIZE_MODELS = ["openai/gpt-oss-120b"]
 // Kept as an alias for the primary model for backward compatibility.
 export const SUMMARIZE_MODEL = SUMMARIZE_MODELS[0]
 export const MIN_SUMMARY_WORDS = 10
+
+// gpt-oss reasons before it answers, and on OpenRouter those reasoning tokens
+// count against max_tokens. Callers size max_tokens for the summary alone, so
+// on a long transcript the reasoning could spend all of it and leave no
+// answer — which read as "nothing worth remembering" and dropped the
+// conversation. Low effort keeps the reasoning short; the headroom keeps it
+// from eating the caller's allowance.
+export const REASONING_EFFORT = "low"
+export const REASONING_HEADROOM_TOKENS = 2_000
+
+/** An answer cut off before any text: a failure, not an empty summary. */
+export class SummaryCutOffError extends Error {
+  constructor(model: string, usage: unknown) {
+    super(
+      `summariser ${model} hit its token limit before writing any text (usage ${JSON.stringify(
+        usage ?? null
+      )})`
+    )
+    this.name = "SummaryCutOffError"
+  }
+}
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 const DEFAULT_TIMEOUT_MS = 30_000
 
@@ -89,20 +110,30 @@ export async function callSummarizerWithMeta(
   let lastError: unknown
   for (const model of SUMMARIZE_MODELS) {
     try {
-      const completion = await client.chat.completions.create({
+      // `reasoning` is OpenRouter's parameter, not the OpenAI SDK's; the SDK
+      // sends the body as given.
+      const params = {
         model,
         messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userContent }
+          { role: "system" as const, content: systemPrompt },
+          { role: "user" as const, content: userContent }
         ],
         temperature: 0.3,
-        max_tokens: maxTokens,
-        stream: false
-      })
+        max_tokens: maxTokens + REASONING_HEADROOM_TOKENS,
+        reasoning: { effort: REASONING_EFFORT },
+        stream: false as const
+      }
+      const completion = await client.chat.completions.create(params)
 
       const choice = completion.choices[0]
       const text = (choice?.message?.content ?? "").trim()
       const truncated = choice?.finish_reason === "length"
+
+      if (!text && truncated) {
+        // Not "nothing worth remembering": the model never got to answer.
+        // Thrown so callers log it and retry instead of recording a skip.
+        throw new SummaryCutOffError(model, completion.usage)
+      }
 
       if (
         !text ||

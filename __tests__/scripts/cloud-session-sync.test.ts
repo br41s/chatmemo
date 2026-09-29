@@ -4,7 +4,8 @@
 import {
   buildPayload,
   parseTranscript,
-  shouldSync
+  shouldSync,
+  workerEnv
 } from "../../public/hooks/chatmemo-cloud-sync.mjs"
 
 // Cloud sessions never touch the laptop, so the laptop sync never saw them:
@@ -102,5 +103,22 @@ describe("buildPayload", () => {
     expect(total).toBeLessThanOrEqual(80_000)
     expect(sent[sent.length - 1].text.startsWith("59 ")).toBe(true)
     expect(sent[0].text.startsWith("0 ")).toBe(false)
+  })
+})
+
+describe("workerEnv", () => {
+  // Node's fetch ignores HTTPS_PROXY on its own; in a cloud container every
+  // post then went out directly and was refused as "Host not in allowlist".
+  it("routes the worker's fetch through the container's proxy", () => {
+    expect(
+      workerEnv({ HTTPS_PROXY: "http://127.0.0.1:3128" }).NODE_USE_ENV_PROXY
+    ).toBe("1")
+    expect(
+      workerEnv({ https_proxy: "http://127.0.0.1:3128" }).NODE_USE_ENV_PROXY
+    ).toBe("1")
+  })
+
+  it("leaves a machine without a proxy alone", () => {
+    expect(workerEnv({ PATH: "/bin" })).toEqual({ PATH: "/bin" })
   })
 })
