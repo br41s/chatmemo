@@ -135,6 +135,17 @@ export function buildPayload({ sessionId, cwd, messages }) {
   }
 }
 
+/**
+ * The worker's environment. Cloud containers reach the internet only through
+ * an HTTPS proxy, and Node's built-in fetch ignores HTTPS_PROXY unless
+ * NODE_USE_ENV_PROXY is set (Node 22.21+): without it every post went out
+ * directly and was refused as "Host not in allowlist".
+ */
+export function workerEnv(env) {
+  const proxied = Boolean(env.HTTPS_PROXY || env.https_proxy)
+  return proxied ? { ...env, NODE_USE_ENV_PROXY: "1" } : env
+}
+
 // ---------------------------------------------------------------------------
 // State and log
 // ---------------------------------------------------------------------------
@@ -306,8 +317,8 @@ async function main() {
 
   spawn(
     process.execPath,
-    [fileURLToPath(import.meta.url), "--worker", payload],
-    { detached: true, stdio: "ignore", env: process.env }
+    ["--no-warnings", fileURLToPath(import.meta.url), "--worker", payload],
+    { detached: true, stdio: "ignore", env: workerEnv(process.env) }
   ).unref()
 }
 

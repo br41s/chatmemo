@@ -38,6 +38,10 @@ export const MAX_MESSAGES = 200
 // then paid for the fallback anyway, after a request that could only fail.
 // Keep in sync with lib/server/openrouter.ts.
 export const SUMMARIZE_MODELS = ["openai/gpt-oss-120b"]
+// gpt-oss's reasoning counts against max_tokens; without headroom a long
+// session could spend it all and return no summary. Mirrors
+// lib/server/openrouter.ts.
+const REASONING_HEADROOM_TOKENS = 2_000
 export const SUMMARIZE_MODEL = SUMMARIZE_MODELS[0]
 
 // ---------------------------------------------------------------------------
@@ -267,7 +271,8 @@ export async function summarize(
             { role: "user", content: input }
           ],
           temperature: 0.3,
-          max_tokens: 700
+          max_tokens: 700 + REASONING_HEADROOM_TOKENS,
+          reasoning: { effort: "low" }
         }),
         signal: AbortSignal.timeout(60_000)
       })
@@ -280,6 +285,13 @@ export async function summarize(
 
       const data = await res.json()
       const text = (data.choices?.[0]?.message?.content ?? "").trim()
+      if (!text && data.choices?.[0]?.finish_reason === "length") {
+        // Cut off before answering — a failure to retry, not "nothing here".
+        log(
+          `summarize: ${model} → hit its token limit before any text (usage ${JSON.stringify(data.usage ?? null)})`
+        )
+        continue
+      }
       // Valid empty/SKIP result — not a failure, so stop here (don't fall back).
       if (!text || text === "SKIP" || text.split(/\s+/).length < 10) return null
       return text

@@ -264,3 +264,10 @@ Cuatro PRs apilados sobre la rama de auditoría, uno por hallazgo, en orden de d
 - Decidido: el endpoint responde 401 a un token inválido (antes 500) y tiene `maxDuration = 60` — un transcript de la nube es mucho más largo que una página del bookmarklet. Se envían como máximo los 80 000 caracteres más recientes.
 - Aceptado: las sesiones en la nube anteriores no se recuperan; no hay forma de leer sus transcripts desde el Mac.
 - Verificado: el hook real, ejecutado en una sesión en la nube contra un servidor simulado, devuelve en 83 ms, publica una vez con la clave, título y fecha correctos, y no vuelve a publicar sin crecimiento.
+
+## 2026-09-29 — El hook en la nube no salía del contenedor, y el resumidor descartaba sesiones
+
+- Descubierto al probarlo de extremo a extremo desde una sesión en la nube: el `fetch` de Node ignora `HTTPS_PROXY`, así que la petición salía directa y la red la rechazaba («Host not in allowlist»); `curl`, que sí usa el proxy, había dado por buena la conectividad. Decidido: el hook lanza su proceso hijo con `NODE_USE_ENV_PROXY=1` cuando hay proxy (Node ≥ 22.21) y `--no-warnings`.
+- Descubierto: la misma sesión se publicó dos veces con 4 minutos de diferencia; la primera volvió como «Nothing worth remembering», la segunda se guardó. Hipótesis (sin confirmar: OpenRouter está bloqueado desde el contenedor): gpt-oss razona antes de responder, el razonamiento cuenta contra `max_tokens`, y en un transcript largo a veces lo agota; la respuesta vacía se leía como SKIP y la conversación se perdía en silencio.
+- Decidido: `reasoning: { effort: "low" }` y 2 000 tokens de margen sobre el límite de cada llamador, en el servidor y en los scripts del portátil. Una respuesta vacía cortada por longitud lanza `SummaryCutOffError` (se registra y se reintenta) en vez de pasar por «nada que recordar». Los llamadores ya capturaban errores.
+- Verificado: el hook corregido publicó esta sesión en producción desde la nube sin ninguna variable manual; 4 pruebas nuevas del resumidor, 2 de ellas fallan con el código anterior.
