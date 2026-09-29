@@ -1142,6 +1142,7 @@ export type Database = {
           content: string
           created_at: string
           effective_at: string | null
+          external_id: string | null
           id: string
           kind: string | null
           occurred_at: string | null
@@ -1153,6 +1154,7 @@ export type Database = {
           chat_id?: string | null
           content: string
           created_at?: string
+          external_id?: string | null
           id?: string
           kind?: string | null
           occurred_at?: string | null
@@ -1164,6 +1166,7 @@ export type Database = {
           chat_id?: string | null
           content?: string
           created_at?: string
+          external_id?: string | null
           id?: string
           kind?: string | null
           occurred_at?: string | null

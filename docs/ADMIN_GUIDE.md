@@ -315,6 +315,46 @@ tail -20 ~/.chatmemo/sync.log
 
 The rows are written with `content` only; the `summaries_derive_metadata` trigger (migration `20260924000000`) classifies them. Without that migration applied, they are stored but never read — check with `select count(*) from summaries where kind is null`.
 
+### Claude Code cloud sessions
+
+Sessions the Claude Code desktop app (or claude.ai/code) runs **in the cloud** never touch your Mac, so neither the hook above nor the watcher sees them. They are synced from inside the cloud container instead: a hook posts the session to `/api/import/conversation`, which summarises it with the server's OpenRouter key and stores it. The container needs no database or OpenRouter credentials.
+
+In the cloud environment's settings (the environment menu in a session's title bar → **Edit**):
+
+1. Add the environment variable `CHATMEMO_IMPORT_TOKEN` with the same value as in `.env.local`.
+2. Allow network access to `chatmemo-one.vercel.app`.
+3. Add to the **Setup script**:
+
+```bash
+# ChatMemo: sync this environment's Claude Code sessions into memory
+# Download, and install only if it parses as JavaScript: the app answers a
+# missing file with a 200 HTML page, which must not become the hook.
+mkdir -p "$HOME/.claude/hooks"
+hook="$HOME/.claude/hooks/chatmemo-cloud-sync.mjs"
+tmp="$HOME/.claude/hooks/chatmemo-cloud-sync.download.mjs"
+curl -fsSL https://chatmemo-one.vercel.app/hooks/chatmemo-cloud-sync.mjs -o "$tmp" \
+  && node --check "$tmp" 2>/dev/null && mv "$tmp" "$hook" || rm -f "$tmp"
+# Register it only if it is there, so a failed download adds no broken hook.
+[ -f "$hook" ] && node -e '
+const fs = require("fs"), os = require("os")
+const file = os.homedir() + "/.claude/settings.json"
+let s = {}
+try { s = JSON.parse(fs.readFileSync(file, "utf8")) } catch {}
+s.hooks = s.hooks || {}
+const command = "node " + os.homedir() + "/.claude/hooks/chatmemo-cloud-sync.mjs"
+for (const event of ["Stop", "SessionEnd"]) {
+  s.hooks[event] = s.hooks[event] || []
+  if (!s.hooks[event].some(e => (e.hooks || []).some(h => h.command === command)))
+    s.hooks[event].push({ matcher: "", hooks: [{ type: "command", command }] })
+}
+fs.writeFileSync(file, JSON.stringify(s, null, 2))
+' || true
+```
+
+The hook (`public/hooks/chatmemo-cloud-sync.mjs`, served by the deployed app) posts once a session has 3 user messages, again every 5 more, and at session end. Each post carries `sessionKey: "claude-code:<session id>"`, so the new summary replaces the session's previous row (`summaries.external_id`, migration `20260929010000`). It returns immediately and does the work in a detached process; outcomes go to `~/.chatmemo-cloud/sync.log` inside the container. Set `CHATMEMO_URL` to point it at a different deployment.
+
+Only sessions started after the setup script is in place are synced; earlier cloud sessions stay missing.
+
 ### Claude Code Bulk Import
 
 To import all historical sessions from `~/.claude/projects/` in one shot:
