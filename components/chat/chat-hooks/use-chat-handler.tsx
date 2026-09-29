@@ -523,7 +523,6 @@ export const useChatHandler = () => {
 
   return {
     chatInputRef,
-    prompt,
     handleNewChat,
     handleSendMessage,
     handleFocusChatInput,
