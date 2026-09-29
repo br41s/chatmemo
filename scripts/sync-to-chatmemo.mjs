@@ -1,38 +1,41 @@
 #!/usr/bin/env node
 /**
- * Claude Code Stop hook — syncs the current session transcript to ChatMemo.
+ * Claude Code Stop / SessionEnd hook — syncs the current session to ChatMemo.
  *
  * Registered in ~/.claude/settings.json by scripts/chatmemo-hook-setup.mjs.
  * Reads config from ~/.chatmemo/config.json (created by setup script).
  *
  * Behaviour:
- *  - Fires after every Claude Code turn (Stop hook)
- *  - Imports each session exactly once, after it reaches MIN_USER_MESSAGES
- *  - Tracks imported sessions in ~/.chatmemo/imported-sessions.json
- *  - Calls Supabase REST + OpenRouter directly — zero npm dependencies
+ *  - Stop fires after every turn; SessionEnd once when the session closes
+ *  - A session is summarised once it has MIN_USER_MESSAGES, again every
+ *    RESYNC_GROWTH user messages after that, and a last time at SessionEnd.
+ *    Each new summary replaces the session's previous row.
+ *  - The work runs in a detached child, so Claude Code never waits on the
+ *    summariser
+ *  - Every outcome, failures included, goes to ~/.chatmemo/sync.log
  *  - Always exits 0 so it never blocks Claude Code
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs"
-import { homedir } from "os"
-import { join } from "path"
-
-const CONFIG_DIR = join(homedir(), ".chatmemo")
-const CONFIG_FILE = join(CONFIG_DIR, "config.json")
-const SESSIONS_FILE = join(CONFIG_DIR, "imported-sessions.json")
-const MIN_USER_MESSAGES = 3
-const MAX_MESSAGES = 200 // cap to avoid huge payloads
-
-// Primary is the free model; fall back to the paid variant on a hard failure
-// (commonly a free-tier 429). Keep in sync with lib/server/openrouter.ts.
-const SUMMARIZE_MODELS = ["openai/gpt-oss-120b:free", "openai/gpt-oss-120b"]
+import { spawn } from "child_process"
+import { existsSync, readFileSync, statSync } from "fs"
+import { fileURLToPath } from "url"
+import {
+  CONFIG_FILE,
+  appendSyncLog,
+  parseJSONL,
+  syncSession
+} from "./claude-sessions-shared.mjs"
 
 // ---------------------------------------------------------------------------
-// Main
+// Entry: read the hook payload, hand it to a detached worker, return at once.
 // ---------------------------------------------------------------------------
 
 async function main() {
-  // Read hook input from stdin
+  if (process.argv[2] === "--worker") {
+    await work(JSON.parse(process.argv[3] ?? "{}"))
+    return
+  }
+
   let raw = ""
   for await (const chunk of process.stdin) raw += chunk
 
@@ -42,182 +45,75 @@ async function main() {
   } catch {
     return // malformed input — silent exit
   }
+  if (!hook.transcript_path || !hook.session_id) return
 
-  const { transcript_path, session_id, cwd = "" } = hook
+  const payload = JSON.stringify({
+    transcript_path: hook.transcript_path,
+    session_id: hook.session_id,
+    cwd: hook.cwd ?? "",
+    event: hook.hook_event_name ?? "Stop"
+  })
+
+  spawn(
+    process.execPath,
+    [fileURLToPath(import.meta.url), "--worker", payload],
+    {
+      detached: true,
+      stdio: "ignore"
+    }
+  ).unref()
+}
+
+// ---------------------------------------------------------------------------
+// Worker
+// ---------------------------------------------------------------------------
+
+async function work({ transcript_path, session_id, cwd = "", event }) {
   if (!transcript_path || !session_id) return
 
-  // Load ChatMemo config
-  if (!existsSync(CONFIG_FILE)) return
+  if (!existsSync(CONFIG_FILE)) {
+    appendSyncLog(`${session_id}: no ${CONFIG_FILE} — run npm run setup:sync`)
+    return
+  }
   let config
   try {
     config = JSON.parse(readFileSync(CONFIG_FILE, "utf8"))
-  } catch {
+  } catch (e) {
+    appendSyncLog(`${session_id}: unreadable config.json — ${e.message}`)
     return
   }
-
   const { supabaseUrl, serviceRoleKey, openrouterKey, userId } = config
-  if (!supabaseUrl || !serviceRoleKey || !openrouterKey || !userId) return
-
-  // Skip already-imported sessions
-  const sessions = existsSync(SESSIONS_FILE)
-    ? JSON.parse(readFileSync(SESSIONS_FILE, "utf8"))
-    : {}
-  if (sessions[session_id]) return
-
-  // Parse JSONL transcript
-  let lines
-  try {
-    lines = readFileSync(transcript_path, "utf8").split("\n").filter(Boolean)
-  } catch {
+  if (!supabaseUrl || !serviceRoleKey || !openrouterKey || !userId) {
+    appendSyncLog(`${session_id}: config.json is missing required fields`)
     return
   }
 
-  const messages = []
-  for (const line of lines) {
-    try {
-      const entry = JSON.parse(line)
-      if (entry.type !== "user" && entry.type !== "assistant") continue
-      const text = extractText(entry.message?.content)
-      if (!text || text.length < 15) continue
-      messages.push({ role: entry.type === "user" ? "user" : "assistant", text })
-    } catch {
-      // skip malformed lines
-    }
+  let mtime
+  try {
+    mtime = statSync(transcript_path).mtime.getTime()
+  } catch (e) {
+    appendSyncLog(`${session_id}: transcript unreadable — ${e.message}`)
+    return
   }
 
-  const userMessages = messages.filter(m => m.role === "user")
-  if (userMessages.length < MIN_USER_MESSAGES) return // too short, skip
-
-  // Cap message count to avoid huge payloads
-  const capped = messages.slice(-MAX_MESSAGES)
-
-  // Build title from cwd + date
+  const messages = parseJSONL(transcript_path)
   const projectName = cwd.split("/").filter(Boolean).pop() || "Claude Code"
-  const date = new Date().toISOString().slice(0, 10)
-  const title = `[Claude Code] ${projectName} — ${date}`
 
-  // Summarize via OpenRouter
-  const summaryText = await summarize(openrouterKey, title, date, capped)
-  if (!summaryText) return
-
-  // Insert into Supabase
-  const inserted = await insertSummary(supabaseUrl, serviceRoleKey, userId, summaryText)
-  if (!inserted) return
-
-  // Mark session as done
-  sessions[session_id] = new Date().toISOString()
-  try {
-    writeFileSync(SESSIONS_FILE, JSON.stringify(sessions, null, 2))
-  } catch {
-    // non-fatal
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function extractText(content) {
-  if (typeof content === "string") return content.trim()
-  if (Array.isArray(content)) {
-    return content
-      .filter(b => b?.type === "text")
-      .map(b => (b.text ?? "").trim())
-      .filter(Boolean)
-      .join("\n")
-  }
-  return ""
-}
-
-const SYSTEM_PROMPT = `You are a memory assistant. You are given a Claude Code session transcript between a developer and an AI coding assistant.
-
-Your job is to extract a detailed, durable memory summary that will help understand this developer's work and preferences.
-
-Start with a header line exactly like this:
-### [YYYY-MM-DD] Session Title
-Then bullet the key facts underneath.
-
-Extract and preserve:
-- Projects worked on (name, language, architecture, current status)
-- Problems solved and how they were solved
-- Technical decisions and their rationale
-- Tools, frameworks, libraries used
-- Patterns, preferences, working style
-- Anything useful for future sessions
-
-Be specific. Preserve project names, file paths when relevant, technology choices, and concrete facts.
-
-Output: plain text only, up to 500 words.
-If the session contains nothing worth remembering (e.g. only tool calls, no real work), output only: SKIP`
-
-async function summarize(openrouterKey, title, date, messages) {
-  const body = messages
-    .map(m => `${m.role === "user" ? "User" : "Assistant"}: ${m.text}`)
-    .join("\n\n")
-  const input = `## ${title} (${date})\n\n${body}`
-
-  for (const model of SUMMARIZE_MODELS) {
-    try {
-      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${openrouterKey}`
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            { role: "user", content: input }
-          ],
-          temperature: 0.3,
-          max_tokens: 700
-        }),
-        signal: AbortSignal.timeout(30_000)
-      })
-
-      if (!res.ok) {
-        const errBody = await res.text().catch(() => "")
-        console.error(
-          `summarize: ${model} → HTTP ${res.status} ${errBody.slice(0, 200)}`
-        )
-        continue // try the next model in the fallback chain
-      }
-
-      const data = await res.json()
-      const text = (data.choices?.[0]?.message?.content ?? "").trim()
-      if (!text || text === "SKIP" || text.split(/\s+/).length < 10) return null
-      return text
-    } catch (e) {
-      console.error(`summarize: ${model} → ${e?.message || e}`)
-      // try the next model in the fallback chain
-    }
-  }
-
-  return null
-}
-
-async function insertSummary(supabaseUrl, serviceRoleKey, userId, content) {
-  try {
-    const res = await fetch(`${supabaseUrl}/rest/v1/summaries`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: serviceRoleKey,
-        Authorization: `Bearer ${serviceRoleKey}`,
-        Prefer: "return=minimal"
-      },
-      body: JSON.stringify({ user_id: userId, content }),
-      signal: AbortSignal.timeout(10_000)
-    })
-    return res.ok || res.status === 201
-  } catch {
-    return false
-  }
+  await syncSession({
+    config,
+    key: session_id,
+    messages,
+    mtime,
+    title: `[Claude Code] ${projectName}`,
+    header: date => `[source:claude]\n### [${date}] ${projectName}`,
+    final: event === "SessionEnd"
+  })
 }
 
 // ---------------------------------------------------------------------------
 // Run
 // ---------------------------------------------------------------------------
 
-main().catch(() => {}).finally(() => process.exit(0))
+main()
+  .catch(e => appendSyncLog(`hook error: ${e?.message || e}`))
+  .finally(() => process.exit(0))

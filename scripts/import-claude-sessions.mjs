@@ -87,13 +87,26 @@ async function main() {
       failed++
     } else {
       const summaryText = `[source:claude]\n### [${date}] ${projectName}\n\n${factsText}`
-      const ok = await insertSummary(supabaseUrl, serviceRoleKey, userId, summaryText)
+      const { ok, id, error } = await insertSummary(
+        supabaseUrl,
+        serviceRoleKey,
+        userId,
+        summaryText
+      )
       if (ok) {
         console.log("✓ imported")
-        sessions[sessionId] = new Date().toISOString()
+        // With its row id, a later sync of this session replaces the row.
+        sessions[sessionId] = id
+          ? {
+              rowId: id,
+              userMessages: userMessages.length,
+              mtime,
+              syncedAt: new Date().toISOString()
+            }
+          : new Date().toISOString()
         imported++
       } else {
-        console.log("✗ insert failed")
+        console.log(`✗ insert failed — ${error}`)
         failed++
       }
       saveSessionsFile(sessions)

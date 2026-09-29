@@ -21,25 +21,25 @@
  * Logs:    ~/.chatmemo/watch.log  (via LaunchAgent StandardOutPath)
  */
 
-import { existsSync, mkdirSync, writeFileSync } from "fs"
+import { mkdirSync, writeFileSync } from "fs"
 import { homedir } from "os"
 import { join } from "path"
 import {
   CLAUDE_PROJECTS_DIR,
-  MIN_USER_MESSAGES,
-  MAX_MESSAGES,
+  appendSyncLog,
+  findAllJSONLFiles,
+  hasChangedSince,
   loadConfig,
   loadSessions,
-  saveSessionsFile,
-  findAllJSONLFiles,
   parseJSONL,
   slugToProjectName,
-  mtimeToDate,
   sleep,
-  summarize,
-  insertSummary
+  syncSession
 } from "./claude-sessions-shared.mjs"
-import { findCopilotJSONLFiles, parseCopilotJSONL } from "./copilot-sessions-shared.mjs"
+import {
+  findCopilotJSONLFiles,
+  parseCopilotJSONL
+} from "./copilot-sessions-shared.mjs"
 
 // ---------------------------------------------------------------------------
 // Config
@@ -96,8 +96,14 @@ async function main() {
   await poll(config)
   setInterval(() => poll(config), POLL_INTERVAL_MS)
 
-  process.on("SIGINT", () => { log("Watcher stopped (SIGINT)"); process.exit(0) })
-  process.on("SIGTERM", () => { log("Watcher stopped (SIGTERM)"); process.exit(0) })
+  process.on("SIGINT", () => {
+    log("Watcher stopped (SIGINT)")
+    process.exit(0)
+  })
+  process.on("SIGTERM", () => {
+    log("Watcher stopped (SIGTERM)")
+    process.exit(0)
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -105,101 +111,55 @@ async function main() {
 // ---------------------------------------------------------------------------
 
 async function poll(config) {
-  const { supabaseUrl, serviceRoleKey, openrouterKey, userId } = config
   const now = Date.now()
-
   const sessions = loadSessions()
-  const allFiles = findAllJSONLFiles(CLAUDE_PROJECTS_DIR)
-  const candidates = allFiles.filter(
-    f => !sessions[f.sessionId] && now - f.mtime >= IDLE_THRESHOLD_MS
+
+  // Idle sessions that are new, or have changed since they were last synced.
+  // A synced session that grew is summarised again and its row replaced.
+  const candidates = [
+    ...findAllJSONLFiles(CLAUDE_PROJECTS_DIR).map(f => ({
+      ...f,
+      key: f.sessionId,
+      label: slugToProjectName(f.projectSlug),
+      parse: parseJSONL,
+      title: name => `[Claude Code] ${name}`,
+      header: (date, name) => `[source:claude]\n### [${date}] ${name}`
+    })),
+    ...findCopilotJSONLFiles().map(f => ({
+      ...f,
+      key: `copilot:${f.sessionId}`,
+      label: f.projectName,
+      parse: parseCopilotJSONL,
+      title: name => `[Copilot] ${name}`,
+      header: (date, name) => `### [${date}] ${name} [Copilot]`
+    }))
+  ].filter(
+    f =>
+      now - f.mtime >= IDLE_THRESHOLD_MS &&
+      hasChangedSince(sessions[f.key], f.mtime)
   )
 
   if (candidates.length > 0) {
-    log(`Found ${candidates.length} session(s) to process`)
+    log(`Found ${candidates.length} session(s) to check`)
   }
 
-  for (const { path: filePath, sessionId, projectSlug, mtime } of candidates) {
-    const messages = parseJSONL(filePath)
-    const userMessages = messages.filter(m => m.role === "user")
+  for (const f of candidates) {
+    const outcome = await syncSession({
+      config,
+      key: f.key,
+      messages: f.parse(f.path),
+      mtime: f.mtime,
+      title: f.title(f.label),
+      header: date => f.header(date, f.label),
+      // Idle this long counts as finished; a later resume re-syncs it.
+      final: true,
+      log: message => {
+        log(message)
+        appendSyncLog(message)
+      }
+    })
 
-    if (userMessages.length < MIN_USER_MESSAGES) {
-      sessions[sessionId] = "skipped:" + new Date().toISOString()
-      saveSessionsFile(sessions)
-      continue
-    }
-
-    const capped = messages.slice(-MAX_MESSAGES)
-    const projectName = slugToProjectName(projectSlug)
-    const date = mtimeToDate(mtime)
-    const title = `[Claude Code] ${projectName} — ${date}`
-
-    log(`Processing ${sessionId.slice(0, 8)}… "${projectName}" (${userMessages.length} msgs)`)
-
-    const factsText = await summarize(openrouterKey, title, date, capped)
-    if (!factsText) {
-      log(`  → LLM failed — will retry next poll`)
-      // Do NOT save — retry on next poll
-      continue
-    }
-
-    const summaryText = `### [${date}] ${projectName}\n\n${factsText}`
-    const ok = await insertSummary(supabaseUrl, serviceRoleKey, userId, summaryText)
-    if (ok) {
-      log(`  → imported`)
-      sessions[sessionId] = new Date().toISOString()
-    } else {
-      log(`  → insert failed (will retry next poll)`)
-    }
-    saveSessionsFile(sessions)
-
-    await sleep(2_000)
-  }
-
-  // --- Copilot sessions ---
-
-  const allCopilotFiles = findCopilotJSONLFiles()
-  const copilotCandidates = allCopilotFiles.filter(
-    f => !sessions[`copilot:${f.sessionId}`] && now - f.mtime >= IDLE_THRESHOLD_MS
-  )
-
-  if (copilotCandidates.length > 0) {
-    log(`[Copilot] Found ${copilotCandidates.length} session(s) to process`)
-  }
-
-  for (const { path: filePath, sessionId, projectName, mtime } of copilotCandidates) {
-    const messages = parseCopilotJSONL(filePath)
-    const userMessages = messages.filter(m => m.role === "user")
-
-    if (userMessages.length < MIN_USER_MESSAGES) {
-      sessions[`copilot:${sessionId}`] = "skipped:" + new Date().toISOString()
-      saveSessionsFile(sessions)
-      continue
-    }
-
-    const capped = messages.slice(-MAX_MESSAGES)
-    const date = mtimeToDate(mtime)
-    const title = `[Copilot] ${projectName} — ${date}`
-
-    log(`[Copilot] Processing ${sessionId.slice(0, 8)}… "${projectName}" (${userMessages.length} msgs)`)
-
-    const factsText = await summarize(openrouterKey, title, date, capped)
-    if (!factsText) {
-      log(`[Copilot]   → LLM failed — will retry next poll`)
-      // Do NOT save — retry on next poll
-      continue
-    }
-
-    const summaryText = `### [${date}] ${projectName} [Copilot]\n\n${factsText}`
-    const ok = await insertSummary(supabaseUrl, serviceRoleKey, userId, summaryText)
-    if (ok) {
-      log(`[Copilot]   → imported`)
-      sessions[`copilot:${sessionId}`] = new Date().toISOString()
-    } else {
-      log(`[Copilot]   → insert failed (will retry next poll)`)
-    }
-    saveSessionsFile(sessions)
-
-    await sleep(2_000)
+    if (outcome === "inserted" || outcome === "replaced") await sleep(2_000)
   }
 }
 
