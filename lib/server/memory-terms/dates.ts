@@ -50,6 +50,24 @@ function monthRange(year: number, month: number): DateRange {
   }
 }
 
+/** The whole UTC day `daysAgo` days before `now`. */
+function dayRange(now: Date, daysAgo: number): DateRange {
+  const from = new Date(now)
+  from.setUTCDate(from.getUTCDate() - daysAgo)
+  from.setUTCHours(0, 0, 0, 0)
+  const to = new Date(from)
+  to.setUTCHours(23, 59, 59, 999)
+  return { from, to }
+}
+
+/**
+ * The words extractDateRange reads as a relative time. They name when, not
+ * what, so topic extraction strips them the way it strips month names — left
+ * in, "ayer" became a search term and matched any row that happened to say it.
+ */
+export const RELATIVE_DATE_PATTERN =
+  /\b(day before yesterday|yesterday|today|last week|last month|anteayer|ayer|hoy|semana pasada|mes pasado)\b/g
+
 export function extractDateRange(message: string): DateRange | null {
   const lower = message.toLowerCase()
   const now = new Date()
@@ -82,14 +100,16 @@ export function extractDateRange(message: string): DateRange | null {
     }
   }
 
-  // Relative
-  if (lower.includes("yesterday") || lower.includes("ayer")) {
-    const from = new Date(now)
-    from.setUTCDate(from.getUTCDate() - 1)
-    from.setUTCHours(0, 0, 0, 0)
-    const to = new Date(from)
-    to.setUTCHours(23, 59, 59, 999)
-    return { from, to }
+  // Relative days. "anteayer" first — it contains "ayer". Word boundaries so
+  // "playera" does not read as yesterday.
+  if (/\banteayer\b/.test(lower) || lower.includes("day before yesterday")) {
+    return dayRange(now, 2)
+  }
+  if (/\b(yesterday|ayer)\b/.test(lower)) {
+    return dayRange(now, 1)
+  }
+  if (/\b(today|hoy)\b/.test(lower)) {
+    return dayRange(now, 0)
   }
   if (lower.includes("last week") || lower.includes("semana pasada")) {
     const from = new Date(now)

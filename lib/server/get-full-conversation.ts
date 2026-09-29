@@ -121,6 +121,42 @@ async function searchSummaries(
   )
 }
 
+/**
+ * Summary rows whose conversation falls inside a date range, ranked by the
+ * topic words when there are any.
+ *
+ * In-app summaries carry no `### [date]` header, so no text search can find
+ * "yesterday's" conversation — only the row's own date can. `effective_at` is
+ * that date: the conversation's stated one, or when the row was written.
+ */
+async function searchSummariesByDate(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  range: DateRange,
+  topicWords: string[]
+): Promise<string[]> {
+  const { data } = await supabase
+    .from("summaries")
+    .select("id, content, created_at")
+    .eq("user_id", userId)
+    .in("kind", ["conversation", "summary"])
+    .gte(MEMORY_ORDER_COLUMN, range.from.toISOString())
+    .lte(MEMORY_ORDER_COLUMN, range.to.toISOString())
+    .order(MEMORY_ORDER_COLUMN, { ascending: false })
+    .limit(MAX_SUMMARY_ROWS)
+
+  const rows = (data ?? [])
+    .map(r => ({
+      content: (r.content ?? "").trim(),
+      createdAt: r.created_at ?? ""
+    }))
+    .filter(r => r.content)
+
+  return rankByTermCoverage(rows, topicWords).map(r =>
+    r.content.slice(0, MAX_ROW_CHARS)
+  )
+}
+
 interface RankableRow {
   content: string
   createdAt: string
@@ -168,24 +204,25 @@ export async function getFullConversationForUser(
   const quoted = extractQuotedPhrases(userMessage)
   const topicWords = extractTopicWords(userMessage)
 
-  // Build summary search terms in PRIORITY order: an explicit date and a quoted
-  // title are high-precision signals and must be searched (and budgeted) before
-  // loose topic words, which can match many unrelated rows. Topic words are a
-  // fallback only when no date and no quoted title were given.
-  const summaryTerms: string[] = []
-  if (isoDate) summaryTerms.push(`[${isoDate}]`)
-  summaryTerms.push(...quoted)
-  if (summaryTerms.length === 0) summaryTerms.push(...topicWords)
-
   // In-app chat search: prefer date, then quoted title, then topic words.
   const isoDayRange: DateRange | null = isoDate
     ? {
-        from: new Date(`${isoDate}T00:00:00`),
-        to: new Date(`${isoDate}T23:59:59`)
+        from: new Date(`${isoDate}T00:00:00Z`),
+        to: new Date(`${isoDate}T23:59:59Z`)
       }
     : null
   const dateRange = isoDayRange ?? extractDateRange(userMessage)
   const inAppTerms = quoted.length > 0 ? quoted : topicWords
+
+  // Build summary search terms in PRIORITY order: an explicit date and a quoted
+  // title are high-precision signals and must be searched (and budgeted) before
+  // loose topic words, which can match many unrelated rows. Topic words are a
+  // fallback only when no date and no quoted title were given — with a date,
+  // they rank the rows of that date instead of searching all of history.
+  const summaryTerms: string[] = []
+  if (isoDate) summaryTerms.push(`[${isoDate}]`)
+  summaryTerms.push(...quoted)
+  if (summaryTerms.length === 0 && !dateRange) summaryTerms.push(...topicWords)
 
   const parts: string[] = []
   let totalChars = 0
@@ -199,36 +236,57 @@ export async function getFullConversationForUser(
   }
 
   // --- 1. Imported / full-text conversations from summaries -----------------
-  const summaryHits = await searchSummaries(supabase, userId, summaryTerms)
-  for (const hit of summaryHits) {
+  const [termHits, dateHits] = await Promise.all([
+    searchSummaries(supabase, userId, summaryTerms),
+    dateRange
+      ? searchSummariesByDate(supabase, userId, dateRange, inAppTerms)
+      : Promise.resolve([])
+  ])
+  // A row found both ways is pushed once; term hits keep their priority.
+  for (const hit of [...new Set([...termHits, ...dateHits])]) {
     if (!pushBlock(hit)) break
   }
 
   // --- 2. In-app conversations from chats + messages ------------------------
   if (totalChars < maxTotalChars) {
-    const base = supabase
-      .from("chats")
-      .select("id, name, created_at")
-      .eq("user_id", userId)
-      .order(MEMORY_ORDER_COLUMN, { ascending: false })
-      .limit(MAX_CHATS * 3)
+    // `created_at`, not MEMORY_ORDER_COLUMN: `effective_at` is a column of
+    // `summaries` only. Ordering chats by it failed every one of these queries,
+    // and the error was dropped with `data`, so no in-app conversation was ever
+    // recovered — "yesterday's chat" answered that nothing was stored.
+    const chatQuery = (withTopic: boolean) => {
+      let query = supabase
+        .from("chats")
+        .select("id, name, created_at")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(MAX_CHATS * 3)
 
-    const withDate = dateRange
-      ? base
+      if (dateRange) {
+        query = query
           .gte("created_at", dateRange.from.toISOString())
           .lte("created_at", dateRange.to.toISOString())
-      : base
+      }
+      if (withTopic) {
+        query = query.or(
+          inAppTerms
+            .map(w => `name.ilike.%${w.replace(/[%_,]/g, " ")}%`)
+            .join(",")
+        )
+      }
+      return query
+    }
 
-    const withTopic =
-      inAppTerms.length > 0
-        ? withDate.or(
-            inAppTerms
-              .map(w => `name.ilike.%${w.replace(/[%_,]/g, " ")}%`)
-              .join(",")
-          )
-        : withDate
-
-    const { data: chats } = await withTopic
+    const useTopic = inAppTerms.length > 0
+    const { data: topicChats, error: chatError } = await chatQuery(useTopic)
+    if (chatError) {
+      console.error("[full-conversation] chat search failed:", chatError)
+    }
+    let chats = topicChats
+    // A chat's name is only its opening words, so a topic that is not in the
+    // name must not hide the chats of the day that was asked for.
+    if ((chats ?? []).length === 0 && useTopic && dateRange) {
+      chats = (await chatQuery(false)).data
+    }
 
     for (const chat of (chats ?? []).slice(0, MAX_CHATS)) {
       const { data: messages } = await supabase

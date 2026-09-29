@@ -1,7 +1,8 @@
 // The phrase list that turns full-conversation retrieval on.
 //
 // Retrieval is expensive — it reads whole transcripts — so it only runs when
-// the person has clearly asked for one, in English or Spanish. Detection is
+// the person has clearly asked for one, in English or Spanish, or has asked
+// about the conversations of a named day or period. Detection is
 // pure string matching with no database call, which is what makes the feature
 // free on every other question.
 //
@@ -67,7 +68,15 @@ const TRIGGER_PATTERNS = [
   // Spanish: verb ... conversación/chat
   /\b(recupera|recuperar|muestra|muestrame|muéstrame|busca|buscar|dame|ensename|enséñame|saca|trae)\b.{0,40}\b(conversaci[oó]n|chat)/,
   // Spanish: conversación/chat ... completa/entera/original
-  /\b(conversaci[oó]n|chat)\b.{0,40}\b(completa|completo|entera|entero|original|integra|íntegra)/
+  /\b(conversaci[oó]n|chat)\b.{0,40}\b(completa|completo|entera|entero|original|integra|íntegra)/,
+  // Either language: conversations/chats/summary anchored to a day or period —
+  // "conversaciones de ayer", "resumen de hoy", "yesterday's chats". Naming
+  // when is as specific as naming a title; without these the request fell
+  // through to the baseline, whose in-app rows carried no date to answer from.
+  /\b(conversaci[oó]n(es)?|conversations?|chats?|resumen|res[uú]meme|summary|summari[sz]e)\b.{0,40}\b(anteayer|ayer|hoy|yesterday|today|semana pasada|last week|mes pasado|last month)\b/,
+  /\b(anteayer|ayer|hoy|yesterday|today)('s)?\b.{0,30}\b(conversaci[oó]n(es)?|conversations?|chats?)\b/,
+  // Spanish: "de qué hablé ayer", "hablamos hoy"
+  /\bhabl(amos|aste|e|é)(?![a-záéíóúñ]).{0,30}\b(anteayer|ayer|hoy)\b/
 ]
 
 export function detectFullConversationIntent(message: string): boolean {

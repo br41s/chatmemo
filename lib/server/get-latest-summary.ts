@@ -130,7 +130,7 @@ export async function getLatestSummaryForUser(
     //    values, so (claude, other) is the complement of (perplexity, chatgpt).
     supabase
       .from("summaries")
-      .select("id, content")
+      .select("id, content, effective_at")
       .eq("user_id", userId)
       .in("kind", ["conversation", "summary"])
       .or("kind.eq.summary,source.in.(claude,other)")
@@ -142,7 +142,7 @@ export async function getLatestSummaryForUser(
     //    query A, which is where the previous predicates put them.
     supabase
       .from("summaries")
-      .select("id, content")
+      .select("id, content, effective_at")
       .eq("user_id", userId)
       .eq("kind", "conversation")
       .in("source", ["perplexity", "chatgpt"])
@@ -183,6 +183,28 @@ export function __clearBaselineCache(): void {
 
 interface SummaryRow {
   content: string | null
+  /** When the conversation happened (or the row was written). */
+  effective_at?: string | null
+}
+
+// The header may follow a `[source:X]` tag on the same line.
+const DATE_HEADER_RE = /^\s*(\[source:[\w:]+\]\s*)?###\s+\[\d{4}-\d{2}-\d{2}\]/m
+
+/**
+ * A row's content, dated.
+ *
+ * Imported and Claude Code rows open with a `### [YYYY-MM-DD]` header; in-app
+ * chat summaries do not — their text is only what the summariser wrote. Without
+ * a date the model cannot tell yesterday's conversation from May's, and "what
+ * did we talk about yesterday" was answered with "nothing stored". Rows that
+ * already state a date keep it.
+ */
+export function withDateHeader(content: string, effectiveAt?: string | null) {
+  if (!effectiveAt || DATE_HEADER_RE.test(content)) return content
+  const date = effectiveAt.slice(0, 10)
+  return /^\d{4}-\d{2}-\d{2}$/.test(date)
+    ? `### [${date}]\n${content}`
+    : content
 }
 
 /**
@@ -229,7 +251,10 @@ export function buildSummarySections(
   for (const row of personalData) {
     const content = (row.content ?? "").trim()
     if (!content) continue
-    const capped = cap(content, PERSONAL_ROW_MAX)
+    const capped = withDateHeader(
+      cap(content, PERSONAL_ROW_MAX),
+      row.effective_at
+    )
     if (personalChars + capped.length > budget.personalChars) break
     parts.push(capped)
     personalChars += capped.length
@@ -240,7 +265,7 @@ export function buildSummarySections(
   for (const row of bulkData) {
     const content = (row.content ?? "").trim()
     if (!content) continue
-    const capped = cap(content, BULK_ROW_MAX)
+    const capped = withDateHeader(cap(content, BULK_ROW_MAX), row.effective_at)
     if (bulkChars + capped.length > budget.bulkChars) break
     parts.push(capped)
     bulkChars += capped.length
