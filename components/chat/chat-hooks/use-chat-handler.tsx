@@ -206,8 +206,11 @@ export const useChatHandler = () => {
     setMemoryReports(prev => ({ ...prev, [messageId]: report }))
   }
 
-  // The turn is over: drop the preview, and any answer to it still in flight.
-  const endRecallPreview = () => {
+  // The turn is over: drop its preview, and any answer to it still in flight.
+  // Only if it is still the latest turn — a turn started while this one was
+  // streaming owns the preview now, and ending this one must not take it away.
+  const endRecallPreview = (generation: number) => {
+    if (generation !== latestRecallGeneration) return
     latestRecallGeneration++
     setRecallPreview(null)
   }
@@ -227,9 +230,14 @@ export const useChatHandler = () => {
           }
         : null
 
+    // This turn owns the recall preview from here: anything still in flight
+    // for an earlier one is dropped when it lands.
+    const recallGeneration = ++latestRecallGeneration
+
     try {
       setUserInput("")
       setIsGenerating(true)
+      setRecallPreview(null)
       setIsPromptPickerOpen(false)
       setIsFilePickerOpen(false)
       setNewMessageImages([])
@@ -318,33 +326,6 @@ export const useChatHandler = () => {
       }
 
       let generatedText = ""
-
-      // Ask what this turn is about to be reminded of, alongside the request
-      // itself. Only where the answer will be true of the turn: Ollama gets
-      // the real report before its model is called, a custom model may be
-      // someone else's endpoint and get no memory at all, and a message
-      // carrying images or retrieved file text reaches the server as
-      // something other than the words typed here.
-      const recallGeneration = ++latestRecallGeneration
-      setRecallPreview(null)
-      if (
-        modelData!.provider !== "ollama" &&
-        modelData!.provider !== "custom" &&
-        newMessageImages.length === 0 &&
-        retrievedFileItems.length === 0
-      ) {
-        void fetchRecallPreview(
-          messageContent,
-          budgetHint,
-          newAbortController.signal
-        ).then(preview => {
-          // A preview that lands after a newer turn has started belongs to a
-          // wait that is already over.
-          if (preview && recallGeneration === latestRecallGeneration) {
-            setRecallPreview(preview)
-          }
-        })
-      }
 
       const isToolsCompatible =
         modelData?.provider === "openai" || modelData?.provider === "openrouter"
@@ -451,7 +432,34 @@ export const useChatHandler = () => {
               recordMemoryReport(
                 reportTargetId ?? tempAssistantChatMessage.message.id,
                 report
-              )
+              ),
+            // Ask what this turn is about to be reminded of, alongside the
+            // request itself and with the very text the request carries.
+            // Not for a custom model: it may be someone else's endpoint and
+            // be given no memory at all. The tools and Ollama paths do not
+            // come through here — one shows its own status for the whole
+            // wait, the other has the real report before its model is called.
+            modelData!.provider === "custom"
+              ? undefined
+              : lastUserText => {
+                  // Nothing the server would search by: a message of images,
+                  // or one too long for the history budget to carry.
+                  if (!lastUserText.trim()) return
+                  void fetchRecallPreview(
+                    lastUserText,
+                    budgetHint,
+                    newAbortController.signal
+                  ).then(preview => {
+                    // A preview that lands after a newer turn has started,
+                    // or after this one ended, belongs to a wait that is over.
+                    if (
+                      preview &&
+                      recallGeneration === latestRecallGeneration
+                    ) {
+                      setRecallPreview(preview)
+                    }
+                  })
+                }
           )
         }
       }
@@ -534,11 +542,11 @@ export const useChatHandler = () => {
 
       setIsGenerating(false)
       setFirstTokenReceived(false)
-      endRecallPreview()
+      endRecallPreview(recallGeneration)
     } catch (error) {
       setIsGenerating(false)
       setFirstTokenReceived(false)
-      endRecallPreview()
+      endRecallPreview(recallGeneration)
       setUserInput(startingInput)
     }
   }

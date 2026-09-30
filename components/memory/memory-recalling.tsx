@@ -6,8 +6,9 @@ import { MemorySourceChip } from "./memory-source-chip"
 interface MemoryRecallingProps {
   /** The matched conversations, by name. */
   items: MemoryEntryReport[]
-  /** A stored transcript is being read, or looked for. */
-  transcript?: boolean
+  /** A transcript was recovered and is in the block, or is being looked for.
+   *  Different claims: only the turn's own report can say one was found. */
+  transcript?: "found" | "searching"
   /** How many history entries went in, when the full report is in hand. */
   historyEntries?: number
   /** The newest date the memory reaches, when the full report is in hand. */
@@ -26,17 +27,20 @@ interface MemoryRecallingProps {
  */
 export const MemoryRecalling: FC<MemoryRecallingProps> = ({
   items,
-  transcript = false,
+  transcript,
   historyEntries = 0,
   reach
 }) => {
-  const headline = transcript
-    ? "Looking for the conversation you asked for"
-    : items.length > 0
-      ? `Remembering ${items.length} ${items.length === 1 ? "conversation" : "conversations"}`
-      : historyEntries > 0
-        ? `Recalling ${historyEntries.toLocaleString()} memory entries`
-        : "Recalling"
+  const headline =
+    transcript === "found"
+      ? "Reading the recovered transcript"
+      : transcript === "searching"
+        ? "Looking for the conversation you asked for"
+        : items.length > 0
+          ? `Remembering ${items.length} ${items.length === 1 ? "conversation" : "conversations"}`
+          : historyEntries > 0
+            ? `Recalling ${historyEntries.toLocaleString()} memory entries`
+            : "Recalling"
 
   return (
     <div

@@ -67,3 +67,28 @@ it("cannot be pointed at another user's memory", async () => {
   expect(response.status).toBe(400)
   expect(mockRecallPreviewFor).not.toHaveBeenCalled()
 })
+
+it("accepts a context length of zero, as the chat routes do", async () => {
+  // The slider goes down to 0 and the budget falls back to its default for
+  // it. Refusing it here gave a working turn no preview, and on the block
+  // route no memory at all.
+  const contextBudget = { windowTokens: 128_000, requestedHistoryTokens: 0 }
+
+  const response = await POST(request({ lastUserText: "hi", contextBudget }))
+
+  expect(response.status).toBe(200)
+  expect(mockRecallPreviewFor).toHaveBeenCalledWith(
+    "user-1",
+    "hi",
+    contextBudget
+  )
+})
+
+it("still refuses a negative or fractional budget", async () => {
+  for (const bad of [-1, 1.5]) {
+    const response = await POST(
+      request({ lastUserText: "hi", contextBudget: { windowTokens: bad } })
+    )
+    expect(response.status).toBe(400)
+  }
+})

@@ -41,7 +41,7 @@ export const MessageStreamingBody: FC<MessageStreamingBodyProps> = ({
         return (
           <MemoryRecalling
             items={report.relevant?.items ?? []}
-            transcript={!!report.fullConversation}
+            transcript={report.fullConversation ? "found" : undefined}
             historyEntries={report.history?.entries}
             reach={
               report.history?.span?.newest ?? report.relevant?.span?.newest
@@ -49,11 +49,16 @@ export const MessageStreamingBody: FC<MessageStreamingBodyProps> = ({
           />
         )
       }
-      if (recallPreview?.transcript || recallPreview?.items.length) {
+      // Once the turn's own report is here it is the authority, including
+      // when it says nothing was injected: the preview is only a stand-in.
+      if (
+        !report &&
+        (recallPreview?.transcript || recallPreview?.items.length)
+      ) {
         return (
           <MemoryRecalling
             items={recallPreview.items}
-            transcript={recallPreview.transcript}
+            transcript={recallPreview.transcript ? "searching" : undefined}
           />
         )
       }

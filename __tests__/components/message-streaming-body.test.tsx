@@ -100,6 +100,32 @@ describe("MessageStreamingBody", () => {
     expect(screen.queryByText("Qatar refund")).toBeNull()
   })
 
+  it("drops the preview when the report says nothing was injected", () => {
+    // The preview is a stand-in. A report that arrives empty — memory
+    // retrieval failed for the turn — is the truth, and the chips must not
+    // go on claiming otherwise until the first token.
+    renderBody(
+      { recallPreview: preview },
+      { injected: false, totalChars: 0, budgetChars: 100 }
+    )
+    expect(screen.getByText("Thinking…")).toBeTruthy()
+    expect(screen.queryByText(/Remembering/)).toBeNull()
+  })
+
+  it("says a transcript is being read only when the report found one", () => {
+    renderBody(
+      {},
+      {
+        injected: true,
+        totalChars: 500,
+        budgetChars: 1_000,
+        fullConversation: { chars: 500 }
+      }
+    )
+    expect(screen.getByText("Reading the recovered transcript")).toBeTruthy()
+    expect(screen.queryByText(/Looking for/)).toBeNull()
+  })
+
   it("gives way to the answer at the first token", () => {
     renderBody({ firstTokenReceived: true, recallPreview: preview })
     expect(screen.getByTestId("answer").textContent).toBe("the answer")

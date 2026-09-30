@@ -10,7 +10,10 @@ import { z } from "zod"
 const MAX_REQUEST_BYTES = 256 * 1024
 const REQUEST_BODY_TIMEOUT_MS = 10_000
 
-const tokens = z.number().int().positive().nullable().optional()
+// Zero is accepted, as the chat routes accept it: the context-length slider
+// goes down to 0, the budget falls back to its default for it, and refusing
+// it here meant a turn that worked got no memory block and no preview.
+const tokens = z.number().int().nonnegative().nullable().optional()
 
 const requestSchema = z
   .object({
@@ -26,7 +29,7 @@ const requestSchema = z
   })
   .strict()
 
-export type MemoryRequest = z.infer<typeof requestSchema>
+type MemoryRequest = z.infer<typeof requestSchema>
 
 /** The parsed request, or an `HttpError` the route answers with. */
 export async function readMemoryRequest(

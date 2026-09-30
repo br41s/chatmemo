@@ -54,12 +54,14 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
 - `/api/memory/recall` (`recallPreviewFor` in `inject-memory.ts`): the
   report's headers only leave the server once the model starts answering, so
   the browser asks here, alongside the chat request, which conversations the
-  turn is about to be reminded of. Same relevance search, same text and budget
-  hint; titles and sources only. On a recovery request it says a transcript
-  search is under way rather than running that retrieval twice. The handler
-  skips it for Ollama (real report arrives first), custom models (may get no
-  memory) and messages with images or retrieved file text (the server sees
-  different text). Costs one extra relevance search per turn.
+  turn is about to be reminded of. Same relevance search and budget hint, and
+  the text is read from the built request with the injector's own extractor
+  (`lastUserText*` in `lib/memory-block.ts`) — never from what was typed, which
+  differs on Regenerate, with images, with retrieved file text and when a long
+  message is trimmed away. Titles and sources only. On a recovery request it
+  says a transcript search is under way rather than running that retrieval
+  twice. Not fired for Ollama (real report arrives first), custom models (may
+  get no memory) or the tools path. Costs one extra relevance search per turn.
 - `lib/server/streaming.ts`: local text-stream helpers used by all chat
   routes (replaced the legacy `ai@2.x` package — do not reintroduce it).
 - All LLM summarization goes through OpenRouter (`lib/server/openrouter.ts`),

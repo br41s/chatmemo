@@ -16,7 +16,12 @@ import {
   MemoryReport,
   RecallPreview
 } from "@/lib/memory-report"
-import { buildAugmentedOpenAIMessages, MEMORY_TAG } from "@/lib/memory-block"
+import {
+  buildAugmentedOpenAIMessages,
+  lastUserTextGoogle,
+  lastUserTextOpenAI,
+  MEMORY_TAG
+} from "@/lib/memory-block"
 
 // Re-exported so existing importers keep one entry point for injection.
 export { buildAugmentedOpenAIMessages }
@@ -197,10 +202,6 @@ export function buildAugmentedGoogleMessages(
 // ---------------------------------------------------------------------------
 
 /**
- * Inject memory into OpenAI-format messages ({ role, content }). Used by
- * openrouter/openai/anthropic/mistral/groq/perplexity/azure routes.
- */
-/**
  * The memory block alone, for a caller that places it itself — the Ollama
  * path, which runs in the browser and calls localhost directly.
  */
@@ -220,11 +221,14 @@ export async function memoryBlockFor(
  * The relevance matches for a turn, by name, for the browser to show while
  * the answer is on its way.
  *
- * Runs the same search the injector runs, with the same text and budget, so
- * what it names is what the turn will be given. The exception is a request to
- * recover a conversation: there the injector may replace the matches with a
- * transcript, and finding out means running that retrieval a second time —
- * so this says only that a transcript search is under way.
+ * Runs the search the injector runs. Whether it names what the turn will be
+ * given depends on being handed the text the injector will extract, which is
+ * why the browser derives it from the request it is about to send with the
+ * injector's own extractor (`lastUserText*` in lib/memory-block.ts) rather
+ * than from what was typed. The exception is a request to recover a
+ * conversation: there the injector may replace the matches with a transcript,
+ * and finding out means running that retrieval a second time — so this says
+ * only that a transcript search is under way.
  *
  * Never throws, for the injector's reason: nothing about memory may break a
  * chat, and here there is not even a chat to break.
@@ -259,14 +263,16 @@ export interface InjectedMessages {
   report: MemoryReport
 }
 
+/**
+ * Inject memory into OpenAI-format messages ({ role, content }). Used by
+ * openrouter/openai/anthropic/mistral/groq/perplexity/azure routes.
+ */
 export async function injectMemoryOpenAIFormat(
   messages: any[],
   userId: string,
   budgetHint?: ContextBudgetHint
 ): Promise<InjectedMessages> {
-  const lastUser = [...messages].reverse().find(m => m.role === "user")
-  const lastUserText =
-    typeof lastUser?.content === "string" ? lastUser.content : ""
+  const lastUserText = lastUserTextOpenAI(messages)
 
   // Re-resolved here rather than taken from the client: the hint describes the
   // model, the split is the server's to decide.
@@ -289,10 +295,7 @@ export async function injectMemoryGoogleFormat(
   userId: string,
   budgetHint?: ContextBudgetHint
 ): Promise<InjectedMessages> {
-  const last = messages[messages.length - 1]
-  const lastUserText = Array.isArray(last?.parts)
-    ? last.parts.map((p: any) => p?.text ?? "").join(" ")
-    : ""
+  const lastUserText = lastUserTextGoogle(messages)
 
   const budget = resolveContextBudget(budgetHint)
   const { block, report } = await fetchMemoryBlock(userId, lastUserText, budget)

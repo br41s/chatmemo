@@ -17,7 +17,11 @@ import {
   RecallPreview
 } from "@/lib/memory-report"
 import { consumeReadableStream } from "@/lib/consume-stream"
-import { buildAugmentedOpenAIMessages } from "@/lib/memory-block"
+import {
+  buildAugmentedOpenAIMessages,
+  lastUserTextGoogle,
+  lastUserTextOpenAI
+} from "@/lib/memory-block"
 import {
   MAX_RETRIEVAL_FILE_IDS,
   MAX_RETRIEVAL_QUERY_CHARS
@@ -373,7 +377,10 @@ export const handleHostedChat = async (
   setFirstTokenReceived: React.Dispatch<React.SetStateAction<boolean>>,
   setChatMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
   setToolInUse: React.Dispatch<React.SetStateAction<string>>,
-  onMemoryReport?: (report: MemoryReport) => void
+  onMemoryReport?: (report: MemoryReport) => void,
+  /** Told the text the server will search memory by, once the request is
+   *  built and before it is sent. */
+  onRequestText?: (lastUserText: string) => void
 ) => {
   const provider =
     modelData.provider === "openai" && profile.use_azure_openai
@@ -396,6 +403,12 @@ export const handleHostedChat = async (
   } else {
     formattedMessages = draftMessages
   }
+
+  onRequestText?.(
+    provider === "google"
+      ? lastUserTextGoogle(formattedMessages)
+      : lastUserTextOpenAI(formattedMessages)
+  )
 
   const apiEndpoint =
     provider === "custom" ? "/api/chat/custom" : `/api/chat/${provider}`

@@ -4,6 +4,29 @@
 
 export const MEMORY_TAG = "[CHATMEMO_MEMORY]"
 
+// The text the memory layers search by: what the turn's last user message
+// says, read from the messages exactly as they are sent. One definition, used
+// by the server's injectors and by the browser when it asks for a preview of
+// the same turn. The browser used to pass the text typed into the composer
+// instead, which is not always what arrives: on Regenerate it was the previous
+// answer, a message too long for the history budget is dropped before sending,
+// and one carrying images or retrieved file text arrives as something else.
+
+/** From OpenAI-format messages ({ role, content }). Only a plain string
+ *  counts: a message made of content parts is not searched by. */
+export function lastUserTextOpenAI(messages: any[]): string {
+  const lastUser = [...messages].reverse().find(m => m?.role === "user")
+  return typeof lastUser?.content === "string" ? lastUser.content : ""
+}
+
+/** From Google Gemini-format messages ({ role, parts: [{ text }] }). */
+export function lastUserTextGoogle(messages: any[]): string {
+  const last = messages[messages.length - 1]
+  return Array.isArray(last?.parts)
+    ? last.parts.map((p: any) => p?.text ?? "").join(" ")
+    : ""
+}
+
 /**
  * Prepend a memory block to OpenAI-format messages ({ role, content }). The
  * block is prepended to the existing system message, or a new system message is
