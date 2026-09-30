@@ -1,6 +1,7 @@
 import { MEMORY_ORDER_COLUMN } from "@/lib/summary-metadata"
 import { createClient } from "@/lib/supabase/server"
 import { getLessons } from "@/lib/db/lessons"
+import { fillLayer } from "@/lib/server/cut-to-fit"
 import { VersionedCache } from "@/lib/server/versioned-cache"
 import { ContextBudget, resolveContextBudget } from "@/lib/context-budget"
 import { cookies } from "next/headers"
@@ -21,15 +22,17 @@ import { cookies } from "next/headers"
 // generated at import time (compact, <800 chars) are also stored with the
 // same source tag and are fully included under the 400-char cap.
 //
-// Total injected: ~100 k chars ≈ 25 k tokens. Fast and safe for all models.
+// Sizes come from the turn's context budget (lib/context-budget.ts): on a
+// large window the layers below reach their previous fixed sizes, on a small
+// one they shrink together so the block fits.
 // ---------------------------------------------------------------------------
 
 const PERSONAL_ROW_MAX = 1_500 // cap per personal row
 const BULK_ROW_MAX = 400 // title + opening line only for bulk rows
 
-const MAX_PERSONAL_ROWS = 150 // enough to cover all personal sessions
-const MAX_BULK_ROWS = 30 // only recent bulk rows are useful
-const MAX_INDEX_ROWS = 5
+export const MAX_PERSONAL_ROWS = 150 // enough to cover all personal sessions
+export const MAX_BULK_ROWS = 30 // only recent bulk rows are useful
+export const MAX_INDEX_ROWS = 5
 
 // Per-row cap for index rows. They are date lists, so truncation costs the
 // oldest entries in that row rather than corrupting anything — but without a
@@ -111,7 +114,7 @@ export async function getLatestSummaryForUser(
   // The budget is part of the cache key, not just the query: the same rows
   // assembled under a different allowance are a different blob, so switching
   // to a smaller-window model must not serve the larger model's block.
-  const version = `${await readMemoryVersion(supabase, userId)}|${budget.personalChars}|${budget.bulkChars}|${budget.indexChars}`
+  const version = `${await readMemoryVersion(supabase, userId)}|${budget.lessonsChars}|${budget.personalChars}|${budget.bulkChars}|${budget.indexChars}`
   const cached = baselineCache.get(userId, version)
   // A cached null is a real answer — "this user has no memory yet" is worth
   // not recomputing — so only undefined counts as a miss.
@@ -209,6 +212,33 @@ export function withDateHeader(content: string, effectiveAt?: string | null) {
     : content
 }
 
+const LESSONS_CUT_NOTE =
+  "[…the rest of the lessons were left out to fit this model's context window]"
+
+/**
+ * The lessons document, within its allowance.
+ *
+ * It used to go in whole whatever its size. On a window with room it still
+ * does — the allowance there is above what the rewrite lets the document
+ * reach. On a small one it is cut at a line break, from the end, and says so:
+ * the model is told to read lessons first, so it should know when it has been
+ * given only the first part. Null when not even a line would fit.
+ */
+export function fitLessons(lessons: string, maxChars: number): string | null {
+  const text = lessons.trim()
+  if (!text) return null
+  if (text.length <= maxChars) return text
+
+  const room = maxChars - LESSONS_CUT_NOTE.length - 1
+  if (room <= 0) return null
+  const head = text.slice(0, room)
+  const lastBreak = head.lastIndexOf("\n")
+  // A document with no line break inside the allowance is cut mid-line
+  // rather than dropped: part of the first lesson beats none of them.
+  const kept = (lastBreak > 0 ? head.slice(0, lastBreak) : head).trimEnd()
+  return kept ? `${kept}\n${LESSONS_CUT_NOTE}` : null
+}
+
 /**
  * Assemble the injectable memory sections from already-fetched rows.
  *
@@ -233,51 +263,46 @@ export function buildSummarySections(
   bulkData: SummaryRow[],
   budget: ContextBudget = resolveContextBudget()
 ): string | null {
-  const parts: string[] = []
+  const present = (rows: SummaryRow[]) =>
+    rows
+      .map(row => ({ row, content: (row.content ?? "").trim() }))
+      .filter(({ content }) => content)
 
-  // 1. Index rows — compact date lists, high-value for history questions, but
-  //    capped and budgeted like every other layer. They used to be pushed
-  //    whole and counted against nothing, on the assumption they were tiny.
-  let indexChars = 0
-  for (const row of indexData.slice(0, MAX_INDEX_ROWS)) {
-    const content = (row.content ?? "").trim()
-    if (!content) continue
-    const capped = cap(content, INDEX_ROW_MAX)
-    if (indexChars + capped.length > budget.indexChars) break
-    parts.push(capped)
-    indexChars += capped.length
-  }
-
-  // 2. Personal rows — compact summaries, large budget
-  let personalChars = 0
-  for (const row of personalData) {
-    const content = (row.content ?? "").trim()
-    if (!content) continue
-    const capped = withDateHeader(
-      cap(content, PERSONAL_ROW_MAX),
-      row.effective_at
+  const parts: string[] = [
+    // 1. Index rows — compact date lists, high-value for history questions,
+    //    but capped and budgeted like every other layer. They used to be
+    //    pushed whole and counted against nothing, on the assumption they
+    //    were tiny.
+    ...fillLayer(
+      present(indexData.slice(0, MAX_INDEX_ROWS)).map(({ content }) =>
+        cap(content, INDEX_ROW_MAX)
+      ),
+      budget.indexChars
+    ),
+    // 2. Personal rows — compact summaries, large budget
+    ...fillLayer(
+      present(personalData).map(({ row, content }) =>
+        withDateHeader(cap(content, PERSONAL_ROW_MAX), row.effective_at)
+      ),
+      budget.personalChars
+    ),
+    // 3. Bulk rows — topic excerpts only
+    ...fillLayer(
+      present(bulkData).map(({ row, content }) =>
+        withDateHeader(cap(content, BULK_ROW_MAX), row.effective_at)
+      ),
+      budget.bulkChars
     )
-    if (personalChars + capped.length > budget.personalChars) break
-    parts.push(capped)
-    personalChars += capped.length
-  }
-
-  // 3. Bulk rows — topic excerpts only
-  let bulkChars = 0
-  for (const row of bulkData) {
-    const content = (row.content ?? "").trim()
-    if (!content) continue
-    const capped = withDateHeader(cap(content, BULK_ROW_MAX), row.effective_at)
-    if (bulkChars + capped.length > budget.bulkChars) break
-    parts.push(capped)
-    bulkChars += capped.length
-  }
+  ]
 
   const sections: string[] = []
 
-  if (lessons) {
+  const fittedLessons = lessons
+    ? fitLessons(lessons, budget.lessonsChars)
+    : null
+  if (fittedLessons) {
     sections.push(
-      `[LESSONS — Accumulated knowledge about you from past sessions]\n${lessons}\n[/LESSONS]`
+      `[LESSONS — Accumulated knowledge about you from past sessions]\n${fittedLessons}\n[/LESSONS]`
     )
   }
 

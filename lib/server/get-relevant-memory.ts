@@ -1,3 +1,4 @@
+import { fillLayer } from "@/lib/server/cut-to-fit"
 import { MEMORY_ORDER_COLUMN } from "@/lib/summary-metadata"
 import { createClient } from "@/lib/supabase/server"
 import { ContextBudget, resolveContextBudget } from "@/lib/context-budget"
@@ -32,7 +33,7 @@ import {
 
 const MAX_TERMS = 4
 const ROWS_PER_TERM = 8 // candidate rows fetched per ILIKE term
-const MAX_RELEVANT_ROWS = 4 // top-ranked rows injected
+export const MAX_RELEVANT_ROWS = 4 // top-ranked rows injected
 const RELEVANT_ROW_MAX = 2_000 // per-row excerpt cap (vs 400 in baseline)
 
 // Conversational filler that survives the shared STOP list (>3 chars, not a
@@ -98,6 +99,16 @@ export function buildRelevantTerms(message: string): string[] {
  * carries no topic words). Content is verbatim from the DB — safe against
  * fabrication.
  */
+/** The relevance section as it is written into the block. Separate so the
+ *  budget tests can build the real thing without a database. */
+export function formatRelevantMemory(excerpts: string[]): string {
+  return (
+    "[RELEVANT MEMORY — top matches for the current question, verbatim from your history]\n" +
+    excerpts.join("\n\n---\n\n") +
+    "\n[/RELEVANT MEMORY]"
+  )
+}
+
 /** The relevance section, and the row excerpts it was joined from. */
 export interface RelevantMemory {
   block: string
@@ -157,25 +168,18 @@ export async function getRelevantMemoryForUser(
   // with the top rows, each excerpt capped.
   const ranked = rankByTermCoverage([...candidates.values()], terms)
 
-  const blocks: string[] = []
-  let chars = 0
-  for (const row of ranked.slice(0, MAX_RELEVANT_ROWS)) {
-    const excerpt =
-      row.content.length > RELEVANT_ROW_MAX
-        ? row.content.slice(0, RELEVANT_ROW_MAX) + "…"
-        : row.content
-    if (chars + excerpt.length > budget.relevantChars) break
-    blocks.push(excerpt)
-    chars += excerpt.length
-  }
+  const blocks = fillLayer(
+    ranked
+      .slice(0, MAX_RELEVANT_ROWS)
+      .map(row =>
+        row.content.length > RELEVANT_ROW_MAX
+          ? row.content.slice(0, RELEVANT_ROW_MAX) + "…"
+          : row.content
+      ),
+    budget.relevantChars
+  )
 
   if (blocks.length === 0) return null
 
-  return {
-    block:
-      "[RELEVANT MEMORY — top matches for the current question, verbatim from your history]\n" +
-      blocks.join("\n\n---\n\n") +
-      "\n[/RELEVANT MEMORY]",
-    entries: blocks
-  }
+  return { block: formatRelevantMemory(blocks), entries: blocks }
 }

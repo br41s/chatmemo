@@ -133,7 +133,7 @@ export async function POST(request: Request) {
 
     const { data: customModel, error: modelError } = await supabase
       .from("models")
-      .select("id, user_id, api_key, base_url, model_id")
+      .select("id, user_id, api_key, base_url, model_id, context_length")
       .eq("id", customModelId)
       .maybeSingle()
 
@@ -151,12 +151,16 @@ export async function POST(request: Request) {
     // Memory goes only to the user's own endpoint. A shared model is someone
     // else's server, and the block is this user's private history.
     const ownModel = customModel.user_id === user.id
+    // The window the block is sized to. The client's hint has none for a
+    // custom endpoint — nothing it can consult reports one — so the context
+    // length stored with the model stands in, rather than the 8k default.
+    const clientHint =
+      "contextBudget" in parsed.data ? parsed.data.contextBudget : undefined
     const memory = ownModel
-      ? await injectMemoryOpenAIFormat(
-          messages,
-          user.id,
-          "contextBudget" in parsed.data ? parsed.data.contextBudget : undefined
-        )
+      ? await injectMemoryOpenAIFormat(messages, user.id, {
+          ...clientHint,
+          windowTokens: clientHint?.windowTokens ?? customModel.context_length
+        })
       : null
 
     const stream = await createSafeModelTextStream({

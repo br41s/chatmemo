@@ -14,10 +14,17 @@
 // memory layer to its share.
 //
 // Deliberately unchanged for large-window models: at the default settings on a
-// 128k model, the memory allowance still resolves to the same 100k-char
-// ceiling the layers used before, so this bounds the request without shrinking
-// what a capable model receives. Small windows are where behaviour changes,
-// and there it changes from overflowing to fitting.
+// 128k model, each layer still resolves to the size it had before, so this
+// bounds the request without shrinking what a capable model receives. Small
+// windows are where behaviour changes, and there it changes from overflowing
+// to fitting.
+//
+// "Fitting" has to be true of the block that is actually sent, not only of
+// the numbers here. For a while it was not: the layer shares added up to 116%
+// of the allowance, the lessons document and the instruction text counted
+// against nothing, and a recovered transcript was allowed 120% — so an 8k or
+// 32k window was handed a block well past the share this function reported
+// for it. Every part of the block now has an allowance, and they sum to it.
 
 /** Rough bytes-per-token for English prose. Only used to turn a token
  *  allowance into a char budget for the memory layers, which measure in
@@ -36,10 +43,56 @@ export const MIN_WINDOW_TOKENS = 2_048
  *  server into assembling an unbounded memory block. */
 export const MAX_WINDOW_TOKENS = 2_000_000
 
-/** Ceiling on the memory block regardless of how large the window is. Matches
- *  the sum of the previous hardcoded layer budgets (80k personal + 20k bulk),
- *  so a big model sees exactly what it saw before. */
-export const MAX_MEMORY_CHARS = 100_000
+/**
+ * Held back from the block for what is in it besides memory: the instruction
+ * text, the section tags, and the separators between entries. None of that
+ * was counted before, so a block "within" its allowance was already a few
+ * thousand characters past it. A test holds this above the real overhead.
+ */
+export const MEMORY_OVERHEAD_CHARS = 6_000
+
+/**
+ * The most the lessons document may take. Lessons counted against nothing,
+ * and the document can be long — on a small window it alone was twice the
+ * whole allowance.
+ *
+ * Sized to the most a rewrite can produce: 8,000 output tokens, about 32k
+ * chars. Not to the ~23.7k at which rewrites stop being attempted — that
+ * limits the document going in, and the one coming out may be a little longer
+ * and then stays that size. A window with room must still receive it whole.
+ */
+export const MAX_LESSONS_BUDGET_CHARS = 32_000
+
+/** The previous hardcoded layer budgets. They are what a large window still
+ *  resolves to, and the proportions a smaller one divides its share in.
+ *
+ *  The index layer once had none: index rows were injected whole and counted
+ *  against nothing, which stopped being survivable when a real import produced
+ *  a 58k-char one. It is deliberately small — a date list is high-value per
+ *  character for "what was my first X" questions, but it is an index, not
+ *  content. */
+const MAX_PERSONAL_CHARS = 80_000
+const MAX_BULK_CHARS = 20_000
+const MAX_INDEX_CHARS = 10_000
+const MAX_RELEVANT_CHARS = 6_000
+const MAX_LAYER_CHARS =
+  MAX_PERSONAL_CHARS + MAX_BULK_CHARS + MAX_INDEX_CHARS + MAX_RELEVANT_CHARS
+
+/** The previous cap on a recovered transcript. */
+const MAX_FULL_CONVERSATION_CHARS = 120_000
+
+/**
+ * Ceiling on the memory block regardless of how large the window is.
+ *
+ * It was 100k, described as what the whole block may occupy — but the layers
+ * were sized as shares of it that added up to 116%, with lessons and the
+ * instructions on top, so a large model was really sent up to ~150k. This is
+ * that real total, stated: overhead, lessons and the four layers at their
+ * previous sizes. A big model is sent exactly what it was sent before; the
+ * number now describes it.
+ */
+export const MAX_MEMORY_CHARS =
+  MEMORY_OVERHEAD_CHARS + MAX_LESSONS_BUDGET_CHARS + MAX_LAYER_CHARS
 
 /** Default reply reservation when the model's own limit is unknown. */
 export const DEFAULT_OUTPUT_TOKENS = 4_096
@@ -51,28 +104,10 @@ const MAX_OUTPUT_SHARE = 0.25
  *  reply, so there is always room for memory to say something. */
 const MAX_HISTORY_SHARE = 0.5
 
-// Layer shares, as fractions of the memory allowance. Personal and bulk
-// reproduce the previous fixed constants at the default allowance.
-const PERSONAL_SHARE = 0.8
-const BULK_SHARE = 0.2
-const RELEVANT_SHARE = 0.06
-
-/**
- * Index rows had no share at all: they were injected whole, before the other
- * layers, and never counted against anything. That was survivable while they
- * were the "tiny" date lists the code assumed, and stopped being survivable
- * once a real import produced a 58k-char one — a single row taking most of the
- * allowance from hundreds of actual conversations.
- *
- * Deliberately small. A date list is high-value per character for "what was my
- * first X" questions, but it is an index, not content.
- */
-const INDEX_SHARE = 0.1
-
-/** A full-conversation hit drops the baseline and relevance layers, so the
- *  transcript may exceed the steady-state memory share. 1.2 reproduces the
- *  previous 120k cap against the previous 100k baseline. */
-const FULL_CONVERSATION_SHARE = 1.2
+/** Lessons are the densest signal in the block, so on a small window they may
+ *  take up to this much of what is left after the overhead — and no more, or
+ *  a long document would leave no room for any conversation at all. */
+const LESSONS_MAX_SHARE = 0.3
 
 export interface ContextBudget {
   /** The window the split was computed against. */
@@ -81,9 +116,11 @@ export interface ContextBudget {
   outputTokens: number
   /** What conversation history may occupy. The client trims to this. */
   historyTokens: number
-  /** What the whole memory block may occupy. */
+  /** What the whole memory block may occupy — instructions, tags and all. */
   memoryChars: number
-  /** Per-layer char allowances, derived from memoryChars. */
+  /** Per-layer char allowances. Together with the overhead they sum to no
+   *  more than memoryChars, so a block built to them fits. */
+  lessonsChars: number
   personalChars: number
   bulkChars: number
   relevantChars: number
@@ -155,16 +192,32 @@ export function resolveContextBudget(
     MAX_MEMORY_CHARS
   )
 
+  // What is left for memory itself once the block's own text is paid for.
+  const contentChars = Math.max(memoryChars - MEMORY_OVERHEAD_CHARS, 0)
+  const lessonsChars = Math.min(
+    MAX_LESSONS_BUDGET_CHARS,
+    Math.floor(contentChars * LESSONS_MAX_SHARE)
+  )
+  // The four layers divide the rest in their previous proportions. At the
+  // ceiling that is the previous sizes exactly.
+  const layerChars = contentChars - lessonsChars
+  const layer = (max: number) =>
+    Math.floor((layerChars * max) / MAX_LAYER_CHARS)
+
   return {
     windowTokens,
     outputTokens,
     historyTokens,
     memoryChars,
-    personalChars: Math.floor(memoryChars * PERSONAL_SHARE),
-    bulkChars: Math.floor(memoryChars * BULK_SHARE),
-    relevantChars: Math.floor(memoryChars * RELEVANT_SHARE),
-    indexChars: Math.floor(memoryChars * INDEX_SHARE),
-    fullConversationChars: Math.floor(memoryChars * FULL_CONVERSATION_SHARE)
+    lessonsChars,
+    personalChars: layer(MAX_PERSONAL_CHARS),
+    bulkChars: layer(MAX_BULK_CHARS),
+    relevantChars: layer(MAX_RELEVANT_CHARS),
+    indexChars: layer(MAX_INDEX_CHARS),
+    // A transcript replaces lessons, history and relevance, so it may use
+    // everything they would have — not 120% of the block, which is how a
+    // recovery request overflowed a window the baseline fitted in.
+    fullConversationChars: Math.min(contentChars, MAX_FULL_CONVERSATION_CHARS)
   }
 }
 

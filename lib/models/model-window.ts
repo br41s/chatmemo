@@ -1,16 +1,22 @@
 import { CHAT_SETTING_LIMITS } from "@/lib/chat-setting-limits"
 import { ContextBudgetHint } from "@/lib/context-budget"
 import { CatalogModel } from "@/lib/models/provider-catalog"
-import { LLM, LLMID, OpenRouterLLM } from "@/types"
+import { LLM, LLMID, ModelProvider, OpenRouterLLM } from "@/types"
 
 /**
  * What the client knows about the chosen model's real context window, so the
  * server can size the memory block to it.
  *
- * Anything the three sources below cannot place — a custom OpenAI-compatible
- * endpoint, an Ollama tag — returns no window, and the server falls back to
- * its conservative default. That is the honest answer: guessing high for an
- * unknown model is what produced over-limit requests in the first place.
+ * A model none of the sources below can place returns no window, and the
+ * server falls back to its conservative 8k default. That used to be the rule
+ * for every unplaced model, on the grounds that guessing high produced
+ * over-limit requests. It cost too much once the memory block was held to
+ * its budget: a provider whose catalogue lists a model without its limits —
+ * Anthropic, OpenAI — was budgeting a 200k model as 8k, and losing nearly all
+ * of its memory for it. Those two get a per-provider window instead, set at
+ * the smallest any of their current models has. A custom endpoint gets the
+ * context length stored with it. Ollama keeps the default, which is close to
+ * its real one.
  *
  * The sources, in order of how much they can be trusted:
  *
@@ -41,11 +47,30 @@ import { LLM, LLMID, OpenRouterLLM } from "@/types"
  */
 export const OPENROUTER_OUTPUT_TOKENS = 16_384
 
+/**
+ * Windows assumed for a catalogue model whose provider reports no limits.
+ * Every current Anthropic model has a 200k window; every current OpenAI chat
+ * model has at least 128k. A model below these would overflow, so a smaller
+ * one added by a provider must be entered in CHAT_SETTING_LIMITS, which is
+ * consulted first.
+ */
+const PROVIDER_FALLBACK_WINDOW: Partial<Record<ModelProvider, number>> = {
+  anthropic: 200_000,
+  openai: 128_000
+}
+
+/** What a custom endpoint stores about itself. */
+export interface CustomModelWindow {
+  model_id: string
+  context_length: number
+}
+
 export function resolveModelWindow(
   modelId: string,
   availableOpenRouterModels: OpenRouterLLM[] = [],
   requestedHistoryTokens?: number | null,
-  availableHostedModels: LLM[] = []
+  availableHostedModels: LLM[] = [],
+  customModels: CustomModelWindow[] = []
 ): ContextBudgetHint {
   const live = availableHostedModels.find(
     model => model.modelId === modelId
@@ -80,6 +105,17 @@ export function resolveModelWindow(
       outputTokens: OPENROUTER_OUTPUT_TOKENS,
       requestedHistoryTokens
     }
+  }
+
+  const fallback = live ? PROVIDER_FALLBACK_WINDOW[live.provider] : undefined
+  if (fallback) {
+    // No reply limit either; the resolver clamps to a safe share of the window.
+    return { windowTokens: fallback, requestedHistoryTokens }
+  }
+
+  const custom = customModels.find(model => model.model_id === modelId)
+  if (custom && custom.context_length > 0) {
+    return { windowTokens: custom.context_length, requestedHistoryTokens }
   }
 
   return { requestedHistoryTokens }

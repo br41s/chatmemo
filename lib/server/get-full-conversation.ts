@@ -1,3 +1,4 @@
+import { cutToFit } from "@/lib/server/cut-to-fit"
 import { MEMORY_ORDER_COLUMN } from "@/lib/summary-metadata"
 import { createClient } from "@/lib/supabase/server"
 import { ContextBudget, resolveContextBudget } from "@/lib/context-budget"
@@ -53,6 +54,12 @@ const MAX_ROW_CHARS = 80_000
 /** Injected when retrieval runs but matches nothing. The chat route detects
  *  this to decide whether to keep baseline memory (see openrouter/route.ts). */
 export const NO_FULL_MATCH_MARKER = "no matching conversation found"
+
+/** Appended to a transcript that had to be shortened. The instructions tell
+ *  the model a retrieved transcript is complete; this is how it learns that
+ *  one is not. */
+const TRANSCRIPT_CUT_NOTE =
+  "\n[…the rest of this conversation was left out to fit this model's context window]"
 
 /**
  * Search the summaries table for imported/full conversation rows matching the
@@ -229,7 +236,19 @@ export async function getFullConversationForUser(
 
   const pushBlock = (block: string): boolean => {
     if (!block) return true
-    if (totalChars + block.length > maxTotalChars) return false
+    if (totalChars + block.length > maxTotalChars) {
+      // The first conversation found is cut to what there is rather than
+      // dropped. Dropping it left nothing, and nothing is reported as "no
+      // matching conversation found" — untrue, and an invitation to guess.
+      if (parts.length === 0) {
+        const cut = cutToFit(block, maxTotalChars, TRANSCRIPT_CUT_NOTE)
+        if (cut) {
+          parts.push(cut)
+          totalChars += cut.length
+        }
+      }
+      return false
+    }
     parts.push(block)
     totalChars += block.length
     return true
@@ -315,7 +334,7 @@ export async function getFullConversationForUser(
 
   if (parts.length === 0) {
     return (
-      "[FULL CONVERSATION RETRIEVAL — no matching conversation found]\n" +
+      `[FULL CONVERSATION RETRIEVAL — ${NO_FULL_MATCH_MARKER}]\n` +
       "No stored conversation matched the requested title/date. Ask the user " +
       "to confirm the exact title, date, or source (in-app, Perplexity, " +
       "ChatGPT, Claude). Do not invent content.\n" +

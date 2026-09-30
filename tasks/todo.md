@@ -142,3 +142,15 @@ Out of scope (follow-ups): theme toggle placement, /help page, landing/login red
 - [x] Decided: parallel preview request. `/api/memory/recall` + wait state, branch `feat/memory-recall-preview`. Verified live: preview names match the real report.
 - [ ] Next slice (chosen by Brais): memory budget overrun — layer shares add up to 116% of the allowance and lessons are unbudgeted.
 - [ ] Separate slices: theme toggle placement, /help page, landing/login, timeline as a page, Claude Code source label (needs a `source` value and a migration).
+
+## Memory block fits its allowance (2026-09-30, branch fix/memory-budget-fits)
+
+- [x] Found: layer shares summed to 116% of `memoryChars`; lessons (up to ~23.7k) and the 3.1k instruction text counted against nothing; a recovered transcript was allowed 120%. Harmless on 128k windows, an overflow on 8k–32k ones.
+- [x] Every part of the block has an allowance and they sum to it: overhead reserve, lessons, four layers; transcript takes the content's place.
+- [x] Large windows unchanged: 80k / 20k / 10k / 6k, lessons whole, 120k transcript. Ceiling stated as 146k.
+- [x] Lessons cut at a line break with a note when they do not fit; no block when the window cannot hold the overhead; warning logged if a block ever exceeds its allowance.
+- [x] Tests build the real block at seven window sizes. Gate: type-check, jest, build.
+- [x] Live check through `/api/memory/block` on real memory at 128k, 32k, 16k, 8k, 4k, 2k.
+- [x] Review fixes: lessons allowance 32k (the rewrite's output ceiling, not its input limit); a miss is recognised by the sentinel's header, not by its words appearing in a transcript; a layer's first entry is cut to fit instead of dropped; fit tests cover both worst cases (full layers, maximum separators).
+- [x] Decided by Brais: provider fallback windows (Anthropic 200k, OpenAI 128k) for catalogue models that report no limits; custom endpoints use their stored context length; Ollama stays at 8k.
+- [ ] Possible refinements, not done: hand unused lessons allowance to the history layers on mid-size windows; cut lessons per section instead of from the end; `CHARS_PER_TOKEN = 4` is optimistic for Spanish and code.

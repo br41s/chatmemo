@@ -37,7 +37,7 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
   `lib/memory-block.ts`. Three layers run in
   parallel per turn:
   1. baseline blob (`get-latest-summary.ts`) — lessons + personal rows +
-     truncated bulk rows, ~100k char budget;
+     truncated bulk rows, sized by the turn's context budget;
   2. always-on relevance (`get-relevant-memory.ts`) — ILIKE search over all
      summaries by topic words of the latest message;
   3. trigger-gated full retrieval (`get-full-conversation.ts`) — verbatim
@@ -62,6 +62,23 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
   says a transcript search is under way rather than running that retrieval
   twice. Not fired for Ollama (real report arrives first), custom models (may
   get no memory) or the tools path. Costs one extra relevance search per turn.
+- `lib/context-budget.ts`: one split of the model's window between reply,
+  history and the memory block. Every part of the block has an allowance and
+  they sum to `memoryChars`: a 6k overhead reserve (instructions, tags,
+  separators), lessons (up to 30% of the rest, 32k at most) and the four
+  layers in fixed proportions. On a large window the layers reach their
+  previous sizes (80k personal, 20k bulk, 10k index, 6k relevant; 120k for a
+  recovered transcript) and the ceiling is 154k. A window too small for the
+  overhead gets no block. A layer whose first entry does not fit carries a
+  cut version of it, marked as cut, rather than nothing
+  (`lib/server/cut-to-fit.ts`) — an empty transcript layer is reported as "no
+  matching conversation found". `__tests__/lib/memory-block-fits.test.ts`
+  builds the real block at several window sizes; add to it when adding
+  anything to the block. A catalogue model whose provider reports no limits
+  is assumed to have 200k (Anthropic) or 128k (OpenAI) of window
+  (`lib/models/model-window.ts`); a custom endpoint uses the context length
+  stored with it (client hint and `chat/custom` route); anything else, Ollama
+  included, is budgeted at the 8k default.
 - `lib/server/streaming.ts`: local text-stream helpers used by all chat
   routes (replaced the legacy `ai@2.x` package — do not reintroduce it).
 - All LLM summarization goes through OpenRouter (`lib/server/openrouter.ts`),

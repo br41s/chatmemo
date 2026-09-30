@@ -8,6 +8,7 @@ import { getRelevantMemoryForUser } from "@/lib/server/get-relevant-memory"
 import {
   ContextBudget,
   ContextBudgetHint,
+  MEMORY_OVERHEAD_CHARS,
   resolveContextBudget
 } from "@/lib/context-budget"
 import {
@@ -106,11 +107,33 @@ const EMPTY_REPORT = (budgetChars: number): MemoryReport => ({
   budgetChars
 })
 
+/**
+ * Whether a retrieval block is the "nothing matched" sentinel.
+ *
+ * By its header, not by searching the text: a recovered transcript is the
+ * user's own words, and one that happened to contain the sentinel's phrase —
+ * a conversation about this very feature, say — was taken for a miss. The
+ * baseline and relevance layers were then added on top of the transcript,
+ * which is the one way a block could still exceed its allowance.
+ */
+export function isFullConversationMiss(fullConv: string): boolean {
+  return fullConv.startsWith(
+    `[FULL CONVERSATION RETRIEVAL — ${NO_FULL_MATCH_MARKER}]`
+  )
+}
+
 async function fetchMemoryBlock(
   userId: string,
   lastUserText: string,
   budget: ContextBudget
 ): Promise<MemoryInjection> {
+  // No room for memory at all once the block's own text is paid for — a
+  // window of a few thousand tokens. Sending the instructions alone would
+  // spend the little there is on rules about sections that are not there.
+  if (budget.memoryChars <= MEMORY_OVERHEAD_CHARS) {
+    return { block: null, report: EMPTY_REPORT(budget.memoryChars) }
+  }
+
   try {
     const [summary, fullConv, relevantMemory] = await Promise.all([
       getLatestSummaryForUser(userId, budget),
@@ -126,8 +149,7 @@ async function fetchMemoryBlock(
     // But on a retrieval MISS (the sentinel "no matching conversation found"),
     // keep the baseline summary so the model still has context to work from and
     // is far less likely to fabricate. The sentinel is tiny, so no overflow.
-    const fullConvFoundMatch =
-      !!fullConv && !fullConv.includes(NO_FULL_MATCH_MARKER)
+    const fullConvFoundMatch = !!fullConv && !isFullConversationMiss(fullConv)
     const effectiveSummary = fullConvFoundMatch ? null : summary
     // On a full-conversation match the verbatim transcript already answers the
     // question — skip the relevance section to avoid burying/overflowing it.
@@ -144,6 +166,16 @@ async function fetchMemoryBlock(
       fullConv,
       effectiveRelevant
     )
+
+    // The layers are sized to fit, so this should not happen. If it does, the
+    // request may not fit the model's window, and that must not be silent.
+    if (block.length > budget.memoryChars) {
+      console.warn("Memory block exceeds its allowance", {
+        blockChars: block.length,
+        memoryChars: budget.memoryChars,
+        windowTokens: budget.windowTokens
+      })
+    }
 
     return {
       block,

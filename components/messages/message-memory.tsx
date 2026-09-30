@@ -170,9 +170,10 @@ export const MessageMemory: FC<MessageMemoryProps> = ({ report }) => {
 
           <div className="mt-2 border-t pt-2 text-xs tabular-nums text-muted-foreground">
             {overBy > 0 ? (
-              // The allowance is a target the layers are sized from, not a
-              // cap on their sum: the shares add up to a little over it and
-              // lessons sit outside it. "115k of 100k (100%)" hid that.
+              // Every part of the block has an allowance and they sum to
+              // this one, so an overrun is not expected. If one happens the
+              // block really is past its share of the window, and the line
+              // says so rather than rounding it to 100%.
               <>
                 {formatChars(report.totalChars)} sent, {formatChars(overBy)}{" "}
                 over the {formatChars(report.budgetChars)} allowance
