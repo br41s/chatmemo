@@ -292,7 +292,10 @@ const MessageComponent: FC<MessageProps> = ({
               maxRows={20}
             />
           ) : isLast && message.role === "assistant" ? (
-            <MessageStreamingBody content={message.content} />
+            <MessageStreamingBody
+              content={message.content}
+              report={memoryReports[message.id]}
+            />
           ) : (
             <MessageMarkdown content={message.content} />
           )}

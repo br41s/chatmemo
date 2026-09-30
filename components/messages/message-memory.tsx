@@ -5,6 +5,7 @@ import {
   IconChevronRight
 } from "@tabler/icons-react"
 import { FC, useState } from "react"
+import { MemorySourceChip } from "../memory/memory-source-chip"
 
 interface MessageMemoryProps {
   report: MemoryReport
@@ -77,21 +78,50 @@ export const MessageMemory: FC<MessageMemoryProps> = ({ report }) => {
         )
       : 0
 
+  const items = report.relevant?.items ?? []
+  // Which sources fed the answer, each once, in the order they appear.
+  const sources = items
+    .map(item => item.source)
+    .filter((source, index, all) => all.indexOf(source) === index)
+
   return (
-    <div className="mt-3 border-t pt-2">
+    <div className="mt-3 border-t pt-2 duration-300 animate-in fade-in">
       <button
         type="button"
         onClick={() => setOpen(prev => !prev)}
         aria-expanded={open}
-        className="flex items-center gap-1.5 rounded text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        className="flex max-w-full flex-wrap items-center gap-1.5 rounded text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
       >
-        <IconBrain size={14} />
+        <IconBrain size={14} className="text-brand" />
         <span>{summary}</span>
+        {sources.map(source => (
+          <MemorySourceChip key={source} source={source} />
+        ))}
         {open ? <IconChevronDown size={13} /> : <IconChevronRight size={13} />}
       </button>
 
       {open && (
-        <div className="mt-2 space-y-0.5 rounded-md border p-3">
+        <div className="mt-2 space-y-0.5 rounded-md border p-3 duration-200 animate-in fade-in slide-in-from-top-1">
+          {items.length > 0 && (
+            <ul className="mb-2 space-y-1 border-b pb-2">
+              {items.map((item, index) => (
+                <li
+                  key={`${item.source}-${item.title}-${index}`}
+                  className="flex items-center justify-between gap-3 text-xs"
+                >
+                  <MemorySourceChip source={item.source} className="min-w-0">
+                    {item.title}
+                    {item.more ? ` +${item.more}` : ""}
+                  </MemorySourceChip>
+                  {item.date && (
+                    <span className="shrink-0 tabular-nums text-muted-foreground">
+                      {item.date}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
           {report.lessons && (
             <LayerRow
               label="Lessons"

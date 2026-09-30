@@ -232,7 +232,7 @@ export const ChatInput: FC<ChatInputProps> = ({}) => {
         )}
       </div>
 
-      <div className="relative mt-3 flex min-h-[60px] w-full items-center justify-center rounded-xl border-2 border-input">
+      <div className="relative mt-3 flex min-h-[60px] w-full items-center justify-center rounded-2xl border border-input bg-background shadow-sm transition-[box-shadow,border-color] focus-within:border-brand/60 focus-within:shadow-[0_0_0_3px_hsl(var(--brand)/0.15)]">
         <div className="absolute bottom-[76px] left-0 max-h-[300px] w-full overflow-auto rounded-xl dark:border-none">
           <ChatCommandInput />
         </div>

@@ -92,7 +92,7 @@ export function TimelineSheet() {
       <SheetTrigger asChild>
         <button
           aria-label="Conversation timeline"
-          className="flex cursor-pointer flex-col items-center hover:opacity-50"
+          className="flex h-[55px] w-full cursor-pointer items-center justify-center hover:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
           <IconTimeline size={28} />
         </button>

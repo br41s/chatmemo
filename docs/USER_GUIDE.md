@@ -198,7 +198,7 @@ After the first import, subsequent imports of the same or updated export files a
 
 ## 4. Memory History
 
-The **Memory History** panel shows all your stored summaries.
+The **Memory History** panel (the brain icon near the top of the left rail, right under the timeline) shows all your stored summaries.
 
 - Click the 🧠 (brain) icon in the left sidebar to open it.
 - Summaries are listed newest first.

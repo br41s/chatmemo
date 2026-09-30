@@ -113,3 +113,19 @@ Trabajo futuro fuera de este cambio:
 
 - [ ] Inyectar memoria persistente en Ollama manteniendo la inferencia local.
 - [ ] Inyectar memoria persistente en modelos remotos personalizados.
+
+## Memory-first chat UI (2026-09-30, branch feat/memory-first-chat-ui)
+
+Scope agreed: daily-driver audience · chat + memory reveal first · restyle + memory-first nav · upstream structure kept.
+
+- [x] Memory report carries matched entries (title, source, date), capped; header size guard drops items before dropping the report. Tests.
+- [x] Stats endpoint returns per-source counts and newest memory date; pure aggregator with a test.
+- [x] Streaming wait state shows "recalling" with source chips from the report; post-answer panel lists matched entries with source colours.
+- [x] Empty state: memory constellation (per-source counts, newest date) + suggestions, animated entrance.
+- [x] Rail: Chats · Timeline · Memory on top; presets/prompts/models/files/collections/assistants/tools under a "More" popover. Tabs stay controlled from dashboard.
+- [x] Identity: new ChatMemo mark, softer chat header, composer focus in brand hue, keyframes for recall pulse.
+- [x] Gate: `npm run type-check`, `npx jest`, `npm run build`.
+- [x] Docs: CLAUDE.md memory-system section mentions the report items; decisions log entry.
+- [x] QA in the browser pane on the signed-in account: rail, More group, empty state, thinking state, panel under the answer.
+
+Out of scope (follow-ups): theme toggle placement, /help page, landing/login redesign, timeline as a full page.
