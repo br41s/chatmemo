@@ -1,10 +1,14 @@
 import { useChatStream } from "@/context/chat-stream-context"
+import type { MemoryReport } from "@/lib/memory-report"
 import { IconBolt, IconCircleFilled, IconFileText } from "@tabler/icons-react"
 import { FC } from "react"
+import { MemoryRecalling } from "../memory/memory-recalling"
 import { MessageMarkdown } from "./message-markdown"
 
 interface MessageStreamingBodyProps {
   content: string
+  /** The turn's memory report, which arrives before the first token. */
+  report?: MemoryReport
 }
 
 /**
@@ -16,7 +20,8 @@ interface MessageStreamingBodyProps {
  * because the streaming state sat in the one context they all consume.
  */
 export const MessageStreamingBody: FC<MessageStreamingBodyProps> = ({
-  content
+  content,
+  report
 }) => {
   const { isGenerating, firstTokenReceived, toolInUse } = useChatStream()
 
@@ -26,7 +31,14 @@ export const MessageStreamingBody: FC<MessageStreamingBodyProps> = ({
 
   switch (toolInUse) {
     case "none":
-      return <IconCircleFilled className="animate-pulse" size={20} />
+      // The wait before the first token is exactly when the memory was being
+      // gathered, so that is what the wait shows — what is being remembered,
+      // rather than a dot.
+      return report?.injected ? (
+        <MemoryRecalling report={report} />
+      ) : (
+        <IconCircleFilled className="animate-pulse" size={20} />
+      )
     case "retrieval":
       return (
         <div className="flex animate-pulse items-center space-x-2">

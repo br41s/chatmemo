@@ -42,6 +42,13 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
      summaries by topic words of the latest message;
   3. trigger-gated full retrieval (`get-full-conversation.ts`) — verbatim
      transcripts when the user asks to recover a conversation.
+- `lib/memory-report.ts`: what a turn was told, sent back in the
+  `x-chatmemo-memory` response header ahead of the stream — layer sizes,
+  date spans and the matched entries' titles/sources (capped; dropped before
+  the report itself if the header would exceed 4 KB). The chat shows it
+  while waiting for the first token (`memory-recalling.tsx`) and under the
+  answer (`message-memory.tsx`). Source colours come from one record,
+  `timeline-sources.tsx`, via `memory-source-chip.tsx`.
 - `lib/server/streaming.ts`: local text-stream helpers used by all chat
   routes (replaced the legacy `ai@2.x` package — do not reintroduce it).
 - All LLM summarization goes through OpenRouter (`lib/server/openrouter.ts`),

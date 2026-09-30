@@ -147,3 +147,117 @@ describe("decodeMemoryReport — never breaks the turn", () => {
     expect(decodeMemoryReport(value as string | null)).toBeNull()
   })
 })
+
+const RELEVANT = (entries: string[]) =>
+  `[RELEVANT MEMORY — top matches for the current question, verbatim from your history]\n${entries.join(
+    "\n\n---\n\n"
+  )}\n[/RELEVANT MEMORY]`
+
+describe("buildMemoryReport — remembered entries", () => {
+  const build = (relevant: string) =>
+    buildMemoryReport({
+      summary: null,
+      relevant,
+      fullConversation: null,
+      fullConversationMissed: false,
+      totalChars: relevant.length,
+      budgetChars: 100_000
+    })
+
+  it("names each relevance match with its title, source and date", () => {
+    const report = build(
+      RELEVANT([
+        "[source:chatgpt]\n### [2026-07-04] Vercel deploy saga\n- six failed builds",
+        "[source:perplexity]\n### [2026-03-01] Postgres locale on macOS\n- initdb",
+        "[source:claude]\n### [2026-09-24] Summaries metadata trigger\n- BEFORE INSERT"
+      ])
+    )
+    expect(report.relevant?.items).toEqual([
+      { title: "Vercel deploy saga", source: "chatgpt", date: "2026-07-04" },
+      {
+        title: "Postgres locale on macOS",
+        source: "perplexity",
+        date: "2026-03-01"
+      },
+      {
+        title: "Summaries metadata trigger",
+        source: "claude-ai",
+        date: "2026-09-24"
+      }
+    ])
+    // The header and footer lines are not entries.
+    expect(report.relevant?.entries).toBe(3)
+  })
+
+  it("tells a Claude Code session apart by its title tag and strips it", () => {
+    const report = build(
+      RELEVANT([
+        "[source:claude]\n### [2026-09-29] [Claude Code] chatmemo\n- fix"
+      ])
+    )
+    expect(report.relevant?.items?.[0]).toEqual({
+      title: "chatmemo",
+      source: "claude-code",
+      date: "2026-09-29"
+    })
+  })
+
+  it("labels an untagged, undated row as in-app chat with its first line", () => {
+    const report = build(RELEVANT(["Talked about the garden plan\n- tomatoes"]))
+    expect(report.relevant?.items?.[0]).toEqual({
+      title: "Talked about the garden plan",
+      source: "chat"
+    })
+  })
+
+  it("caps the list and the title length", () => {
+    const long = "x".repeat(120)
+    const report = build(
+      RELEVANT(
+        Array.from(
+          { length: 9 },
+          (_, i) => `### [2026-01-0${(i % 9) + 1}] ${long}`
+        )
+      )
+    )
+    expect(report.relevant?.entries).toBe(9)
+    expect(report.relevant?.items).toHaveLength(6)
+    const title = report.relevant?.items?.[0].title ?? ""
+    expect(title.length).toBeLessThanOrEqual(60)
+    expect(title.endsWith("…")).toBe(true)
+  })
+})
+
+describe("encodeMemoryReport — size guard", () => {
+  it("drops the entry list before dropping the report", () => {
+    const items = Array.from({ length: 6 }, (_, i) => ({
+      title: `${"title ".repeat(9)}${i}`,
+      source: "chatgpt" as const,
+      date: "2026-01-01"
+    }))
+    const report: MemoryReport = {
+      injected: true,
+      totalChars: 10,
+      budgetChars: 100,
+      relevant: { chars: 10, entries: 6, items }
+    }
+    const encoded = encodeMemoryReport(report)
+    expect(encoded).not.toBeNull()
+    expect(decodeMemoryReport(encoded)?.relevant?.items).toEqual(items)
+
+    // Far past any header limit: the counts survive, the titles do not.
+    const oversized: MemoryReport = {
+      ...report,
+      relevant: {
+        ...report.relevant!,
+        items: Array.from({ length: 6 }, () => ({
+          title: "y".repeat(1_000),
+          source: "chat" as const
+        }))
+      }
+    }
+    const trimmed = decodeMemoryReport(encodeMemoryReport(oversized))
+    expect(trimmed?.relevant?.entries).toBe(6)
+    expect(trimmed?.relevant?.items).toBeUndefined()
+  })
+})

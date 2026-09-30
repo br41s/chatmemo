@@ -10,6 +10,28 @@
 //
 // Travels as a response header, because the body is a plain text stream.
 
+import { classifySummaryContent } from "@/lib/summary-metadata"
+
+/**
+ * Where a remembered entry came from, in the timeline's vocabulary so the
+ * chat can colour it with the same palette the timeline already uses. A
+ * subset of `TimelineSource`: the report never sees index or todo rows.
+ */
+export type MemorySourceKey =
+  | "claude-ai"
+  | "claude-code"
+  | "chatgpt"
+  | "perplexity"
+  | "chat"
+
+/** One remembered entry, enough to name it and colour it. */
+export interface MemoryEntryReport {
+  title: string
+  source: MemorySourceKey
+  /** Conversation date as `YYYY-MM-DD`, when the entry states one. */
+  date?: string
+}
+
 export interface MemoryLayerReport {
   /** Characters this layer contributed to the injected block. */
   chars: number
@@ -24,6 +46,14 @@ export interface MemoryLayerReport {
    * to a healthy one. Absent when no entry carries a parseable date.
    */
   span?: { oldest: string; newest: string }
+  /**
+   * The entries themselves, by title and source, for the layers where that
+   * list is short enough to show: the relevance matches for this question.
+   * Counts said *how much* the model was told; this says *what*, which is
+   * the part a person can actually recognise. Capped, and dropped first
+   * when the header would not fit.
+   */
+  items?: MemoryEntryReport[]
 }
 
 export interface MemoryReport {
@@ -57,17 +87,40 @@ export const MEMORY_REPORT_HEADER = "x-chatmemo-memory"
  * "no information" rather than breaking the response.
  */
 export function encodeMemoryReport(report: MemoryReport): string | null {
+  // Well under any reverse proxy's header limit. The counts are a few hundred
+  // bytes; the entry titles are the only part that can grow, so they are the
+  // part that goes when the report would not fit — the indicator then falls
+  // back to counts rather than vanishing.
+  return (
+    encodeWithin(report, 4_000) ?? encodeWithin(withoutItems(report), 4_000)
+  )
+}
+
+function encodeWithin(report: MemoryReport, limit: number): string | null {
   try {
     const json = JSON.stringify(report)
     const bytes = new TextEncoder().encode(json)
     let binary = ""
     for (const byte of bytes) binary += String.fromCharCode(byte)
     const encoded = btoa(binary)
-    // Well under any reverse proxy's header limit; a report is a few hundred
-    // bytes, so anything near this is a bug rather than data.
-    return encoded.length > 4_000 ? null : encoded
+    return encoded.length > limit ? null : encoded
   } catch {
     return null
+  }
+}
+
+function withoutItems(report: MemoryReport): MemoryReport {
+  const strip = (layer?: MemoryLayerReport) => {
+    if (!layer) return layer
+    const { items: _items, ...rest } = layer
+    return rest
+  }
+  return {
+    ...report,
+    lessons: strip(report.lessons),
+    history: strip(report.history),
+    relevant: strip(report.relevant),
+    fullConversation: strip(report.fullConversation)
   }
 }
 
@@ -130,6 +183,56 @@ function dateSpan(
   return { oldest, newest }
 }
 
+/** How many entries a layer names. The relevance layer sends at most a
+ *  handful of rows, so this is a guard rather than a truncation in practice. */
+const MAX_REPORT_ENTRIES = 6
+const TITLE_MAX = 60
+
+const CLAUDE_CODE_TAG_RE = /\[claude code\]\s*/i
+
+/**
+ * The entries a section names, read from the section text.
+ *
+ * Each entry is a row's content (or the head of it), so the same classifier
+ * the database trigger mirrors gives its title, source and date. Untagged
+ * rows with a date header came from Claude — the bookmarklet, the bulk
+ * importer or the Claude Code hook — and the hook marks its titles, which
+ * is how the two are told apart.
+ */
+function entryReports(section: string): MemoryEntryReport[] {
+  const lines = section.split("\n")
+  if (lines[0]?.startsWith("[")) lines.shift()
+  if (lines[lines.length - 1]?.startsWith("[/")) lines.pop()
+
+  return lines
+    .join("\n")
+    .split(ENTRY_SEPARATOR)
+    .map(part => part.trim())
+    .filter(Boolean)
+    .slice(0, MAX_REPORT_ENTRIES)
+    .map(entry => {
+      const meta = classifySummaryContent(entry)
+      const rawTitle = meta.title ?? "Conversation"
+      const isClaudeCode = CLAUDE_CODE_TAG_RE.test(rawTitle)
+      const cleaned = rawTitle.replace(CLAUDE_CODE_TAG_RE, "").trim()
+      const title =
+        cleaned.length > TITLE_MAX
+          ? cleaned.slice(0, TITLE_MAX - 1).trimEnd() + "…"
+          : cleaned || "Conversation"
+      const source: MemorySourceKey =
+        meta.source === "claude"
+          ? isClaudeCode
+            ? "claude-code"
+            : "claude-ai"
+          : meta.source === "other"
+            ? "chat"
+            : meta.source
+      return meta.occurredAt
+        ? { title, source, date: meta.occurredAt }
+        : { title, source }
+    })
+}
+
 /**
  * Derive the report from the assembled block's own sections.
  *
@@ -173,7 +276,8 @@ export function buildMemoryReport(input: {
     report.relevant = {
       chars: input.relevant.length,
       entries: countEntries(input.relevant),
-      span: dateSpan(input.relevant)
+      span: dateSpan(input.relevant),
+      items: entryReports(input.relevant)
     }
   }
 

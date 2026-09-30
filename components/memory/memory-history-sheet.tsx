@@ -18,7 +18,7 @@ import {
   SheetTitle,
   SheetTrigger
 } from "@/components/ui/sheet"
-import { IconHistory, IconTrash } from "@tabler/icons-react"
+import { IconBrain, IconHistory, IconTrash } from "@tabler/icons-react"
 import { useState } from "react"
 import { MemoryBackupSection } from "./memory-backup-section"
 import { MemoryHistoryList } from "./memory-history-list"
@@ -53,13 +53,13 @@ export function MemoryHistorySheet() {
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetTrigger asChild>
-        <Button
-          className="size-[36px] p-1"
-          variant="ghost"
-          title="Memory history"
+        <button
+          type="button"
+          aria-label="Memory"
+          className="flex h-[55px] w-full cursor-pointer items-center justify-center hover:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
-          <IconHistory size={24} />
-        </Button>
+          <IconBrain size={28} />
+        </button>
       </SheetTrigger>
 
       <SheetContent
