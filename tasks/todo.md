@@ -161,3 +161,9 @@ Out of scope (follow-ups): theme toggle placement, /help page, landing/login red
 - [x] /help is a real page: what the memory is made of, how to read the line under an answer, things to ask, getting history in, the rail, shortcuts, links to the guide and the repo. Tab title via a layout. The chat's ? popover opens it in place.
 - [x] One shortcut list (`lib/shortcuts.ts`) for the popover and the page; test checks it against the `useHotkey` registrations (the popover had been two short).
 - [x] Gate: type-check, jest (814), build. Checked in both themes.
+
+## Landing and login polish (2026-10-01, branch feat/landing-login-polish)
+
+- [x] Landing says what the product is, shows the source chips, offers "Start chatting" and "How it works" (/help).
+- [x] Login: brand focus treatment on the fields (same as the composer), primary "Log in", outline "Create an account", reset link, styled message, link to /help. Email input typed and autocompleted.
+- [x] Gate: type-check, jest (814), build. Landing checked in the browser; login checked on the PR preview (the local pane is signed in and is redirected).
