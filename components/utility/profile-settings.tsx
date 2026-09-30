@@ -29,7 +29,6 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs"
 import { ApiKeysTab } from "./api-keys-tab"
 import { ProfileTab } from "./profile-tab"
-import { ThemeSwitcher } from "./theme-switcher"
 
 interface ProfileSettingsProps {}
 
@@ -294,10 +293,6 @@ export const ProfileSettings: FC<ProfileSettingsProps> = ({}) => {
         </div>
 
         <div className="mt-6 flex items-center">
-          <div className="flex items-center space-x-1">
-            <ThemeSwitcher />
-          </div>
-
           <div className="ml-auto space-x-2">
             <Button variant="ghost" onClick={() => setIsOpen(false)}>
               Cancel

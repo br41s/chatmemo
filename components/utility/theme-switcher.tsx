@@ -1,32 +1,42 @@
+"use client"
+
 import { IconMoon, IconSun } from "@tabler/icons-react"
 import { useTheme } from "next-themes"
-import { FC } from "react"
-import { SIDEBAR_ICON_SIZE } from "../sidebar/sidebar-switcher"
-import { Button } from "../ui/button"
+import { FC, useEffect, useState } from "react"
 
-interface ThemeSwitcherProps {}
+interface ThemeSwitcherProps {
+  size?: number
+}
 
-export const ThemeSwitcher: FC<ThemeSwitcherProps> = () => {
-  const { setTheme, theme } = useTheme()
+/**
+ * Light or dark, one click.
+ *
+ * It lived only inside profile settings, three clicks away from the chat.
+ * It sits in the rail now, and shows the theme a click would switch to —
+ * a sun in the dark — the way a light switch shows what it does, not what
+ * it did.
+ *
+ * The theme is unknown while the page is rendered on the server, so the
+ * icon waits for the browser: rendering a guess and correcting it after
+ * hydration was a mismatch on every load.
+ */
+export const ThemeSwitcher: FC<ThemeSwitcherProps> = ({ size = 28 }) => {
+  const { setTheme, resolvedTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
 
-  const handleChange = (theme: "dark" | "light") => {
-    localStorage.setItem("theme", theme)
+  useEffect(() => setMounted(true), [])
 
-    setTheme(theme)
-  }
+  const dark = resolvedTheme === "dark"
+  const next = dark ? "light" : "dark"
 
   return (
-    <Button
-      className="flex cursor-pointer space-x-2"
-      variant="ghost"
-      size="icon"
-      onClick={() => handleChange(theme === "light" ? "dark" : "light")}
+    <button
+      type="button"
+      aria-label={mounted ? `Switch to ${next} theme` : "Switch theme"}
+      className="flex h-[55px] w-full cursor-pointer items-center justify-center hover:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      onClick={() => setTheme(next)}
     >
-      {theme === "dark" ? (
-        <IconMoon size={SIDEBAR_ICON_SIZE} />
-      ) : (
-        <IconSun size={SIDEBAR_ICON_SIZE} />
-      )}
-    </Button>
+      {mounted && (dark ? <IconSun size={size} /> : <IconMoon size={size} />)}
+    </button>
   )
 }

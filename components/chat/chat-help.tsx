@@ -1,4 +1,5 @@
 import useHotkey from "@/lib/hooks/use-hotkey"
+import { SHORTCUTS } from "@/lib/shortcuts"
 import {
   IconBrandGithub,
   IconHelpCircle,
@@ -46,8 +47,7 @@ export const ChatHelp: FC<ChatHelpProps> = ({}) => {
             <Link
               className="cursor-pointer hover:opacity-50"
               href="/help"
-              target="_blank"
-              rel="noopener noreferrer"
+              aria-label="Help"
             >
               <IconHelpCircle size={24} />
             </Link>
@@ -55,141 +55,24 @@ export const ChatHelp: FC<ChatHelpProps> = ({}) => {
         </DropdownMenuLabel>
 
         <DropdownMenuSeparator />
-
-        <DropdownMenuItem className="flex justify-between">
-          <div>Show Help</div>
-          <div className="flex opacity-60">
-            <div className="min-w-[30px] rounded border-DEFAULT p-1 text-center">
-              ⌘
+        {SHORTCUTS.map(({ key, label, does }) => (
+          <DropdownMenuItem
+            key={key}
+            className="flex w-[300px] justify-between"
+          >
+            <div>{does}</div>
+            <div className="flex opacity-60">
+              {["⌘", "Shift", label ?? key].map(part => (
+                <div
+                  key={part}
+                  className="min-w-[30px] rounded border-DEFAULT p-1 text-center"
+                >
+                  {part}
+                </div>
+              ))}
             </div>
-            <div className="min-w-[30px] rounded border-DEFAULT p-1 text-center">
-              Shift
-            </div>
-            <div className="min-w-[30px] rounded border-DEFAULT p-1 text-center">
-              /
-            </div>
-          </div>
-        </DropdownMenuItem>
-
-        <DropdownMenuItem className="flex justify-between">
-          <div>Show Workspaces</div>
-          <div className="flex opacity-60">
-            <div className="min-w-[30px] rounded border-DEFAULT p-1 text-center">
-              ⌘
-            </div>
-            <div className="min-w-[30px] rounded border-DEFAULT p-1 text-center">
-              Shift
-            </div>
-            <div className="min-w-[30px] rounded border-DEFAULT p-1 text-center">
-              ;
-            </div>
-          </div>
-        </DropdownMenuItem>
-
-        <DropdownMenuItem className="flex w-[300px] justify-between">
-          <div>New Chat</div>
-          <div className="flex opacity-60">
-            <div className="min-w-[30px] rounded border-DEFAULT p-1 text-center">
-              ⌘
-            </div>
-            <div className="min-w-[30px] rounded border-DEFAULT p-1 text-center">
-              Shift
-            </div>
-            <div className="min-w-[30px] rounded border-DEFAULT p-1 text-center">
-              O
-            </div>
-          </div>
-        </DropdownMenuItem>
-
-        <DropdownMenuItem className="flex justify-between">
-          <div>Focus Chat</div>
-          <div className="flex opacity-60">
-            <div className="min-w-[30px] rounded border-DEFAULT p-1 text-center">
-              ⌘
-            </div>
-            <div className="min-w-[30px] rounded border-DEFAULT p-1 text-center">
-              Shift
-            </div>
-            <div className="min-w-[30px] rounded border-DEFAULT p-1 text-center">
-              L
-            </div>
-          </div>
-        </DropdownMenuItem>
-
-        <DropdownMenuItem className="flex justify-between">
-          <div>Toggle Files</div>
-          <div className="flex opacity-60">
-            <div className="min-w-[30px] rounded border-DEFAULT p-1 text-center">
-              ⌘
-            </div>
-            <div className="min-w-[30px] rounded border-DEFAULT p-1 text-center">
-              Shift
-            </div>
-            <div className="min-w-[30px] rounded border-DEFAULT p-1 text-center">
-              F
-            </div>
-          </div>
-        </DropdownMenuItem>
-
-        <DropdownMenuItem className="flex justify-between">
-          <div>Toggle Retrieval</div>
-          <div className="flex opacity-60">
-            <div className="min-w-[30px] rounded border-DEFAULT p-1 text-center">
-              ⌘
-            </div>
-            <div className="min-w-[30px] rounded border-DEFAULT p-1 text-center">
-              Shift
-            </div>
-            <div className="min-w-[30px] rounded border-DEFAULT p-1 text-center">
-              E
-            </div>
-          </div>
-        </DropdownMenuItem>
-
-        <DropdownMenuItem className="flex justify-between">
-          <div>Open Settings</div>
-          <div className="flex opacity-60">
-            <div className="min-w-[30px] rounded border-DEFAULT p-1 text-center">
-              ⌘
-            </div>
-            <div className="min-w-[30px] rounded border-DEFAULT p-1 text-center">
-              Shift
-            </div>
-            <div className="min-w-[30px] rounded border-DEFAULT p-1 text-center">
-              I
-            </div>
-          </div>
-        </DropdownMenuItem>
-
-        <DropdownMenuItem className="flex justify-between">
-          <div>Open Quick Settings</div>
-          <div className="flex opacity-60">
-            <div className="min-w-[30px] rounded border-DEFAULT p-1 text-center">
-              ⌘
-            </div>
-            <div className="min-w-[30px] rounded border-DEFAULT p-1 text-center">
-              Shift
-            </div>
-            <div className="min-w-[30px] rounded border-DEFAULT p-1 text-center">
-              P
-            </div>
-          </div>
-        </DropdownMenuItem>
-
-        <DropdownMenuItem className="flex justify-between">
-          <div>Toggle Sidebar</div>
-          <div className="flex opacity-60">
-            <div className="min-w-[30px] rounded border-DEFAULT p-1 text-center">
-              ⌘
-            </div>
-            <div className="min-w-[30px] rounded border-DEFAULT p-1 text-center">
-              Shift
-            </div>
-            <div className="min-w-[30px] rounded border-DEFAULT p-1 text-center">
-              S
-            </div>
-          </div>
-        </DropdownMenuItem>
+          </DropdownMenuItem>
+        ))}
       </DropdownMenuContent>
     </DropdownMenu>
   )

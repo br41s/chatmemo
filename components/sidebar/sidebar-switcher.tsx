@@ -17,6 +17,7 @@ import { WithTooltip } from "../ui/with-tooltip"
 import { MemoryHistorySheet } from "../memory/memory-history-sheet"
 import { TimelineSheet } from "../timeline/timeline-sheet"
 import { ProfileSettings } from "../utility/profile-settings"
+import { ThemeSwitcher } from "../utility/theme-switcher"
 import { SidebarSwitchItem } from "./sidebar-switch-item"
 
 export const SIDEBAR_ICON_SIZE = 28
@@ -152,6 +153,11 @@ export const SidebarSwitcher: FC<SidebarSwitcherProps> = ({
       </div>
 
       <div className="flex flex-col items-center">
+        <WithTooltip
+          interactive
+          display={<div>Light or dark</div>}
+          trigger={<ThemeSwitcher size={SIDEBAR_ICON_SIZE} />}
+        />
         <WithTooltip
           interactive
           display={<div>Profile settings</div>}
