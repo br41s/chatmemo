@@ -51,6 +51,17 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
   while waiting for the first token (`memory-recalling.tsx`) and under the
   answer (`message-memory.tsx`). Source colours come from one record,
   `timeline-sources.tsx`, via `memory-source-chip.tsx`.
+- `/api/memory/recall` (`recallPreviewFor` in `inject-memory.ts`): the
+  report's headers only leave the server once the model starts answering, so
+  the browser asks here, alongside the chat request, which conversations the
+  turn is about to be reminded of. Same relevance search and budget hint, and
+  the text is read from the built request with the injector's own extractor
+  (`lastUserText*` in `lib/memory-block.ts`) — never from what was typed, which
+  differs on Regenerate, with images, with retrieved file text and when a long
+  message is trimmed away. Titles and sources only. On a recovery request it
+  says a transcript search is under way rather than running that retrieval
+  twice. Not fired for Ollama (real report arrives first), custom models (may
+  get no memory) or the tools path. Costs one extra relevance search per turn.
 - `lib/context-budget.ts`: one split of the model's window between reply,
   history and the memory block. Every part of the block has an allowance and
   they sum to `memoryChars`: a 6k overhead reserve (instructions, tags,

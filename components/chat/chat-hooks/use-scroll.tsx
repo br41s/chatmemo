@@ -9,7 +9,7 @@ import {
 } from "react"
 
 export const useScroll = () => {
-  const { isGenerating, chatMessages } = useChatStream()
+  const { isGenerating, chatMessages, recallPreview } = useChatStream()
 
   const messagesStartRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -32,7 +32,9 @@ export const useScroll = () => {
     if (isGenerating && !userScrolled) {
       scrollToBottom()
     }
-  }, [chatMessages])
+    // The preview too: it arrives with no change to the transcript and makes
+    // the waiting message taller, which left its chips below the fold.
+  }, [chatMessages, recallPreview])
 
   const handleScroll: UIEventHandler<HTMLDivElement> = useCallback(e => {
     const target = e.target as HTMLDivElement

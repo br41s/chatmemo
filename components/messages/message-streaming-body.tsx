@@ -23,7 +23,8 @@ export const MessageStreamingBody: FC<MessageStreamingBodyProps> = ({
   content,
   report
 }) => {
-  const { isGenerating, firstTokenReceived, toolInUse } = useChatStream()
+  const { isGenerating, firstTokenReceived, toolInUse, recallPreview } =
+    useChatStream()
 
   if (firstTokenReceived || !isGenerating) {
     return <MessageMarkdown content={content} />
@@ -33,13 +34,35 @@ export const MessageStreamingBody: FC<MessageStreamingBodyProps> = ({
     case "none":
       // The wait before the first token is exactly when the memory was being
       // gathered, so that is what the wait shows — what is being remembered,
-      // rather than a dot.
-      return report?.injected ? (
-        <MemoryRecalling report={report} />
-      ) : (
-        // The report rides on the response headers, which only leave the
-        // server once the model has started answering. Until then there is
-        // nothing to name, so the wait says only that it is working.
+      // rather than a dot. The report says so when it is already here; for a
+      // hosted model it rides on headers that only leave the server once the
+      // model has started answering, and the preview stands in until then.
+      if (report?.injected) {
+        return (
+          <MemoryRecalling
+            items={report.relevant?.items ?? []}
+            transcript={report.fullConversation ? "found" : undefined}
+            historyEntries={report.history?.entries}
+            reach={
+              report.history?.span?.newest ?? report.relevant?.span?.newest
+            }
+          />
+        )
+      }
+      // Once the turn's own report is here it is the authority, including
+      // when it says nothing was injected: the preview is only a stand-in.
+      if (
+        !report &&
+        (recallPreview?.transcript || recallPreview?.items.length)
+      ) {
+        return (
+          <MemoryRecalling
+            items={recallPreview.items}
+            transcript={recallPreview.transcript ? "searching" : undefined}
+          />
+        )
+      }
+      return (
         <div
           role="status"
           className="flex items-center gap-2 text-sm text-muted-foreground"

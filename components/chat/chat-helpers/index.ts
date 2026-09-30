@@ -13,10 +13,15 @@ import { ContextBudget, ContextBudgetHint } from "@/lib/context-budget"
 import {
   decodeMemoryReport,
   MEMORY_REPORT_HEADER,
-  MemoryReport
+  MemoryReport,
+  RecallPreview
 } from "@/lib/memory-report"
 import { consumeReadableStream } from "@/lib/consume-stream"
-import { buildAugmentedOpenAIMessages } from "@/lib/memory-block"
+import {
+  buildAugmentedOpenAIMessages,
+  lastUserTextGoogle,
+  lastUserTextOpenAI
+} from "@/lib/memory-block"
 import {
   MAX_RETRIEVAL_FILE_IDS,
   MAX_RETRIEVAL_QUERY_CHARS
@@ -271,6 +276,34 @@ const fetchLocalMemory = async (
   }
 }
 
+/**
+ * Ask which stored conversations this turn is about to be reminded of.
+ *
+ * Fired alongside the chat request, never awaited by it, and never allowed to
+ * fail it: anything other than a clean answer is simply no preview.
+ */
+export const fetchRecallPreview = async (
+  lastUserText: string,
+  contextBudget: ContextBudgetHint,
+  signal: AbortSignal
+): Promise<RecallPreview | null> => {
+  try {
+    const response = await fetch("/api/memory/recall", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lastUserText, contextBudget }),
+      signal
+    })
+    if (!response.ok) return null
+    const preview = await response.json()
+    return Array.isArray(preview?.items)
+      ? { items: preview.items, transcript: preview.transcript === true }
+      : null
+  } catch {
+    return null
+  }
+}
+
 export const handleLocalChat = async (
   payload: ChatPayload,
   profile: Tables<"profiles">,
@@ -344,7 +377,10 @@ export const handleHostedChat = async (
   setFirstTokenReceived: React.Dispatch<React.SetStateAction<boolean>>,
   setChatMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
   setToolInUse: React.Dispatch<React.SetStateAction<string>>,
-  onMemoryReport?: (report: MemoryReport) => void
+  onMemoryReport?: (report: MemoryReport) => void,
+  /** Told the text the server will search memory by, once the request is
+   *  built and before it is sent. */
+  onRequestText?: (lastUserText: string) => void
 ) => {
   const provider =
     modelData.provider === "openai" && profile.use_azure_openai
@@ -367,6 +403,12 @@ export const handleHostedChat = async (
   } else {
     formattedMessages = draftMessages
   }
+
+  onRequestText?.(
+    provider === "google"
+      ? lastUserTextGoogle(formattedMessages)
+      : lastUserTextOpenAI(formattedMessages)
+  )
 
   const apiEndpoint =
     provider === "custom" ? "/api/chat/custom" : `/api/chat/${provider}`

@@ -138,8 +138,9 @@ Out of scope (follow-ups): theme toggle placement, /help page, landing/login red
 - [x] Allowance line says how far over the block ran instead of "115k of 100k (100%)". Component test.
 - [x] Empty state uses the full column width (tagline and counts no longer wrap at half width).
 - [x] Gate: type-check, jest (717), build.
-- [ ] Decision needed: name the matched conversations during the wait on hosted models (parallel preview request vs header-first routes vs leave).
-- [ ] Decision needed: memory layer shares add up to 116% of the allowance and lessons are unbudgeted (memory core, not UI).
+- [x] PR #59 merged (squash `47819d9`).
+- [x] Decided: parallel preview request. `/api/memory/recall` + wait state, branch `feat/memory-recall-preview`. Verified live: preview names match the real report.
+- [ ] Next slice (chosen by Brais): memory budget overrun — layer shares add up to 116% of the allowance and lessons are unbudgeted.
 - [ ] Separate slices: theme toggle placement, /help page, landing/login, timeline as a page, Claude Code source label (needs a `source` value and a migration).
 
 ## Memory block fits its allowance (2026-09-30, branch fix/memory-budget-fits)

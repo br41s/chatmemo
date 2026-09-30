@@ -21,6 +21,7 @@ import {
   createTempMessages,
   handleCreateChat,
   handleCreateMessages,
+  fetchRecallPreview,
   handleHostedChat,
   handleLocalChat,
   handleRetrieval,
@@ -29,6 +30,12 @@ import {
   rollbackFailedChatMessages,
   validateChatSettings
 } from "../chat-helpers"
+
+// Which turn the recall preview in flight belongs to. Module-level because the
+// hook is mounted by several components — the composer sends, the transcript
+// regenerates — and a preview must be dropped once any of them starts a newer
+// turn, not just the one that asked for it.
+let latestRecallGeneration = 0
 
 export const useChatHandler = () => {
   const router = useRouter()
@@ -72,7 +79,8 @@ export const useChatHandler = () => {
     abortController,
     setAbortController,
     chatMessages,
-    setToolInUse
+    setToolInUse,
+    setRecallPreview
   } = useChatStream()
 
   const {
@@ -198,6 +206,15 @@ export const useChatHandler = () => {
     setMemoryReports(prev => ({ ...prev, [messageId]: report }))
   }
 
+  // The turn is over: drop its preview, and any answer to it still in flight.
+  // Only if it is still the latest turn — a turn started while this one was
+  // streaming owns the preview now, and ending this one must not take it away.
+  const endRecallPreview = (generation: number) => {
+    if (generation !== latestRecallGeneration) return
+    latestRecallGeneration++
+    setRecallPreview(null)
+  }
+
   const handleSendMessage = async (
     messageContent: string,
     chatMessages: ChatMessage[],
@@ -213,9 +230,14 @@ export const useChatHandler = () => {
           }
         : null
 
+    // This turn owns the recall preview from here: anything still in flight
+    // for an earlier one is dropped when it lands.
+    const recallGeneration = ++latestRecallGeneration
+
     try {
       setUserInput("")
       setIsGenerating(true)
+      setRecallPreview(null)
       setIsPromptPickerOpen(false)
       setIsFilePickerOpen(false)
       setNewMessageImages([])
@@ -410,7 +432,34 @@ export const useChatHandler = () => {
               recordMemoryReport(
                 reportTargetId ?? tempAssistantChatMessage.message.id,
                 report
-              )
+              ),
+            // Ask what this turn is about to be reminded of, alongside the
+            // request itself and with the very text the request carries.
+            // Not for a custom model: it may be someone else's endpoint and
+            // be given no memory at all. The tools and Ollama paths do not
+            // come through here — one shows its own status for the whole
+            // wait, the other has the real report before its model is called.
+            modelData!.provider === "custom"
+              ? undefined
+              : lastUserText => {
+                  // Nothing the server would search by: a message of images,
+                  // or one too long for the history budget to carry.
+                  if (!lastUserText.trim()) return
+                  void fetchRecallPreview(
+                    lastUserText,
+                    budgetHint,
+                    newAbortController.signal
+                  ).then(preview => {
+                    // A preview that lands after a newer turn has started,
+                    // or after this one ended, belongs to a wait that is over.
+                    if (
+                      preview &&
+                      recallGeneration === latestRecallGeneration
+                    ) {
+                      setRecallPreview(preview)
+                    }
+                  })
+                }
           )
         }
       }
@@ -493,9 +542,11 @@ export const useChatHandler = () => {
 
       setIsGenerating(false)
       setFirstTokenReceived(false)
+      endRecallPreview(recallGeneration)
     } catch (error) {
       setIsGenerating(false)
       setFirstTokenReceived(false)
+      endRecallPreview(recallGeneration)
       setUserInput(startingInput)
     }
   }
