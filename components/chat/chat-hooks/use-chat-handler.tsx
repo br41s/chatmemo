@@ -21,6 +21,7 @@ import {
   createTempMessages,
   handleCreateChat,
   handleCreateMessages,
+  fetchRecallPreview,
   handleHostedChat,
   handleLocalChat,
   handleRetrieval,
@@ -29,6 +30,12 @@ import {
   rollbackFailedChatMessages,
   validateChatSettings
 } from "../chat-helpers"
+
+// Which turn the recall preview in flight belongs to. Module-level because the
+// hook is mounted by several components — the composer sends, the transcript
+// regenerates — and a preview must be dropped once any of them starts a newer
+// turn, not just the one that asked for it.
+let latestRecallGeneration = 0
 
 export const useChatHandler = () => {
   const router = useRouter()
@@ -72,7 +79,8 @@ export const useChatHandler = () => {
     abortController,
     setAbortController,
     chatMessages,
-    setToolInUse
+    setToolInUse,
+    setRecallPreview
   } = useChatStream()
 
   const {
@@ -198,6 +206,12 @@ export const useChatHandler = () => {
     setMemoryReports(prev => ({ ...prev, [messageId]: report }))
   }
 
+  // The turn is over: drop the preview, and any answer to it still in flight.
+  const endRecallPreview = () => {
+    latestRecallGeneration++
+    setRecallPreview(null)
+  }
+
   const handleSendMessage = async (
     messageContent: string,
     chatMessages: ChatMessage[],
@@ -304,6 +318,33 @@ export const useChatHandler = () => {
       }
 
       let generatedText = ""
+
+      // Ask what this turn is about to be reminded of, alongside the request
+      // itself. Only where the answer will be true of the turn: Ollama gets
+      // the real report before its model is called, a custom model may be
+      // someone else's endpoint and get no memory at all, and a message
+      // carrying images or retrieved file text reaches the server as
+      // something other than the words typed here.
+      const recallGeneration = ++latestRecallGeneration
+      setRecallPreview(null)
+      if (
+        modelData!.provider !== "ollama" &&
+        modelData!.provider !== "custom" &&
+        newMessageImages.length === 0 &&
+        retrievedFileItems.length === 0
+      ) {
+        void fetchRecallPreview(
+          messageContent,
+          budgetHint,
+          newAbortController.signal
+        ).then(preview => {
+          // A preview that lands after a newer turn has started belongs to a
+          // wait that is already over.
+          if (preview && recallGeneration === latestRecallGeneration) {
+            setRecallPreview(preview)
+          }
+        })
+      }
 
       const isToolsCompatible =
         modelData?.provider === "openai" || modelData?.provider === "openrouter"
@@ -493,9 +534,11 @@ export const useChatHandler = () => {
 
       setIsGenerating(false)
       setFirstTokenReceived(false)
+      endRecallPreview()
     } catch (error) {
       setIsGenerating(false)
       setFirstTokenReceived(false)
+      endRecallPreview()
       setUserInput(startingInput)
     }
   }

@@ -1,7 +1,8 @@
 import { getLatestSummaryForUser } from "@/lib/server/get-latest-summary"
 import {
   getFullConversationForUser,
-  NO_FULL_MATCH_MARKER
+  NO_FULL_MATCH_MARKER,
+  detectFullConversationIntent
 } from "@/lib/server/get-full-conversation"
 import { getRelevantMemoryForUser } from "@/lib/server/get-relevant-memory"
 import {
@@ -9,7 +10,12 @@ import {
   ContextBudgetHint,
   resolveContextBudget
 } from "@/lib/context-budget"
-import { buildMemoryReport, MemoryReport } from "@/lib/memory-report"
+import {
+  buildMemoryReport,
+  memoryEntryReports,
+  MemoryReport,
+  RecallPreview
+} from "@/lib/memory-report"
 import { buildAugmentedOpenAIMessages, MEMORY_TAG } from "@/lib/memory-block"
 
 // Re-exported so existing importers keep one entry point for injection.
@@ -208,6 +214,44 @@ export async function memoryBlockFor(
     lastUserText,
     resolveContextBudget(budgetHint)
   )
+}
+
+/**
+ * The relevance matches for a turn, by name, for the browser to show while
+ * the answer is on its way.
+ *
+ * Runs the same search the injector runs, with the same text and budget, so
+ * what it names is what the turn will be given. The exception is a request to
+ * recover a conversation: there the injector may replace the matches with a
+ * transcript, and finding out means running that retrieval a second time —
+ * so this says only that a transcript search is under way.
+ *
+ * Never throws, for the injector's reason: nothing about memory may break a
+ * chat, and here there is not even a chat to break.
+ */
+export async function recallPreviewFor(
+  userId: string,
+  lastUserText: string,
+  budgetHint?: ContextBudgetHint
+): Promise<RecallPreview> {
+  if (detectFullConversationIntent(lastUserText)) {
+    return { items: [], transcript: true }
+  }
+
+  try {
+    const relevant = await getRelevantMemoryForUser(
+      userId,
+      lastUserText,
+      resolveContextBudget(budgetHint)
+    )
+    return {
+      items: relevant ? memoryEntryReports(relevant.entries) : [],
+      transcript: false
+    }
+  } catch (error) {
+    console.error("Recall preview failed; showing nothing:", error)
+    return { items: [], transcript: false }
+  }
 }
 
 export interface InjectedMessages {

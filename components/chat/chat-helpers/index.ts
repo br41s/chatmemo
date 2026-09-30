@@ -13,7 +13,8 @@ import { ContextBudget, ContextBudgetHint } from "@/lib/context-budget"
 import {
   decodeMemoryReport,
   MEMORY_REPORT_HEADER,
-  MemoryReport
+  MemoryReport,
+  RecallPreview
 } from "@/lib/memory-report"
 import { consumeReadableStream } from "@/lib/consume-stream"
 import { buildAugmentedOpenAIMessages } from "@/lib/memory-block"
@@ -268,6 +269,34 @@ const fetchLocalMemory = async (
     return await response.json()
   } catch {
     return { block: null, report: null }
+  }
+}
+
+/**
+ * Ask which stored conversations this turn is about to be reminded of.
+ *
+ * Fired alongside the chat request, never awaited by it, and never allowed to
+ * fail it: anything other than a clean answer is simply no preview.
+ */
+export const fetchRecallPreview = async (
+  lastUserText: string,
+  contextBudget: ContextBudgetHint,
+  signal: AbortSignal
+): Promise<RecallPreview | null> => {
+  try {
+    const response = await fetch("/api/memory/recall", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lastUserText, contextBudget }),
+      signal
+    })
+    if (!response.ok) return null
+    const preview = await response.json()
+    return Array.isArray(preview?.items)
+      ? { items: preview.items, transcript: preview.transcript === true }
+      : null
+  } catch {
+    return null
   }
 }
 

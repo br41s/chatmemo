@@ -82,6 +82,19 @@ export interface MemoryReport {
   budgetChars: number
 }
 
+/**
+ * What a turn is about to be reminded of, asked for ahead of the answer.
+ *
+ * The report proper only arrives with the answer's first byte. This is the
+ * part of it that can be known sooner: the relevance matches, by name.
+ */
+export interface RecallPreview {
+  items: MemoryEntryReport[]
+  /** The person asked to recover a conversation, so a transcript search is
+   *  running and the relevance matches may be set aside for its result. */
+  transcript: boolean
+}
+
 export const MEMORY_REPORT_HEADER = "x-chatmemo-memory"
 
 /**
@@ -206,7 +219,7 @@ const CLAUDE_CODE_TAG_RE = /\[claude code(?: cloud)?\]\s*/i
  * importer or the Claude Code hook — and the hook marks its titles, which
  * is how the two are told apart.
  */
-function entryReports(entries: string[]): MemoryEntryReport[] {
+export function memoryEntryReports(entries: string[]): MemoryEntryReport[] {
   return entries
     .map(part => part.trim())
     .filter(Boolean)
@@ -301,7 +314,7 @@ export function buildMemoryReport(input: {
       span: dateSpan(input.relevant)
     }
     if (input.relevantEntries?.length) {
-      report.relevant.items = entryReports(input.relevantEntries)
+      report.relevant.items = memoryEntryReports(input.relevantEntries)
     }
   }
 
