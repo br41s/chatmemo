@@ -154,3 +154,10 @@ Out of scope (follow-ups): theme toggle placement, /help page, landing/login red
 - [x] Review fixes: lessons allowance 32k (the rewrite's output ceiling, not its input limit); a miss is recognised by the sentinel's header, not by its words appearing in a transcript; a layer's first entry is cut to fit instead of dropped; fit tests cover both worst cases (full layers, maximum separators).
 - [x] Decided by Brais: provider fallback windows (Anthropic 200k, OpenAI 128k) for catalogue models that report no limits; custom endpoints use their stored context length; Ollama stays at 8k.
 - [ ] Possible refinements, not done: hand unused lessons allowance to the history layers on mid-size windows; cut lessons per section instead of from the end; `CHARS_PER_TOKEN = 4` is optimistic for Spanish and code.
+
+## Theme toggle and help page (2026-10-01, branch feat/theme-toggle-and-help)
+
+- [x] Theme toggle in the rail above profile settings; icon shows what a click switches to; no icon until hydrated. Removed from the profile sheet.
+- [x] /help is a real page: what the memory is made of, how to read the line under an answer, things to ask, getting history in, the rail, shortcuts, links to the guide and the repo. Tab title via a layout. The chat's ? popover opens it in place.
+- [x] One shortcut list (`lib/shortcuts.ts`) for the popover and the page; test checks it against the `useHotkey` registrations (the popover had been two short).
+- [x] Gate: type-check, jest (814), build. Checked in both themes.
