@@ -37,7 +37,7 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
   `lib/memory-block.ts`. Three layers run in
   parallel per turn:
   1. baseline blob (`get-latest-summary.ts`) — lessons + personal rows +
-     truncated bulk rows, ~100k char budget;
+     truncated bulk rows, sized by the turn's context budget;
   2. always-on relevance (`get-relevant-memory.ts`) — ILIKE search over all
      summaries by topic words of the latest message;
   3. trigger-gated full retrieval (`get-full-conversation.ts`) — verbatim
@@ -51,6 +51,16 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
   while waiting for the first token (`memory-recalling.tsx`) and under the
   answer (`message-memory.tsx`). Source colours come from one record,
   `timeline-sources.tsx`, via `memory-source-chip.tsx`.
+- `lib/context-budget.ts`: one split of the model's window between reply,
+  history and the memory block. Every part of the block has an allowance and
+  they sum to `memoryChars`: a 6k overhead reserve (instructions, tags,
+  separators), lessons (up to 30% of the rest, 24k at most) and the four
+  layers in fixed proportions. On a large window the layers reach their
+  previous sizes (80k personal, 20k bulk, 10k index, 6k relevant; 120k for a
+  recovered transcript) and the ceiling is 146k. A window too small for the
+  overhead gets no block. `__tests__/lib/memory-block-fits.test.ts` builds the
+  real block at several window sizes — add to it when adding anything to the
+  block.
 - `lib/server/streaming.ts`: local text-stream helpers used by all chat
   routes (replaced the legacy `ai@2.x` package — do not reintroduce it).
 - All LLM summarization goes through OpenRouter (`lib/server/openrouter.ts`),

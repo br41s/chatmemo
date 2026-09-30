@@ -98,6 +98,16 @@ export function buildRelevantTerms(message: string): string[] {
  * carries no topic words). Content is verbatim from the DB — safe against
  * fabrication.
  */
+/** The relevance section as it is written into the block. Separate so the
+ *  budget tests can build the real thing without a database. */
+export function formatRelevantMemory(excerpts: string[]): string {
+  return (
+    "[RELEVANT MEMORY — top matches for the current question, verbatim from your history]\n" +
+    excerpts.join("\n\n---\n\n") +
+    "\n[/RELEVANT MEMORY]"
+  )
+}
+
 /** The relevance section, and the row excerpts it was joined from. */
 export interface RelevantMemory {
   block: string
@@ -171,11 +181,5 @@ export async function getRelevantMemoryForUser(
 
   if (blocks.length === 0) return null
 
-  return {
-    block:
-      "[RELEVANT MEMORY — top matches for the current question, verbatim from your history]\n" +
-      blocks.join("\n\n---\n\n") +
-      "\n[/RELEVANT MEMORY]",
-    entries: blocks
-  }
+  return { block: formatRelevantMemory(blocks), entries: blocks }
 }

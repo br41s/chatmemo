@@ -21,7 +21,9 @@ import { cookies } from "next/headers"
 // generated at import time (compact, <800 chars) are also stored with the
 // same source tag and are fully included under the 400-char cap.
 //
-// Total injected: ~100 k chars ≈ 25 k tokens. Fast and safe for all models.
+// Sizes come from the turn's context budget (lib/context-budget.ts): on a
+// large window the layers below reach their previous fixed sizes, on a small
+// one they shrink together so the block fits.
 // ---------------------------------------------------------------------------
 
 const PERSONAL_ROW_MAX = 1_500 // cap per personal row
@@ -111,7 +113,7 @@ export async function getLatestSummaryForUser(
   // The budget is part of the cache key, not just the query: the same rows
   // assembled under a different allowance are a different blob, so switching
   // to a smaller-window model must not serve the larger model's block.
-  const version = `${await readMemoryVersion(supabase, userId)}|${budget.personalChars}|${budget.bulkChars}|${budget.indexChars}`
+  const version = `${await readMemoryVersion(supabase, userId)}|${budget.lessonsChars}|${budget.personalChars}|${budget.bulkChars}|${budget.indexChars}`
   const cached = baselineCache.get(userId, version)
   // A cached null is a real answer — "this user has no memory yet" is worth
   // not recomputing — so only undefined counts as a miss.
@@ -209,6 +211,33 @@ export function withDateHeader(content: string, effectiveAt?: string | null) {
     : content
 }
 
+const LESSONS_CUT_NOTE =
+  "[…the rest of the lessons were left out to fit this model's context window]"
+
+/**
+ * The lessons document, within its allowance.
+ *
+ * It used to go in whole whatever its size. On a window with room it still
+ * does — the allowance there is above what the rewrite lets the document
+ * reach. On a small one it is cut at a line break, from the end, and says so:
+ * the model is told to read lessons first, so it should know when it has been
+ * given only the first part. Null when not even a line would fit.
+ */
+export function fitLessons(lessons: string, maxChars: number): string | null {
+  const text = lessons.trim()
+  if (!text) return null
+  if (text.length <= maxChars) return text
+
+  const room = maxChars - LESSONS_CUT_NOTE.length - 1
+  if (room <= 0) return null
+  const head = text.slice(0, room)
+  const lastBreak = head.lastIndexOf("\n")
+  // A document with no line break inside the allowance is cut mid-line
+  // rather than dropped: part of the first lesson beats none of them.
+  const kept = (lastBreak > 0 ? head.slice(0, lastBreak) : head).trimEnd()
+  return kept ? `${kept}\n${LESSONS_CUT_NOTE}` : null
+}
+
 /**
  * Assemble the injectable memory sections from already-fetched rows.
  *
@@ -275,9 +304,12 @@ export function buildSummarySections(
 
   const sections: string[] = []
 
-  if (lessons) {
+  const fittedLessons = lessons
+    ? fitLessons(lessons, budget.lessonsChars)
+    : null
+  if (fittedLessons) {
     sections.push(
-      `[LESSONS — Accumulated knowledge about you from past sessions]\n${lessons}\n[/LESSONS]`
+      `[LESSONS — Accumulated knowledge about you from past sessions]\n${fittedLessons}\n[/LESSONS]`
     )
   }
 

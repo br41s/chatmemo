@@ -7,6 +7,7 @@ import { getRelevantMemoryForUser } from "@/lib/server/get-relevant-memory"
 import {
   ContextBudget,
   ContextBudgetHint,
+  MEMORY_OVERHEAD_CHARS,
   resolveContextBudget
 } from "@/lib/context-budget"
 import { buildMemoryReport, MemoryReport } from "@/lib/memory-report"
@@ -100,6 +101,13 @@ async function fetchMemoryBlock(
   lastUserText: string,
   budget: ContextBudget
 ): Promise<MemoryInjection> {
+  // No room for memory at all once the block's own text is paid for — a
+  // window of a few thousand tokens. Sending the instructions alone would
+  // spend the little there is on rules about sections that are not there.
+  if (budget.memoryChars <= MEMORY_OVERHEAD_CHARS) {
+    return { block: null, report: EMPTY_REPORT(budget.memoryChars) }
+  }
+
   try {
     const [summary, fullConv, relevantMemory] = await Promise.all([
       getLatestSummaryForUser(userId, budget),
@@ -133,6 +141,16 @@ async function fetchMemoryBlock(
       fullConv,
       effectiveRelevant
     )
+
+    // The layers are sized to fit, so this should not happen. If it does, the
+    // request may not fit the model's window, and that must not be silent.
+    if (block.length > budget.memoryChars) {
+      console.warn("Memory block exceeds its allowance", {
+        blockChars: block.length,
+        memoryChars: budget.memoryChars,
+        windowTokens: budget.windowTokens
+      })
+    }
 
     return {
       block,
