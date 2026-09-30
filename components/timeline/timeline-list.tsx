@@ -3,7 +3,6 @@
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { SheetTitle } from "@/components/ui/sheet"
 import { RowListSkeleton } from "@/components/ui/skeletons"
 import type { TimelineSource } from "@/lib/timeline-parser"
 import {
@@ -11,12 +10,7 @@ import {
   TimelineFilters,
   TimelineGroup
 } from "@/lib/timeline-filters"
-import {
-  IconCalendar,
-  IconSearch,
-  IconTimeline,
-  IconX
-} from "@tabler/icons-react"
+import { IconCalendar, IconSearch, IconX } from "@tabler/icons-react"
 import { FC } from "react"
 import { EntryCard } from "./timeline-cards"
 import { ALL_SOURCES, SourcePill } from "./timeline-sources"
@@ -73,13 +67,6 @@ export const TimelineList: FC<TimelineListProps> = ({
 
   return (
     <>
-      <div className="shrink-0 border-b px-4 py-3">
-        <SheetTitle className="flex items-center gap-2 text-base">
-          <IconTimeline size={18} />
-          Conversation Timeline
-        </SheetTitle>
-      </div>
-
       <div className="shrink-0 space-y-2.5 border-b px-4 py-3">
         <div className="relative">
           <IconSearch

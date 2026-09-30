@@ -33,6 +33,10 @@ export async function GET(request: NextRequest) {
       // rows that render as three-year-old cards. Ordering by the same date the
       // cards are sorted on makes each page a contiguous slice of what is shown.
       .order(MEMORY_ORDER_COLUMN, { ascending: false })
+      // Imported rows share dates by the hundred, and a sort with ties is not
+      // a stable order between requests: page boundaries drifted and the
+      // same row arrived twice. The id breaks the ties the same way each time.
+      .order("id", { ascending: false })
       .range(offset, offset + limit)
 
     if (error) {

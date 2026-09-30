@@ -79,6 +79,14 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
   (`lib/models/model-window.ts`); a custom endpoint uses the context length
   stored with it (client hint and `chat/custom` route); anything else, Ollama
   included, is budgeted at the 8k default.
+- Timeline: a page at `/[workspaceid]/timeline` (`timeline-view.tsx`), not a
+  sheet. `/api/timeline/activity` pages through every memory row (PostgREST
+  caps a request at 1,000 rows, silently) and groups them by month and
+  source for the chart (`lib/timeline-activity.ts`); `/api/timeline` orders
+  by `effective_at` then `id`, so pages are stable across requests. The
+  chart's bar colours come from the source tokens, validated with the
+  dataviz palette checks; `--chart-perplexity` exists because the light-mode
+  teal that reads as text is too grey as a fill.
 - `lib/server/streaming.ts`: local text-stream helpers used by all chat
   routes (replaced the legacy `ai@2.x` package — do not reintroduce it).
 - All LLM summarization goes through OpenRouter (`lib/server/openrouter.ts`),

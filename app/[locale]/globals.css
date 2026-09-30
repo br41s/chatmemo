@@ -111,6 +111,12 @@
     --source-chat: 258 72% 52%;
     --source-unknown: 258 8% 42%;
 
+    /* The activity chart's Perplexity bars. A cyan dark enough for chip text
+       to clear 4.5 to 1 on white reads grey as a fill (the palette
+       validator's chroma floor), and a cyan saturated enough for a fill
+       fails as text. Text keeps the source token; the bars take this. In
+       dark mode the two agree. */
+    --chart-perplexity: 184 100% 30%;
     --radius: 0.5rem;
   }
 
@@ -157,14 +163,20 @@
     --destructive: 0 84% 66%;
     --destructive-foreground: 0 40% 10%;
 
-    --source-claude-ai: 24 90% 58%;
+    /* Claude and ChatGPT sat above the lightness band the other sources are
+       in, so as chart fills they read as lighter, larger quantities. A step
+       darker keeps them in the band, and chip text still clears 5.5 to 1. */
+    --source-claude-ai: 24 88% 48%;
     --source-claude-code: 24 55% 45%;
-    --source-chatgpt: 158 60% 44%;
+    --source-chatgpt: 158 62% 38%;
     --source-perplexity: 184 60% 42%;
     --source-import: 214 84% 58%;
     --source-todo: 36 92% 48%;
     --source-chat: 258 80% 66%;
     --source-unknown: 258 8% 52%;
+    /* The same value as the Perplexity text tone. In the dark it is also a
+       good fill, and every token here is stated as bare channels. */
+    --chart-perplexity: 184 60% 42%;
 
     --ring: 258 90% 74%;
   }

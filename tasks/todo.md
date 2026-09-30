@@ -161,3 +161,12 @@ Out of scope (follow-ups): theme toggle placement, /help page, landing/login red
 - [x] /help is a real page: what the memory is made of, how to read the line under an answer, things to ask, getting history in, the rail, shortcuts, links to the guide and the repo. Tab title via a layout. The chat's ? popover opens it in place.
 - [x] One shortcut list (`lib/shortcuts.ts`) for the popover and the page; test checks it against the `useHotkey` registrations (the popover had been two short).
 - [x] Gate: type-check, jest (814), build. Checked in both themes.
+
+## Timeline as a page (2026-10-01, branch feat/timeline-page)
+
+- [x] `/[workspaceid]/timeline` page: activity chart on top (memory per month, stacked by source, a month click filters the list and loads it through that month), list and reader below with the room a real archive needs. Rail item is a link, lit on the page.
+- [x] `/api/timeline/activity` pages through all rows (the first version returned exactly 1,000 of 1,338: PostgREST's default cap). `/api/timeline` gets a stable secondary order by id; the hook never appends a row twice.
+- [x] Palette validated in both modes (dataviz skill): dark Claude and ChatGPT a step darker, a chart-only teal in light mode.
+- [x] Gate: type-check, jest (820), build. Checked at 1200px and 375px.
+- [ ] `components/timeline/timeline-sheet.tsx` is now unused; delete with Brais's OK.
+- [ ] The chart counts memory rows; the list counts conversations (a bulk row holds several). Both are labelled as such.
