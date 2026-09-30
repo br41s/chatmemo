@@ -1,6 +1,5 @@
 "use client"
 
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import {
   countBySource,
   emptyFilters,
@@ -13,39 +12,35 @@ import {
 } from "@/lib/timeline-filters"
 import { IconTimeline } from "@tabler/icons-react"
 import { useEffect, useMemo, useRef, useState } from "react"
+import { TimelineActivity } from "./timeline-activity"
 import { TimelineDetail } from "./timeline-detail"
 import { TimelineList } from "./timeline-list"
 import { useTimelineEntries } from "./use-timeline-entries"
 
 /**
- * The conversation timeline.
+ * The conversation timeline, as a page.
  *
- * This was 714 lines: the source palette, two card components, the filter
- * pills, the loading, the filtering, the grouping, the paging, and both panes.
- * What is left is the sheet, the two panes side by side, and the state that
- * genuinely spans them — which conversation is open, and which slice of the
- * results is being read.
+ * It was a sheet that slid over the chat, 860px wide at most, opened from
+ * the bottom of the rail. It is a page now: the whole history month by
+ * month at the top, and the list and the reader side by side below, with
+ * the room a real archive needs.
  *
  * The filtering, counting, grouping and window arithmetic are in
- * lib/timeline-filters.ts, where they can be tested without rendering a sheet.
+ * lib/timeline-filters.ts, where they can be tested without rendering.
  */
-export function TimelineSheet() {
-  const [open, setOpen] = useState(false)
+export function TimelineView() {
   const [filters, setFilters] = useState<TimelineFilters>(emptyFilters)
   const [focusedIdx, setFocusedIdx] = useState<number | null>(null)
   const [window, setWindow] = useState(() => initialWindow(0, 3))
+  const [activeMonth, setActiveMonth] = useState<string | null>(null)
   const focusedRef = useRef<HTMLDivElement>(null)
-
   const timeline = useTimelineEntries()
 
-  const handleOpenChange = (next: boolean) => {
-    setOpen(next)
-    if (next) {
-      setFilters(emptyFilters)
-      setFocusedIdx(null)
-      timeline.load()
-    }
-  }
+  useEffect(() => {
+    timeline.load()
+    // Once, when the page opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // A conversation open behind a filter that no longer matches it would be
   // read from the wrong position in the list.
@@ -53,16 +48,24 @@ export function TimelineSheet() {
     setFocusedIdx(null)
   }, [filters])
 
+  // The chart's month is only a way of setting the date filter; editing the
+  // dates by hand lets go of it.
+  useEffect(() => {
+    if (activeMonth === null) return
+    const [from, to] = [filters.dateFrom, filters.dateTo]
+    if (!from.startsWith(activeMonth) || !to.startsWith(activeMonth)) {
+      setActiveMonth(null)
+    }
+  }, [filters.dateFrom, filters.dateTo, activeMonth])
+
   useEffect(() => {
     if (focusedIdx === null) return
-
     const timer = setTimeout(() => {
       focusedRef.current?.scrollIntoView({
         behavior: "smooth",
         block: "center"
       })
     }, 80)
-
     return () => clearTimeout(timer)
   }, [focusedIdx])
 
@@ -85,31 +88,49 @@ export function TimelineSheet() {
     setWindow(initialWindow(index, filtered.length))
   }
 
+  const pickMonth = (
+    month: string | null,
+    bounds: { from: string; to: string } | null
+  ) => {
+    setActiveMonth(month)
+    setFilters({
+      ...filters,
+      dateFrom: bounds?.from ?? "",
+      dateTo: bounds?.to ?? ""
+    })
+    // The month may lie past what the list has loaded so far.
+    if (bounds) {
+      void timeline.loadUntil(
+        bounds.from,
+        timeline.entries,
+        timeline.nextOffset
+      )
+    }
+  }
+
   const hasDetail = focusedIdx !== null
 
   return (
-    <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetTrigger asChild>
-        <button
-          aria-label="Conversation timeline"
-          className="flex h-[55px] w-full cursor-pointer items-center justify-center hover:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-        >
-          <IconTimeline size={28} />
-        </button>
-      </SheetTrigger>
+    <div className="flex h-full min-h-0 flex-col">
+      <header className="shrink-0 border-b px-4 pb-2 pt-3 sm:px-6">
+        <h1 className="flex items-center gap-2 text-base font-semibold">
+          <IconTimeline size={18} className="text-brand" />
+          Timeline
+        </h1>
+        <div className="mt-2">
+          <TimelineActivity activeMonth={activeMonth} onPickMonth={pickMonth} />
+        </div>
+      </header>
 
       {/*
         Mobile: one column, showing the list or the conversation.
         Desktop: both, side by side.
       */}
-      <SheetContent
-        side="left"
-        className="flex w-full flex-row p-0 sm:w-[860px] sm:max-w-[90vw]"
-      >
+      <div className="flex min-h-0 flex-1">
         <div
-          className={`flex flex-col ${
+          className={`flex min-h-0 flex-col ${
             hasDetail ? "hidden sm:flex" : "flex"
-          } w-full sm:w-[340px] sm:shrink-0 sm:border-r`}
+          } w-full sm:w-[360px] sm:shrink-0 sm:border-r`}
         >
           <TimelineList
             filters={filters}
@@ -127,9 +148,8 @@ export function TimelineSheet() {
             onLoadMore={timeline.loadMore}
           />
         </div>
-
         <div
-          className={`flex flex-1 flex-col ${
+          className={`flex min-h-0 flex-1 flex-col ${
             hasDetail ? "flex" : "hidden sm:flex"
           }`}
         >
@@ -151,7 +171,7 @@ export function TimelineSheet() {
             }
           />
         </div>
-      </SheetContent>
-    </Sheet>
+      </div>
+    </div>
   )
 }

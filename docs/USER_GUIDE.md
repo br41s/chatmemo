@@ -253,7 +253,7 @@ The restore is safe to run at any time — rows that already exist in the databa
 
 The **Timeline** panel shows all your conversations — from Claude.ai, Claude Code, ChatGPT, Perplexity, and in-app chats — merged by date.
 
-- Click the timeline icon (⏱) in the left sidebar to open it.
+- Click the timeline icon in the left rail to open it. It is a page of its own: the chart at the top shows how much memory arrived each month, by source; click a month to show only its conversations, click it again to show all.
 - Each entry shows the conversation date (real date, not import date), title, and source badge.
 - **Search**: filter by keyword across titles and content.
 - **Date range**: narrow to a specific time window using the from/to date pickers.

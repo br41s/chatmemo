@@ -8,14 +8,16 @@ import {
   IconMessage,
   IconPencil,
   IconRobotFace,
-  IconSparkles
+  IconSparkles,
+  IconTimeline
 } from "@tabler/icons-react"
+import Link from "next/link"
+import { useParams, usePathname } from "next/navigation"
 import { FC, useState } from "react"
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover"
 import { TabsList } from "../ui/tabs"
 import { WithTooltip } from "../ui/with-tooltip"
 import { MemoryHistorySheet } from "../memory/memory-history-sheet"
-import { TimelineSheet } from "../timeline/timeline-sheet"
 import { ProfileSettings } from "../utility/profile-settings"
 import { ThemeSwitcher } from "../utility/theme-switcher"
 import { SidebarSwitchItem } from "./sidebar-switch-item"
@@ -50,6 +52,10 @@ export const SidebarSwitcher: FC<SidebarSwitcherProps> = ({
   onContentTypeChange
 }) => {
   const [moreOpen, setMoreOpen] = useState(false)
+  const params = useParams<{ workspaceid?: string }>()
+  const pathname = usePathname()
+  const timelineHref = `/${params.workspaceid}/timeline`
+  const onTimeline = pathname?.endsWith("/timeline") ?? false
   const moreActive = MORE_TABS.includes(contentType)
 
   const pickMore = (type: ContentType) => {
@@ -71,8 +77,19 @@ export const SidebarSwitcher: FC<SidebarSwitcherProps> = ({
         </TabsList>
         <WithTooltip
           interactive
-          display={<div>Conversation timeline</div>}
-          trigger={<TimelineSheet />}
+          display={<div>Timeline</div>}
+          trigger={
+            <Link
+              href={timelineHref}
+              aria-label="Timeline"
+              aria-current={onTimeline ? "page" : undefined}
+              className={`${RAIL_CELL} hover:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                onTimeline ? "text-brand" : ""
+              }`}
+            >
+              <IconTimeline size={SIDEBAR_ICON_SIZE} />
+            </Link>
+          }
         />
         <WithTooltip
           interactive

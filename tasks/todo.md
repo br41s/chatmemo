@@ -167,3 +167,12 @@ Out of scope (follow-ups): theme toggle placement, /help page, landing/login red
 - [x] Landing says what the product is, shows the source chips, offers "Start chatting" and "How it works" (/help).
 - [x] Login: brand focus treatment on the fields (same as the composer), primary "Log in", outline "Create an account", reset link, styled message, link to /help. Email input typed and autocompleted.
 - [x] Gate: type-check, jest (814), build. Landing checked in the browser; login checked on the PR preview (the local pane is signed in and is redirected).
+
+## Timeline as a page (2026-10-01, branch feat/timeline-page)
+
+- [x] `/[workspaceid]/timeline` page: activity chart on top (memory per month, stacked by source, a month click filters the list and loads it through that month), list and reader below with the room a real archive needs. Rail item is a link, lit on the page.
+- [x] `/api/timeline/activity` pages through all rows (the first version returned exactly 1,000 of 1,338: PostgREST's default cap). `/api/timeline` gets a stable secondary order by id; the hook never appends a row twice.
+- [x] Palette validated in both modes (dataviz skill): dark Claude and ChatGPT a step darker, a chart-only teal in light mode.
+- [x] Gate: type-check, jest (820), build. Checked at 1200px and 375px.
+- [ ] `components/timeline/timeline-sheet.tsx` is now unused; delete with Brais's OK.
+- [ ] The chart counts memory rows; the list counts conversations (a bulk row holds several). Both are labelled as such.
