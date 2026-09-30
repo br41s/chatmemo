@@ -7,8 +7,14 @@ import { Database } from "@/supabase/types"
 import { createServerClient } from "@supabase/ssr"
 import { get } from "@vercel/edge-config"
 import { Metadata } from "next"
+import Link from "next/link"
 import { cookies, headers } from "next/headers"
 import { redirect } from "next/navigation"
+
+// The composer's focus treatment, so the two screens agree on what "focused"
+// looks like.
+const FIELD =
+  "rounded-md border bg-inherit px-4 py-2 transition-[box-shadow,border-color] focus-visible:border-brand/60 focus-visible:ring-0 focus-visible:shadow-[0_0_0_3px_hsl(var(--brand)/0.15)]"
 
 export const metadata: Metadata = {
   title: "Login"
@@ -161,59 +167,76 @@ export default async function Login(props: {
   }
 
   return (
-    <div className="flex w-full flex-1 flex-col justify-center gap-2 px-8 sm:max-w-md">
+    <div className="flex w-full flex-1 flex-col justify-center px-8 sm:max-w-md">
       <form
-        className="flex w-full flex-1 flex-col justify-center gap-2 text-foreground animate-in"
+        className="flex w-full flex-col text-foreground duration-500 animate-in fade-in slide-in-from-bottom-2"
         action={signIn}
       >
         <Brand />
 
-        <Label className="text-md mt-4" htmlFor="email">
+        <Label className="mt-8" htmlFor="email">
           Email
         </Label>
         <Input
-          className="mb-3 rounded-md border bg-inherit px-4 py-2"
+          id="email"
+          className={`${FIELD} mb-4 mt-1.5`}
+          type="email"
           name="email"
+          autoComplete="email"
           placeholder="you@example.com"
           required
         />
 
-        <Label className="text-md" htmlFor="password">
-          Password
-        </Label>
+        <Label htmlFor="password">Password</Label>
         <Input
-          className="mb-6 rounded-md border bg-inherit px-4 py-2"
+          id="password"
+          className={`${FIELD} mb-6 mt-1.5`}
           type="password"
           name="password"
+          autoComplete="current-password"
           placeholder="••••••••"
         />
 
-        <SubmitButton className="mb-2 rounded-md bg-brand px-4 py-2 text-brand-foreground">
-          Login
+        <SubmitButton className="mb-2 rounded-md bg-brand px-4 py-2 font-semibold text-brand-foreground hover:bg-brand/90">
+          Log in
         </SubmitButton>
-
         <SubmitButton
           formAction={signUp}
-          className="mb-2 rounded-md border border-foreground/20 px-4 py-2"
+          variant="outline"
+          className="mb-2 rounded-md px-4 py-2 text-muted-foreground hover:border-brand/60 hover:text-foreground"
         >
-          Sign Up
+          Create an account
         </SubmitButton>
 
-        <div className="mt-1 flex justify-center text-sm text-muted-foreground">
-          <span className="mr-1">Forgot your password?</span>
+        <div className="mt-2 flex justify-center gap-1 text-sm text-muted-foreground">
+          <span>Forgot your password?</span>
           <button
             formAction={handleResetPassword}
-            className="ml-1 text-primary underline hover:opacity-80"
+            className="rounded text-foreground underline decoration-brand/60 underline-offset-4 hover:text-brand focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           >
-            Reset
+            Reset it
           </button>
         </div>
 
         {searchParams?.message && (
-          <p className="mt-4 bg-foreground/10 p-4 text-center text-foreground">
+          <p
+            role="status"
+            className="mt-6 rounded-md border border-brand/40 bg-brand/10 p-3 text-center text-sm text-foreground"
+          >
             {searchParams.message}
           </p>
         )}
+
+        <p className="mt-8 text-center text-sm text-muted-foreground">
+          New here?{" "}
+          <Link
+            href="/help"
+            className="text-foreground underline decoration-brand/60 underline-offset-4 hover:text-brand"
+          >
+            See how the memory works
+          </Link>
+          .
+        </p>
       </form>
     </div>
   )
