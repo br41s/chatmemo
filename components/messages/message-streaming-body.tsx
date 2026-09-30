@@ -44,7 +44,10 @@ export const MessageStreamingBody: FC<MessageStreamingBodyProps> = ({
           role="status"
           className="flex items-center gap-2 text-sm text-muted-foreground"
         >
-          <IconBrain size={18} className="animate-recall text-brand" />
+          <IconBrain
+            size={18}
+            className="animate-recall text-brand motion-reduce:animate-none"
+          />
           <span>Thinking…</span>
         </div>
       )

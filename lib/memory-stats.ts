@@ -21,7 +21,8 @@ export const MEMORY_DB_SOURCES: readonly MemoryDbSource[] = [
 export interface MemoryStats {
   total: number
   bySource: Partial<Record<MemoryDbSource, number>>
-  /** Newest conversation date on record as `YYYY-MM-DD`, or null when empty. */
+  /** When the newest memory is from: a `YYYY-MM-DD` conversation date, or a
+   *  full timestamp for a row that has none. Null when empty. */
   newest: string | null
 }
 
@@ -68,6 +69,18 @@ export function memoryConstellation(
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
+/** Local midnight of the day a value falls on: a bare date is that day, an
+ *  instant is whatever day it is for the viewer. */
+function calendarDay(value: string): Date | null {
+  const bare = value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (bare) {
+    return new Date(Number(bare[1]), Number(bare[2]) - 1, Number(bare[3]))
+  }
+  const instant = new Date(value)
+  if (Number.isNaN(instant.getTime())) return null
+  return new Date(instant.getFullYear(), instant.getMonth(), instant.getDate())
+}
+
 /**
  * "today", "yesterday", "5 days ago", or a short date once it is older than
  * a month. Dates are compared as calendar days in the viewer's timezone, so
@@ -78,13 +91,8 @@ export function describeNewest(
   now: Date = new Date()
 ): string | null {
   if (!newest) return null
-  const match = newest.match(/^(\d{4})-(\d{2})-(\d{2})/)
-  if (!match) return null
-  const then = new Date(
-    Number(match[1]),
-    Number(match[2]) - 1,
-    Number(match[3])
-  )
+  const then = calendarDay(newest)
+  if (!then) return null
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const days = Math.round((today.getTime() - then.getTime()) / DAY_MS)
   if (days <= 0) return "today"

@@ -52,8 +52,18 @@ describe("describeNewest", () => {
     expect(describeNewest("2025-07-04", now)).toMatch(/2025/)
   })
 
-  it("accepts a timestamp and rejects nothing usable", () => {
-    expect(describeNewest("2026-09-29T23:10:00+00:00", now)).toBe("yesterday")
+  it("places an instant on the viewer's own calendar", () => {
+    // A row with no conversation date reports when it was written. Built
+    // from local components so the test holds in any timezone: late last
+    // night is yesterday, and early this morning is today even where that
+    // instant is still the previous day in UTC.
+    const lastNight = new Date(2026, 8, 29, 23, 10).toISOString()
+    const thisMorning = new Date(2026, 8, 30, 0, 30).toISOString()
+    expect(describeNewest(lastNight, now)).toBe("yesterday")
+    expect(describeNewest(thisMorning, now)).toBe("today")
+  })
+
+  it("rejects what it cannot read", () => {
     expect(describeNewest(null, now)).toBeNull()
     expect(describeNewest("soon", now)).toBeNull()
   })

@@ -21,9 +21,9 @@ import { SidebarSwitchItem } from "./sidebar-switch-item"
 
 export const SIDEBAR_ICON_SIZE = 28
 
-/** One rail cell: the tabs, the sheet triggers and the "more" button share
- *  it so the column reads as one list rather than two. */
-export const RAIL_CELL = "flex h-[55px] w-full items-center justify-center"
+/** One rail cell. The timeline and memory triggers carry the same classes
+ *  in their own files: importing this there would be a circular import. */
+const RAIL_CELL = "flex h-[55px] w-full items-center justify-center"
 
 /**
  * The upstream tabs that are configuration rather than daily use. They keep
@@ -100,7 +100,6 @@ export const SidebarSwitcher: FC<SidebarSwitcherProps> = ({
                 <button
                   type="button"
                   aria-label="More"
-                  aria-expanded={moreOpen}
                   className={`${RAIL_CELL} hover:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                     moreActive ? "text-brand" : ""
                   }`}
@@ -110,15 +109,7 @@ export const SidebarSwitcher: FC<SidebarSwitcherProps> = ({
               </PopoverTrigger>
             }
           />
-          <PopoverContent
-            side="right"
-            align="start"
-            className="w-auto p-1"
-            // Radix tabs activate on focus, and a popover focuses its first
-            // item when it opens — so merely opening this switched the
-            // sidebar to Presets. Focus stays on the button instead.
-            onOpenAutoFocus={event => event.preventDefault()}
-          >
+          <PopoverContent side="right" align="start" className="w-auto p-1">
             {/* A second tab list, so the hidden tabs keep their roving focus
                 and selected state without a row each in the rail. */}
             <TabsList className="grid h-auto min-w-[160px] auto-rows-[40px] grid-cols-1 bg-transparent">

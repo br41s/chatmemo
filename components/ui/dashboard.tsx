@@ -161,6 +161,11 @@ export const Dashboard: FC<DashboardProps> = ({ children }) => {
           >
             <Tabs
               className="flex h-full"
+              // Manual, because the rail is now three tab lists: with
+              // activation on focus, tabbing into a list that does not hold
+              // the active tab switched the sidebar to its first item.
+              activationMode="manual"
+              orientation="vertical"
               value={contentType}
               onValueChange={tabValue => {
                 setContentType(tabValue as ContentType)

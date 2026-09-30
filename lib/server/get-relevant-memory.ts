@@ -98,11 +98,23 @@ export function buildRelevantTerms(message: string): string[] {
  * carries no topic words). Content is verbatim from the DB — safe against
  * fabrication.
  */
+/** The relevance section, and the row excerpts it was joined from. */
+export interface RelevantMemory {
+  block: string
+  /**
+   * One excerpt per matched row, in rank order. Kept alongside the block
+   * because the rows cannot be recovered from it: stored conversations
+   * contain markdown rules of their own, and a `---` inside a row reads
+   * exactly like the separator between rows.
+   */
+  entries: string[]
+}
+
 export async function getRelevantMemoryForUser(
   userId: string,
   userMessage: string,
   budget: ContextBudget = resolveContextBudget()
-): Promise<string | null> {
+): Promise<RelevantMemory | null> {
   const terms = buildRelevantTerms(userMessage)
   if (terms.length === 0) return null
 
@@ -159,9 +171,11 @@ export async function getRelevantMemoryForUser(
 
   if (blocks.length === 0) return null
 
-  return (
-    "[RELEVANT MEMORY — top matches for the current question, verbatim from your history]\n" +
-    blocks.join("\n\n---\n\n") +
-    "\n[/RELEVANT MEMORY]"
-  )
+  return {
+    block:
+      "[RELEVANT MEMORY — top matches for the current question, verbatim from your history]\n" +
+      blocks.join("\n\n---\n\n") +
+      "\n[/RELEVANT MEMORY]",
+    entries: blocks
+  }
 }

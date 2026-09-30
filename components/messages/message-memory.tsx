@@ -111,6 +111,7 @@ export const MessageMemory: FC<MessageMemoryProps> = ({ report }) => {
                 >
                   <MemorySourceChip source={item.source} className="min-w-0">
                     {item.title}
+                    {item.more ? ` +${item.more}` : ""}
                   </MemorySourceChip>
                   {item.date && (
                     <span className="shrink-0 tabular-nums text-muted-foreground">

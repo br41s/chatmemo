@@ -16,23 +16,35 @@ interface MemorySourceChipProps {
  *
  * The chat, the empty state and the memory panel all name where a memory
  * came from, and they must agree with the timeline about what colour that
- * is — one palette, read from the same record.
+ * is — one palette, read from the same record. The source is always named
+ * as well: in the chip's own text, or for a screen reader and on hover when
+ * the text is a conversation title.
  */
+
+// A `[source:claude]` row may be a bookmarklet save, a bulk import or a
+// Claude Code session, so here it is just "Claude".
+const CHIP_LABELS: Partial<Record<MemoryEntryReport["source"], string>> = {
+  "claude-ai": "Claude"
+}
 export const MemorySourceChip: FC<MemorySourceChipProps> = ({
   source,
   children,
   className,
   title
-}) => (
-  <span
-    title={title}
-    className={cn(
-      "inline-flex max-w-full items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium",
-      SOURCE_TONES[source].badge,
-      className
-    )}
-  >
-    <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-current" />
-    <span className="truncate">{children ?? SOURCE_LABELS[source]}</span>
-  </span>
-)
+}) => {
+  const label = CHIP_LABELS[source] ?? SOURCE_LABELS[source]
+  return (
+    <span
+      title={title ? `${label} · ${title}` : label}
+      className={cn(
+        "inline-flex max-w-full items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium",
+        SOURCE_TONES[source].badge,
+        className
+      )}
+    >
+      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-current" />
+      {children && <span className="sr-only">{label}: </span>}
+      <span className="truncate">{children ?? label}</span>
+    </span>
+  )
+}

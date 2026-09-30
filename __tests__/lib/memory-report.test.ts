@@ -154,24 +154,27 @@ const RELEVANT = (entries: string[]) =>
   )}\n[/RELEVANT MEMORY]`
 
 describe("buildMemoryReport — remembered entries", () => {
-  const build = (relevant: string) =>
-    buildMemoryReport({
+  // The relevance layer hands over its rows alongside the joined block, the
+  // way inject-memory passes them.
+  const build = (entries: string[]) => {
+    const relevant = RELEVANT(entries)
+    return buildMemoryReport({
       summary: null,
       relevant,
+      relevantEntries: entries,
       fullConversation: null,
       fullConversationMissed: false,
       totalChars: relevant.length,
       budgetChars: 100_000
     })
+  }
 
   it("names each relevance match with its title, source and date", () => {
-    const report = build(
-      RELEVANT([
-        "[source:chatgpt]\n### [2026-07-04] Vercel deploy saga\n- six failed builds",
-        "[source:perplexity]\n### [2026-03-01] Postgres locale on macOS\n- initdb",
-        "[source:claude]\n### [2026-09-24] Summaries metadata trigger\n- BEFORE INSERT"
-      ])
-    )
+    const report = build([
+      "[source:chatgpt]\n### [2026-07-04] Vercel deploy saga\n- six failed builds",
+      "[source:perplexity]\n### [2026-03-01] Postgres locale on macOS\n- initdb",
+      "[source:claude]\n### [2026-09-24] Summaries metadata trigger\n- BEFORE INSERT"
+    ])
     expect(report.relevant?.items).toEqual([
       { title: "Vercel deploy saga", source: "chatgpt", date: "2026-07-04" },
       {
@@ -185,25 +188,49 @@ describe("buildMemoryReport — remembered entries", () => {
         date: "2026-09-24"
       }
     ])
-    // The header and footer lines are not entries.
     expect(report.relevant?.entries).toBe(3)
   })
 
-  it("tells a Claude Code session apart by its title tag and strips it", () => {
-    const report = build(
-      RELEVANT([
-        "[source:claude]\n### [2026-09-29] [Claude Code] chatmemo\n- fix"
-      ])
-    )
+  it("does not invent an entry from a markdown rule inside a row", () => {
+    // Stored conversations keep the assistant's own `---`. Splitting the
+    // joined block on the separator turned the text after it into a third
+    // "conversation", titled with whatever line came next.
+    const report = build([
+      "[source:claude]\n### [2026-09-01] Viaje a Bangkok\nPlan\n\n---\n\nMi número de reserva es X1234567",
+      "[source:chatgpt]\n### [2026-08-02] Qatar refund\n- QR832"
+    ])
+    expect(report.relevant?.entries).toBe(2)
+    expect(report.relevant?.items?.map(item => item.title)).toEqual([
+      "Viaje a Bangkok",
+      "Qatar refund"
+    ])
+  })
+
+  it("says when a row holds more conversations than the one it is named for", () => {
+    const report = build([
+      "[source:chatgpt]\n### [2026-08-01] Recipe for paella\n- rice\n\n### [2026-08-02] Qatar flight refund\n- QR832\n\n### [2026-08-03] Tax form\n- 100"
+    ])
     expect(report.relevant?.items?.[0]).toEqual({
-      title: "chatmemo",
-      source: "claude-code",
-      date: "2026-09-29"
+      title: "Recipe for paella",
+      source: "chatgpt",
+      date: "2026-08-01",
+      more: 2
     })
   })
 
+  it("tells a Claude Code session apart by its title tag and strips it", () => {
+    const report = build([
+      "[source:claude]\n### [2026-09-29] [Claude Code] chatmemo\n- fix",
+      "[source:claude]\n### [2026-09-30] [Claude Code cloud] hermes\n- fix"
+    ])
+    expect(report.relevant?.items).toEqual([
+      { title: "chatmemo", source: "claude-code", date: "2026-09-29" },
+      { title: "hermes", source: "claude-code", date: "2026-09-30" }
+    ])
+  })
+
   it("labels an untagged, undated row as in-app chat with its first line", () => {
-    const report = build(RELEVANT(["Talked about the garden plan\n- tomatoes"]))
+    const report = build(["Talked about the garden plan\n- tomatoes"])
     expect(report.relevant?.items?.[0]).toEqual({
       title: "Talked about the garden plan",
       source: "chat"
@@ -211,9 +238,7 @@ describe("buildMemoryReport — remembered entries", () => {
   })
 
   it("does not take a bullet or bold marker as part of the title", () => {
-    const report = build(
-      RELEVANT(["- **First conversation** with Perplexity\n- more"])
-    )
+    const report = build(["- **First conversation** with Perplexity\n- more"])
     expect(report.relevant?.items?.[0].title).toBe(
       "First conversation with Perplexity"
     )
@@ -222,18 +247,38 @@ describe("buildMemoryReport — remembered entries", () => {
   it("caps the list and the title length", () => {
     const long = "x".repeat(120)
     const report = build(
-      RELEVANT(
-        Array.from(
-          { length: 9 },
-          (_, i) => `### [2026-01-0${(i % 9) + 1}] ${long}`
-        )
-      )
+      Array.from({ length: 9 }, (_, i) => `### [2026-01-0${i + 1}] ${long}`)
     )
     expect(report.relevant?.entries).toBe(9)
     expect(report.relevant?.items).toHaveLength(6)
     const title = report.relevant?.items?.[0].title ?? ""
-    expect(title.length).toBeLessThanOrEqual(60)
+    expect(Array.from(title).length).toBeLessThanOrEqual(60)
     expect(title.endsWith("…")).toBe(true)
+  })
+
+  it("does not cut an emoji in half", () => {
+    // 58 letters, then an emoji straddling the 59-character cut.
+    const report = build([`### [2026-01-01] ${"a".repeat(58)}😀😀😀 tail`])
+    const cut = report.relevant?.items?.[0].title ?? ""
+    expect(cut).toBe(`${"a".repeat(58)}😀…`)
+    expect(
+      decodeMemoryReport(encodeMemoryReport(report))?.relevant?.items?.[0].title
+    ).toBe(cut)
+  })
+
+  it("names nothing when it is given only the joined text", () => {
+    // Older callers and the counts keep working; the titles need the rows.
+    const relevant = RELEVANT(["### [2026-01-01] One", "### [2026-01-02] Two"])
+    const report = buildMemoryReport({
+      summary: null,
+      relevant,
+      fullConversation: null,
+      fullConversationMissed: false,
+      totalChars: relevant.length,
+      budgetChars: 100_000
+    })
+    expect(report.relevant?.entries).toBe(2)
+    expect(report.relevant?.items).toBeUndefined()
   })
 })
 

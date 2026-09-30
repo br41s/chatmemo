@@ -7,7 +7,6 @@ import {
   MemoryStats
 } from "@/lib/memory-stats"
 import { useCallback, useEffect, useState } from "react"
-import { useTheme } from "next-themes"
 import { MemorySourceChip } from "../memory/memory-source-chip"
 
 interface ChatEmptyStateProps {
@@ -29,7 +28,6 @@ interface ChatEmptyStateProps {
  * memory. It still reads "nothing yet" when there is nothing yet.
  */
 export const ChatEmptyState = ({ onSuggestion }: ChatEmptyStateProps) => {
-  const { theme } = useTheme()
   const [stats, setStats] = useState<MemoryStats | null>(null)
 
   const loadStats = useCallback(async () => {
@@ -71,7 +69,7 @@ export const ChatEmptyState = ({ onSuggestion }: ChatEmptyStateProps) => {
 
   return (
     <div className="flex flex-col items-center gap-6 duration-500 animate-in fade-in slide-in-from-bottom-2">
-      <Brand theme={theme === "dark" ? "dark" : "light"} />
+      <Brand />
 
       {stats !== null && (
         <div className="flex flex-col items-center gap-3">

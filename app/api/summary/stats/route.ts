@@ -36,7 +36,7 @@ export async function GET() {
       countRows(),
       supabase
         .from("summaries")
-        .select(MEMORY_ORDER_COLUMN)
+        .select("occurred_at, created_at")
         .eq("user_id", userId)
         .in("kind", MEMORY_KINDS)
         .order(MEMORY_ORDER_COLUMN, { ascending: false, nullsFirst: false })
@@ -71,10 +71,21 @@ export async function GET() {
   }
 }
 
-/** The calendar date of the newest row, or null when there is none. */
-function newestDate(row: Record<string, unknown> | null): string | null {
-  const value = row?.[MEMORY_ORDER_COLUMN]
-  return typeof value === "string" && value.length >= 10
-    ? value.slice(0, 10)
-    : null
+/**
+ * When the newest row is from.
+ *
+ * A conversation date is a calendar day and goes out as one. A row without
+ * one falls back to when it was written, which is an instant: that goes out
+ * whole, so the browser can place it on the viewer's own calendar — cutting
+ * it to a UTC date made a memory written minutes ago read "yesterday" east
+ * of Greenwich.
+ */
+function newestDate(
+  row: { occurred_at: string | null; created_at: string | null } | null
+): string | null {
+  if (!row) return null
+  if (row.occurred_at && row.occurred_at.length >= 10) {
+    return row.occurred_at.slice(0, 10)
+  }
+  return row.created_at ?? null
 }

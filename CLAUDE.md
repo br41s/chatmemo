@@ -45,7 +45,9 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
 - `lib/memory-report.ts`: what a turn was told, sent back in the
   `x-chatmemo-memory` response header ahead of the stream — layer sizes,
   date spans and the matched entries' titles/sources (capped; dropped before
-  the report itself if the header would exceed 4 KB). The chat shows it
+  the report itself if the header would exceed 4 KB). Entries are named from
+  the rows the relevance layer returns (`RelevantMemory.entries`), never by
+  splitting the joined block: stored conversations contain `---` themselves. The chat shows it
   while waiting for the first token (`memory-recalling.tsx`) and under the
   answer (`message-memory.tsx`). Source colours come from one record,
   `timeline-sources.tsx`, via `memory-source-chip.tsx`.

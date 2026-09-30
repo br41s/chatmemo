@@ -30,6 +30,12 @@ export interface MemoryEntryReport {
   source: MemorySourceKey
   /** Conversation date as `YYYY-MM-DD`, when the entry states one. */
   date?: string
+  /**
+   * How many further conversations the same stored row holds. Bulk imports
+   * pack several conversations into one row, and the title is only the
+   * first of them — saying so beats naming one conversation for five.
+   */
+  more?: number
 }
 
 export interface MemoryLayerReport {
@@ -188,10 +194,11 @@ function dateSpan(
 const MAX_REPORT_ENTRIES = 6
 const TITLE_MAX = 60
 
-const CLAUDE_CODE_TAG_RE = /\[claude code\]\s*/i
+// `[Claude Code]` from the laptop hook, `[Claude Code cloud]` from the cloud one.
+const CLAUDE_CODE_TAG_RE = /\[claude code(?: cloud)?\]\s*/i
 
 /**
- * The entries a section names, read from the section text.
+ * The entries a layer names, one per matched row.
  *
  * Each entry is a row's content (or the head of it), so the same classifier
  * the database trigger mirrors gives its title, source and date. Untagged
@@ -199,14 +206,8 @@ const CLAUDE_CODE_TAG_RE = /\[claude code\]\s*/i
  * importer or the Claude Code hook — and the hook marks its titles, which
  * is how the two are told apart.
  */
-function entryReports(section: string): MemoryEntryReport[] {
-  const lines = section.split("\n")
-  if (lines[0]?.startsWith("[")) lines.shift()
-  if (lines[lines.length - 1]?.startsWith("[/")) lines.pop()
-
-  return lines
-    .join("\n")
-    .split(ENTRY_SEPARATOR)
+function entryReports(entries: string[]): MemoryEntryReport[] {
+  return entries
     .map(part => part.trim())
     .filter(Boolean)
     .slice(0, MAX_REPORT_ENTRIES)
@@ -221,9 +222,15 @@ function entryReports(section: string): MemoryEntryReport[] {
         .replace(/^[-*•]\s+/, "")
         .replace(/\*\*/g, "")
         .trim()
+      // Cut by code point, not by UTF-16 unit: slicing through an emoji
+      // leaves half a surrogate pair, which renders as "�".
+      const points = Array.from(cleaned)
       const title =
-        cleaned.length > TITLE_MAX
-          ? cleaned.slice(0, TITLE_MAX - 1).trimEnd() + "…"
+        points.length > TITLE_MAX
+          ? points
+              .slice(0, TITLE_MAX - 1)
+              .join("")
+              .trimEnd() + "…"
           : cleaned || "Conversation"
       const source: MemorySourceKey =
         meta.source === "claude"
@@ -233,9 +240,11 @@ function entryReports(section: string): MemoryEntryReport[] {
           : meta.source === "other"
             ? "chat"
             : meta.source
-      return meta.occurredAt
-        ? { title, source, date: meta.occurredAt }
-        : { title, source }
+      const item: MemoryEntryReport = { title, source }
+      if (meta.occurredAt) item.date = meta.occurredAt
+      const conversations = entry.match(ENTRY_DATE_RE)?.length ?? 0
+      if (conversations > 1) item.more = conversations - 1
+      return item
     })
 }
 
@@ -249,6 +258,13 @@ function entryReports(section: string): MemoryEntryReport[] {
 export function buildMemoryReport(input: {
   summary: string | null
   relevant: string | null
+  /**
+   * The rows behind `relevant`, one excerpt each. The entries are named
+   * from these rather than by splitting `relevant` back apart: a stored
+   * conversation can contain the separator, and splitting on it invented
+   * entries titled with whatever line followed.
+   */
+  relevantEntries?: string[] | null
   fullConversation: string | null
   fullConversationMissed: boolean
   totalChars: number
@@ -281,9 +297,11 @@ export function buildMemoryReport(input: {
   if (input.relevant) {
     report.relevant = {
       chars: input.relevant.length,
-      entries: countEntries(input.relevant),
-      span: dateSpan(input.relevant),
-      items: entryReports(input.relevant)
+      entries: input.relevantEntries?.length ?? countEntries(input.relevant),
+      span: dateSpan(input.relevant)
+    }
+    if (input.relevantEntries?.length) {
+      report.relevant.items = entryReports(input.relevantEntries)
     }
   }
 

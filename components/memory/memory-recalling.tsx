@@ -36,7 +36,10 @@ export const MemoryRecalling: FC<MemoryRecallingProps> = ({ report }) => {
       className="duration-300 animate-in fade-in slide-in-from-bottom-1"
     >
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <IconBrain size={18} className="animate-recall text-brand" />
+        <IconBrain
+          size={18}
+          className="animate-recall text-brand motion-reduce:animate-none"
+        />
         <span>{headline}</span>
         {reach && <span className="text-xs tabular-nums">· up to {reach}</span>}
       </div>
@@ -53,6 +56,7 @@ export const MemoryRecalling: FC<MemoryRecallingProps> = ({ report }) => {
                 title={item.date ? `${item.date} · ${item.title}` : item.title}
               >
                 {item.title}
+                {item.more ? ` +${item.more}` : ""}
               </MemorySourceChip>
             </li>
           ))}

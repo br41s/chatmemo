@@ -120,7 +120,9 @@ async function fetchMemoryBlock(
     const effectiveSummary = fullConvFoundMatch ? null : summary
     // On a full-conversation match the verbatim transcript already answers the
     // question — skip the relevance section to avoid burying/overflowing it.
-    const effectiveRelevant = fullConvFoundMatch ? null : relevantMemory
+    const effectiveRelevant = fullConvFoundMatch
+      ? null
+      : relevantMemory?.block ?? null
 
     if (!effectiveSummary && !fullConv && !effectiveRelevant) {
       return { block: null, report: EMPTY_REPORT(budget.memoryChars) }
@@ -137,6 +139,7 @@ async function fetchMemoryBlock(
       report: buildMemoryReport({
         summary: effectiveSummary,
         relevant: effectiveRelevant,
+        relevantEntries: effectiveRelevant ? relevantMemory?.entries : null,
         fullConversation: fullConv,
         fullConversationMissed: !!fullConv && !fullConvFoundMatch,
         totalChars: block.length,

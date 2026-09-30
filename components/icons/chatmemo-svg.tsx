@@ -1,7 +1,8 @@
 import { FC } from "react"
 
 interface ChatMemoSVGProps {
-  theme: "dark" | "light"
+  /** Unused: the mark follows the text colour. Kept for existing callers. */
+  theme?: "dark" | "light"
   scale?: number
 }
 
