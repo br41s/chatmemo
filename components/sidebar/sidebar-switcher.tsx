@@ -69,10 +69,12 @@ export const SidebarSwitcher: FC<SidebarSwitcherProps> = ({
           />
         </TabsList>
         <WithTooltip
+          interactive
           display={<div>Conversation timeline</div>}
           trigger={<TimelineSheet />}
         />
         <WithTooltip
+          interactive
           display={<div>Memory</div>}
           trigger={<MemoryHistorySheet />}
         />
@@ -94,6 +96,7 @@ export const SidebarSwitcher: FC<SidebarSwitcherProps> = ({
 
         <Popover open={moreOpen} onOpenChange={setMoreOpen}>
           <WithTooltip
+            interactive
             display={<div>Presets, models, collections, assistants, tools</div>}
             trigger={
               <PopoverTrigger asChild>
@@ -150,6 +153,7 @@ export const SidebarSwitcher: FC<SidebarSwitcherProps> = ({
 
       <div className="flex flex-col items-center">
         <WithTooltip
+          interactive
           display={<div>Profile settings</div>}
           trigger={<ProfileSettings />}
         />

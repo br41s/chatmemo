@@ -182,14 +182,16 @@ const MessageComponent: FC<MessageProps> = ({
   return (
     <div
       className={cn(
-        "flex w-full justify-center",
+        // The gutter lives here so that a column narrower than the message's
+        // ceiling still leaves the text clear of the edges.
+        "flex w-full justify-center sm:px-6",
         message.role === "user" ? "" : "bg-secondary"
       )}
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
       onKeyDown={handleKeyDown}
     >
-      <div className="relative flex w-full flex-col p-6 sm:w-[550px] sm:px-0 md:w-[650px] lg:w-[650px] xl:w-[700px]">
+      <div className="relative flex w-full flex-col p-6 sm:max-w-[550px] sm:px-0 md:max-w-[650px] xl:max-w-[700px]">
         <div className="absolute right-5 top-7 sm:right-0">
           <MessageActions
             onCopy={handleCopy}

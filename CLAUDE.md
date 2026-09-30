@@ -83,6 +83,14 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
   user should read; routes answer it with its status and log the rest as 500.
 - **Request APIs are async (Next 15):** `cookies()`, `headers()`, `params`
   and `searchParams` are Promises — `createClient(await cookies())`.
+- **Tooltips on controls:** `WithTooltip` wraps its trigger in a `<button>` by
+  default. Around something that is already a control (a button, a tab, a
+  sheet or popover trigger) pass `interactive`, which uses a plain wrapper —
+  otherwise it is a button inside a button, a hydration error and a second tab
+  stop. Radix `*Trigger` around a `Button` needs `asChild` for the same reason.
+- **Chat widths are ceilings:** the composer and messages use `w-full` with
+  `max-w-*` steps. They live in the chat column, not the window, so a fixed
+  `sm:w-[600px]` overflows whenever the sidebar is open on a mid-width screen.
 - Never commit `.env.local`; bearer-token import auth is configured by
   `npm run setup:sync`.
 

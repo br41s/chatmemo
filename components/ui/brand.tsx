@@ -19,7 +19,7 @@ export const Brand: FC<BrandProps> = ({ theme = "dark" }) => {
 
       <div className="text-4xl font-bold tracking-wide">ChatMemo</div>
 
-      <div className="mt-1 text-sm text-muted-foreground">
+      <div className="mt-1 text-center text-sm text-muted-foreground">
         One memory across your AI conversations
       </div>
     </div>
