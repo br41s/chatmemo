@@ -110,33 +110,46 @@ export const SidebarSwitcher: FC<SidebarSwitcherProps> = ({
               </PopoverTrigger>
             }
           />
-          <PopoverContent side="right" align="start" className="w-auto p-1">
+          <PopoverContent
+            side="right"
+            align="start"
+            className="w-auto p-1"
+            // Radix tabs activate on focus, and a popover focuses its first
+            // item when it opens — so merely opening this switched the
+            // sidebar to Presets. Focus stays on the button instead.
+            onOpenAutoFocus={event => event.preventDefault()}
+          >
             {/* A second tab list, so the hidden tabs keep their roving focus
                 and selected state without a row each in the rail. */}
-            <TabsList className="grid h-auto auto-rows-[44px] grid-cols-1 bg-transparent">
+            <TabsList className="grid h-auto min-w-[160px] auto-rows-[40px] grid-cols-1 bg-transparent">
               <SidebarSwitchItem
                 icon={<IconAdjustmentsHorizontal size={22} />}
                 contentType="presets"
+                label="Presets"
                 onContentTypeChange={pickMore}
               />
               <SidebarSwitchItem
                 icon={<IconSparkles size={22} />}
                 contentType="models"
+                label="Models"
                 onContentTypeChange={pickMore}
               />
               <SidebarSwitchItem
                 icon={<IconBooks size={22} />}
                 contentType="collections"
+                label="Collections"
                 onContentTypeChange={pickMore}
               />
               <SidebarSwitchItem
                 icon={<IconRobotFace size={22} />}
                 contentType="assistants"
+                label="Assistants"
                 onContentTypeChange={pickMore}
               />
               <SidebarSwitchItem
                 icon={<IconBolt size={22} />}
                 contentType="tools"
+                label="Tools"
                 onContentTypeChange={pickMore}
               />
             </TabsList>

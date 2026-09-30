@@ -126,6 +126,6 @@ Scope agreed: daily-driver audience · chat + memory reveal first · restyle + m
 - [x] Identity: new ChatMemo mark, softer chat header, composer focus in brand hue, keyframes for recall pulse.
 - [x] Gate: `npm run type-check`, `npx jest`, `npm run build`.
 - [x] Docs: CLAUDE.md memory-system section mentions the report items; decisions log entry.
-- [ ] QA in the browser pane on the signed-in account (needs Brais to log in).
+- [x] QA in the browser pane on the signed-in account: rail, More group, empty state, thinking state, panel under the answer.
 
 Out of scope (follow-ups): theme toggle placement, /help page, landing/login redesign, timeline as a full page.

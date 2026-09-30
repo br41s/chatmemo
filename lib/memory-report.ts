@@ -214,7 +214,13 @@ function entryReports(section: string): MemoryEntryReport[] {
       const meta = classifySummaryContent(entry)
       const rawTitle = meta.title ?? "Conversation"
       const isClaudeCode = CLAUDE_CODE_TAG_RE.test(rawTitle)
-      const cleaned = rawTitle.replace(CLAUDE_CODE_TAG_RE, "").trim()
+      // A row with no header takes its first line as the title, and that
+      // line is often a bullet or bold text: the markers are not the title.
+      const cleaned = rawTitle
+        .replace(CLAUDE_CODE_TAG_RE, "")
+        .replace(/^[-*•]\s+/, "")
+        .replace(/\*\*/g, "")
+        .trim()
       const title =
         cleaned.length > TITLE_MAX
           ? cleaned.slice(0, TITLE_MAX - 1).trimEnd() + "…"

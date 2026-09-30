@@ -1,6 +1,6 @@
 import { useChatStream } from "@/context/chat-stream-context"
 import type { MemoryReport } from "@/lib/memory-report"
-import { IconBolt, IconCircleFilled, IconFileText } from "@tabler/icons-react"
+import { IconBolt, IconBrain, IconFileText } from "@tabler/icons-react"
 import { FC } from "react"
 import { MemoryRecalling } from "../memory/memory-recalling"
 import { MessageMarkdown } from "./message-markdown"
@@ -37,7 +37,16 @@ export const MessageStreamingBody: FC<MessageStreamingBodyProps> = ({
       return report?.injected ? (
         <MemoryRecalling report={report} />
       ) : (
-        <IconCircleFilled className="animate-pulse" size={20} />
+        // The report rides on the response headers, which only leave the
+        // server once the model has started answering. Until then there is
+        // nothing to name, so the wait says only that it is working.
+        <div
+          role="status"
+          className="flex items-center gap-2 text-sm text-muted-foreground"
+        >
+          <IconBrain size={18} className="animate-recall text-brand" />
+          <span>Thinking…</span>
+        </div>
       )
     case "retrieval":
       return (

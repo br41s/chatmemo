@@ -85,7 +85,7 @@ export const MessageMemory: FC<MessageMemoryProps> = ({ report }) => {
     .filter((source, index, all) => all.indexOf(source) === index)
 
   return (
-    <div className="mt-3 border-t pt-2">
+    <div className="mt-3 border-t pt-2 duration-300 animate-in fade-in">
       <button
         type="button"
         onClick={() => setOpen(prev => !prev)}

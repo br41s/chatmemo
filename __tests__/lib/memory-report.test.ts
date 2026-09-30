@@ -210,6 +210,15 @@ describe("buildMemoryReport — remembered entries", () => {
     })
   })
 
+  it("does not take a bullet or bold marker as part of the title", () => {
+    const report = build(
+      RELEVANT(["- **First conversation** with Perplexity\n- more"])
+    )
+    expect(report.relevant?.items?.[0].title).toBe(
+      "First conversation with Perplexity"
+    )
+  })
+
   it("caps the list and the title length", () => {
     const long = "x".repeat(120)
     const report = build(
