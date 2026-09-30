@@ -1,3 +1,4 @@
+import { fillLayer } from "@/lib/server/cut-to-fit"
 import { MEMORY_ORDER_COLUMN } from "@/lib/summary-metadata"
 import { createClient } from "@/lib/supabase/server"
 import { ContextBudget, resolveContextBudget } from "@/lib/context-budget"
@@ -32,7 +33,7 @@ import {
 
 const MAX_TERMS = 4
 const ROWS_PER_TERM = 8 // candidate rows fetched per ILIKE term
-const MAX_RELEVANT_ROWS = 4 // top-ranked rows injected
+export const MAX_RELEVANT_ROWS = 4 // top-ranked rows injected
 const RELEVANT_ROW_MAX = 2_000 // per-row excerpt cap (vs 400 in baseline)
 
 // Conversational filler that survives the shared STOP list (>3 chars, not a
@@ -167,17 +168,16 @@ export async function getRelevantMemoryForUser(
   // with the top rows, each excerpt capped.
   const ranked = rankByTermCoverage([...candidates.values()], terms)
 
-  const blocks: string[] = []
-  let chars = 0
-  for (const row of ranked.slice(0, MAX_RELEVANT_ROWS)) {
-    const excerpt =
-      row.content.length > RELEVANT_ROW_MAX
-        ? row.content.slice(0, RELEVANT_ROW_MAX) + "…"
-        : row.content
-    if (chars + excerpt.length > budget.relevantChars) break
-    blocks.push(excerpt)
-    chars += excerpt.length
-  }
+  const blocks = fillLayer(
+    ranked
+      .slice(0, MAX_RELEVANT_ROWS)
+      .map(row =>
+        row.content.length > RELEVANT_ROW_MAX
+          ? row.content.slice(0, RELEVANT_ROW_MAX) + "…"
+          : row.content
+      ),
+    budget.relevantChars
+  )
 
   if (blocks.length === 0) return null
 

@@ -54,13 +54,16 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
 - `lib/context-budget.ts`: one split of the model's window between reply,
   history and the memory block. Every part of the block has an allowance and
   they sum to `memoryChars`: a 6k overhead reserve (instructions, tags,
-  separators), lessons (up to 30% of the rest, 24k at most) and the four
+  separators), lessons (up to 30% of the rest, 32k at most) and the four
   layers in fixed proportions. On a large window the layers reach their
   previous sizes (80k personal, 20k bulk, 10k index, 6k relevant; 120k for a
-  recovered transcript) and the ceiling is 146k. A window too small for the
-  overhead gets no block. `__tests__/lib/memory-block-fits.test.ts` builds the
-  real block at several window sizes — add to it when adding anything to the
-  block.
+  recovered transcript) and the ceiling is 154k. A window too small for the
+  overhead gets no block. A layer whose first entry does not fit carries a
+  cut version of it, marked as cut, rather than nothing
+  (`lib/server/cut-to-fit.ts`) — an empty transcript layer is reported as "no
+  matching conversation found". `__tests__/lib/memory-block-fits.test.ts`
+  builds the real block at several window sizes; add to it when adding
+  anything to the block. A model whose window is unknown is budgeted at 8k.
 - `lib/server/streaming.ts`: local text-stream helpers used by all chat
   routes (replaced the legacy `ai@2.x` package — do not reintroduce it).
 - All LLM summarization goes through OpenRouter (`lib/server/openrouter.ts`),

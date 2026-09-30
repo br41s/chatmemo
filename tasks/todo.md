@@ -150,4 +150,6 @@ Out of scope (follow-ups): theme toggle placement, /help page, landing/login red
 - [x] Lessons cut at a line break with a note when they do not fit; no block when the window cannot hold the overhead; warning logged if a block ever exceeds its allowance.
 - [x] Tests build the real block at seven window sizes. Gate: type-check, jest, build.
 - [x] Live check through `/api/memory/block` on real memory at 128k, 32k, 16k, 8k, 4k, 2k.
-- [ ] Possible refinement, not done: hand unused lessons allowance to the history layers on mid-size windows.
+- [x] Review fixes: lessons allowance 32k (the rewrite's output ceiling, not its input limit); a miss is recognised by the sentinel's header, not by its words appearing in a transcript; a layer's first entry is cut to fit instead of dropped; fit tests cover both worst cases (full layers, maximum separators).
+- [ ] Decision for Brais before merging: models whose window is unknown are budgeted at 8k. Main's oversized block happened to work on them when their real window was large; with the block now fitting, they get ~8k chars of memory.
+- [ ] Possible refinements, not done: hand unused lessons allowance to the history layers on mid-size windows; cut lessons per section instead of from the end; `CHARS_PER_TOKEN = 4` is optimistic for Spanish and code.

@@ -18,7 +18,10 @@ import {
   MIN_WINDOW_TOKENS,
   resolveContextBudget
 } from "@/lib/context-budget"
-import { MAX_LESSONS_CHARS } from "@/lib/lessons-rewrite"
+import {
+  lessonsRewriteMaxTokens,
+  MAX_LESSONS_CHARS
+} from "@/lib/lessons-rewrite"
 
 const totalTokens = (b: ReturnType<typeof resolveContextBudget>) =>
   b.outputTokens + b.historyTokens + Math.ceil(b.memoryChars / CHARS_PER_TOKEN)
@@ -94,10 +97,15 @@ describe("resolveContextBudget — the layers fit the block", () => {
     }
   )
 
-  it("gives lessons room for the largest document the rewrite allows", () => {
-    // Otherwise a window with room to spare would start cutting a document
-    // that used to be sent whole.
-    expect(MAX_LESSONS_BUDGET_CHARS).toBeGreaterThanOrEqual(MAX_LESSONS_CHARS)
+  it("gives lessons room for the longest document a rewrite can write", () => {
+    // Not the size at which rewrites stop being attempted: that bounds the
+    // document going in. The one coming out can be as long as the rewrite's
+    // output allowance, and a window with room must still get it whole.
+    const rewriteOutputChars =
+      lessonsRewriteMaxTokens("x".repeat(1_000_000)) * CHARS_PER_TOKEN
+    expect(MAX_LESSONS_BUDGET_CHARS).toBeGreaterThanOrEqual(rewriteOutputChars)
+    expect(MAX_LESSONS_BUDGET_CHARS).toBeGreaterThan(MAX_LESSONS_CHARS)
+
     const large = resolveContextBudget({
       windowTokens: 128_000,
       requestedHistoryTokens: 4_096,

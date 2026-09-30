@@ -49,9 +49,43 @@ it("injects as before when there is room", async () => {
     windowTokens: 128_000
   })
 
-  expect(memory.block).toContain("[LESSONS]")
+  expect(memory.block).toContain("[/LESSONS]")
   expect(memory.report.injected).toBe(true)
-  expect(memory.report.totalChars).toBeLessThanOrEqual(
-    memory.report.budgetChars
+  expect(mockSummary).toHaveBeenCalledTimes(1)
+})
+
+it("treats a transcript as found even when it quotes the miss sentinel", async () => {
+  // A recovered conversation about this feature contains the sentinel's own
+  // words. Read as a miss, it had the whole baseline added on top of it —
+  // the one way a block could still run past its allowance.
+  mockFull.mockResolvedValue(
+    "[FULL CONVERSATION RETRIEVAL — 1 match(es), verbatim source of truth]\n" +
+      'user: why did it say "no matching conversation found"?\n' +
+      "[/FULL CONVERSATION RETRIEVAL]"
   )
+
+  const memory = await memoryBlockFor("user-1", "recover that chat", {
+    windowTokens: 128_000
+  })
+
+  expect(memory.block).toContain("why did it say")
+  // The instructions mention [LESSONS]; the closing tag only appears when the
+  // baseline itself is in the block.
+  expect(memory.block).not.toContain("[/LESSONS]")
+  expect(memory.report.fullConversation).toBeDefined()
+  expect(memory.report.fullConversationMissed).toBeUndefined()
+})
+
+it("keeps the baseline when the retrieval really found nothing", async () => {
+  mockFull.mockResolvedValue(
+    "[FULL CONVERSATION RETRIEVAL — no matching conversation found]\n" +
+      "No stored conversation matched.\n[/FULL CONVERSATION RETRIEVAL]"
+  )
+
+  const memory = await memoryBlockFor("user-1", "recover that chat", {
+    windowTokens: 128_000
+  })
+
+  expect(memory.block).toContain("[/LESSONS]")
+  expect(memory.report.fullConversationMissed).toBe(true)
 })

@@ -53,11 +53,15 @@ export const MEMORY_OVERHEAD_CHARS = 6_000
 
 /**
  * The most the lessons document may take. Lessons counted against nothing,
- * while the rewrite lets the document grow to ~23.7k chars — on a small window
- * that alone was twice the whole allowance. Sized just above that ceiling so
- * a window with room still receives the document whole.
+ * and the document can be long — on a small window it alone was twice the
+ * whole allowance.
+ *
+ * Sized to the most a rewrite can produce: 8,000 output tokens, about 32k
+ * chars. Not to the ~23.7k at which rewrites stop being attempted — that
+ * limits the document going in, and the one coming out may be a little longer
+ * and then stays that size. A window with room must still receive it whole.
  */
-export const MAX_LESSONS_BUDGET_CHARS = 24_000
+export const MAX_LESSONS_BUDGET_CHARS = 32_000
 
 /** The previous hardcoded layer budgets. They are what a large window still
  *  resolves to, and the proportions a smaller one divides its share in.
@@ -82,7 +86,7 @@ const MAX_FULL_CONVERSATION_CHARS = 120_000
  *
  * It was 100k, described as what the whole block may occupy — but the layers
  * were sized as shares of it that added up to 116%, with lessons and the
- * instructions on top, so a large model was really sent up to ~143k. This is
+ * instructions on top, so a large model was really sent up to ~150k. This is
  * that real total, stated: overhead, lessons and the four layers at their
  * previous sizes. A big model is sent exactly what it was sent before; the
  * number now describes it.

@@ -1,6 +1,7 @@
 import { MEMORY_ORDER_COLUMN } from "@/lib/summary-metadata"
 import { createClient } from "@/lib/supabase/server"
 import { getLessons } from "@/lib/db/lessons"
+import { fillLayer } from "@/lib/server/cut-to-fit"
 import { VersionedCache } from "@/lib/server/versioned-cache"
 import { ContextBudget, resolveContextBudget } from "@/lib/context-budget"
 import { cookies } from "next/headers"
@@ -29,9 +30,9 @@ import { cookies } from "next/headers"
 const PERSONAL_ROW_MAX = 1_500 // cap per personal row
 const BULK_ROW_MAX = 400 // title + opening line only for bulk rows
 
-const MAX_PERSONAL_ROWS = 150 // enough to cover all personal sessions
-const MAX_BULK_ROWS = 30 // only recent bulk rows are useful
-const MAX_INDEX_ROWS = 5
+export const MAX_PERSONAL_ROWS = 150 // enough to cover all personal sessions
+export const MAX_BULK_ROWS = 30 // only recent bulk rows are useful
+export const MAX_INDEX_ROWS = 5
 
 // Per-row cap for index rows. They are date lists, so truncation costs the
 // oldest entries in that row rather than corrupting anything — but without a
@@ -262,45 +263,37 @@ export function buildSummarySections(
   bulkData: SummaryRow[],
   budget: ContextBudget = resolveContextBudget()
 ): string | null {
-  const parts: string[] = []
+  const present = (rows: SummaryRow[]) =>
+    rows
+      .map(row => ({ row, content: (row.content ?? "").trim() }))
+      .filter(({ content }) => content)
 
-  // 1. Index rows — compact date lists, high-value for history questions, but
-  //    capped and budgeted like every other layer. They used to be pushed
-  //    whole and counted against nothing, on the assumption they were tiny.
-  let indexChars = 0
-  for (const row of indexData.slice(0, MAX_INDEX_ROWS)) {
-    const content = (row.content ?? "").trim()
-    if (!content) continue
-    const capped = cap(content, INDEX_ROW_MAX)
-    if (indexChars + capped.length > budget.indexChars) break
-    parts.push(capped)
-    indexChars += capped.length
-  }
-
-  // 2. Personal rows — compact summaries, large budget
-  let personalChars = 0
-  for (const row of personalData) {
-    const content = (row.content ?? "").trim()
-    if (!content) continue
-    const capped = withDateHeader(
-      cap(content, PERSONAL_ROW_MAX),
-      row.effective_at
+  const parts: string[] = [
+    // 1. Index rows — compact date lists, high-value for history questions,
+    //    but capped and budgeted like every other layer. They used to be
+    //    pushed whole and counted against nothing, on the assumption they
+    //    were tiny.
+    ...fillLayer(
+      present(indexData.slice(0, MAX_INDEX_ROWS)).map(({ content }) =>
+        cap(content, INDEX_ROW_MAX)
+      ),
+      budget.indexChars
+    ),
+    // 2. Personal rows — compact summaries, large budget
+    ...fillLayer(
+      present(personalData).map(({ row, content }) =>
+        withDateHeader(cap(content, PERSONAL_ROW_MAX), row.effective_at)
+      ),
+      budget.personalChars
+    ),
+    // 3. Bulk rows — topic excerpts only
+    ...fillLayer(
+      present(bulkData).map(({ row, content }) =>
+        withDateHeader(cap(content, BULK_ROW_MAX), row.effective_at)
+      ),
+      budget.bulkChars
     )
-    if (personalChars + capped.length > budget.personalChars) break
-    parts.push(capped)
-    personalChars += capped.length
-  }
-
-  // 3. Bulk rows — topic excerpts only
-  let bulkChars = 0
-  for (const row of bulkData) {
-    const content = (row.content ?? "").trim()
-    if (!content) continue
-    const capped = withDateHeader(cap(content, BULK_ROW_MAX), row.effective_at)
-    if (bulkChars + capped.length > budget.bulkChars) break
-    parts.push(capped)
-    bulkChars += capped.length
-  }
+  ]
 
   const sections: string[] = []
 
