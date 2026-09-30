@@ -1,5 +1,6 @@
 "use client"
 
+import type { RecallPreview } from "@/lib/memory-report"
 import { ChatMessage } from "@/types"
 import {
   Dispatch,
@@ -38,6 +39,13 @@ interface ChatStreamContextValue {
   setAbortController: Dispatch<SetStateAction<AbortController | null>>
   toolInUse: string
   setToolInUse: Dispatch<SetStateAction<string>>
+  /**
+   * What the turn in flight is about to be reminded of, when that is known
+   * before its answer starts. Lives here, not with the reports, because it is
+   * only meaningful during the wait and only the streaming message reads it.
+   */
+  recallPreview: RecallPreview | null
+  setRecallPreview: Dispatch<SetStateAction<RecallPreview | null>>
 }
 
 export const ChatStreamContext = createContext<ChatStreamContextValue>({
@@ -50,7 +58,9 @@ export const ChatStreamContext = createContext<ChatStreamContextValue>({
   abortController: null,
   setAbortController: () => {},
   toolInUse: "none",
-  setToolInUse: () => {}
+  setToolInUse: () => {},
+  recallPreview: null,
+  setRecallPreview: () => {}
 })
 
 export const ChatStreamProvider: FC<{ children: ReactNode }> = ({
@@ -62,6 +72,7 @@ export const ChatStreamProvider: FC<{ children: ReactNode }> = ({
   const [abortController, setAbortController] =
     useState<AbortController | null>(null)
   const [toolInUse, setToolInUse] = useState("none")
+  const [recallPreview, setRecallPreview] = useState<RecallPreview | null>(null)
 
   return (
     <ChatStreamContext.Provider
@@ -75,7 +86,9 @@ export const ChatStreamProvider: FC<{ children: ReactNode }> = ({
         abortController,
         setAbortController,
         toolInUse,
-        setToolInUse
+        setToolInUse,
+        recallPreview,
+        setRecallPreview
       }}
     >
       {children}

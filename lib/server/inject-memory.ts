@@ -1,7 +1,8 @@
 import { getLatestSummaryForUser } from "@/lib/server/get-latest-summary"
 import {
   getFullConversationForUser,
-  NO_FULL_MATCH_MARKER
+  NO_FULL_MATCH_MARKER,
+  detectFullConversationIntent
 } from "@/lib/server/get-full-conversation"
 import { getRelevantMemoryForUser } from "@/lib/server/get-relevant-memory"
 import {
@@ -9,8 +10,18 @@ import {
   ContextBudgetHint,
   resolveContextBudget
 } from "@/lib/context-budget"
-import { buildMemoryReport, MemoryReport } from "@/lib/memory-report"
-import { buildAugmentedOpenAIMessages, MEMORY_TAG } from "@/lib/memory-block"
+import {
+  buildMemoryReport,
+  memoryEntryReports,
+  MemoryReport,
+  RecallPreview
+} from "@/lib/memory-report"
+import {
+  buildAugmentedOpenAIMessages,
+  lastUserTextGoogle,
+  lastUserTextOpenAI,
+  MEMORY_TAG
+} from "@/lib/memory-block"
 
 // Re-exported so existing importers keep one entry point for injection.
 export { buildAugmentedOpenAIMessages }
@@ -191,10 +202,6 @@ export function buildAugmentedGoogleMessages(
 // ---------------------------------------------------------------------------
 
 /**
- * Inject memory into OpenAI-format messages ({ role, content }). Used by
- * openrouter/openai/anthropic/mistral/groq/perplexity/azure routes.
- */
-/**
  * The memory block alone, for a caller that places it itself — the Ollama
  * path, which runs in the browser and calls localhost directly.
  */
@@ -210,19 +217,62 @@ export async function memoryBlockFor(
   )
 }
 
+/**
+ * The relevance matches for a turn, by name, for the browser to show while
+ * the answer is on its way.
+ *
+ * Runs the search the injector runs. Whether it names what the turn will be
+ * given depends on being handed the text the injector will extract, which is
+ * why the browser derives it from the request it is about to send with the
+ * injector's own extractor (`lastUserText*` in lib/memory-block.ts) rather
+ * than from what was typed. The exception is a request to recover a
+ * conversation: there the injector may replace the matches with a transcript,
+ * and finding out means running that retrieval a second time — so this says
+ * only that a transcript search is under way.
+ *
+ * Never throws, for the injector's reason: nothing about memory may break a
+ * chat, and here there is not even a chat to break.
+ */
+export async function recallPreviewFor(
+  userId: string,
+  lastUserText: string,
+  budgetHint?: ContextBudgetHint
+): Promise<RecallPreview> {
+  if (detectFullConversationIntent(lastUserText)) {
+    return { items: [], transcript: true }
+  }
+
+  try {
+    const relevant = await getRelevantMemoryForUser(
+      userId,
+      lastUserText,
+      resolveContextBudget(budgetHint)
+    )
+    return {
+      items: relevant ? memoryEntryReports(relevant.entries) : [],
+      transcript: false
+    }
+  } catch (error) {
+    console.error("Recall preview failed; showing nothing:", error)
+    return { items: [], transcript: false }
+  }
+}
+
 export interface InjectedMessages {
   messages: any[]
   report: MemoryReport
 }
 
+/**
+ * Inject memory into OpenAI-format messages ({ role, content }). Used by
+ * openrouter/openai/anthropic/mistral/groq/perplexity/azure routes.
+ */
 export async function injectMemoryOpenAIFormat(
   messages: any[],
   userId: string,
   budgetHint?: ContextBudgetHint
 ): Promise<InjectedMessages> {
-  const lastUser = [...messages].reverse().find(m => m.role === "user")
-  const lastUserText =
-    typeof lastUser?.content === "string" ? lastUser.content : ""
+  const lastUserText = lastUserTextOpenAI(messages)
 
   // Re-resolved here rather than taken from the client: the hint describes the
   // model, the split is the server's to decide.
@@ -245,10 +295,7 @@ export async function injectMemoryGoogleFormat(
   userId: string,
   budgetHint?: ContextBudgetHint
 ): Promise<InjectedMessages> {
-  const last = messages[messages.length - 1]
-  const lastUserText = Array.isArray(last?.parts)
-    ? last.parts.map((p: any) => p?.text ?? "").join(" ")
-    : ""
+  const lastUserText = lastUserTextGoogle(messages)
 
   const budget = resolveContextBudget(budgetHint)
   const { block, report } = await fetchMemoryBlock(userId, lastUserText, budget)
