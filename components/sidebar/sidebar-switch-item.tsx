@@ -32,6 +32,7 @@ export const SidebarSwitchItem: FC<SidebarSwitchItemProps> = ({
 
   return (
     <WithTooltip
+      interactive
       display={
         <div>{contentType[0].toUpperCase() + contentType.substring(1)}</div>
       }

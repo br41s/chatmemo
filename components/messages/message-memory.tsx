@@ -70,6 +70,11 @@ export const MessageMemory: FC<MessageMemoryProps> = ({ report }) => {
         ? "Used your lessons"
         : "No memory matched"
 
+  const overBy =
+    report.budgetChars > 0
+      ? Math.max(report.totalChars - report.budgetChars, 0)
+      : 0
+
   const usedShare =
     report.budgetChars > 0
       ? Math.min(
@@ -164,8 +169,20 @@ export const MessageMemory: FC<MessageMemoryProps> = ({ report }) => {
           )}
 
           <div className="mt-2 border-t pt-2 text-xs tabular-nums text-muted-foreground">
-            {formatChars(report.totalChars)} of{" "}
-            {formatChars(report.budgetChars)} allowance ({usedShare}%)
+            {overBy > 0 ? (
+              // The allowance is a target the layers are sized from, not a
+              // cap on their sum: the shares add up to a little over it and
+              // lessons sit outside it. "115k of 100k (100%)" hid that.
+              <>
+                {formatChars(report.totalChars)} sent, {formatChars(overBy)}{" "}
+                over the {formatChars(report.budgetChars)} allowance
+              </>
+            ) : (
+              <>
+                {formatChars(report.totalChars)} of{" "}
+                {formatChars(report.budgetChars)} allowance ({usedShare}%)
+              </>
+            )}
           </div>
         </div>
       )}

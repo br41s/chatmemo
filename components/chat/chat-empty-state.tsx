@@ -73,7 +73,7 @@ export const ChatEmptyState = ({ onSuggestion }: ChatEmptyStateProps) => {
 
       {stats !== null && (
         <div className="flex flex-col items-center gap-3">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-center text-sm text-muted-foreground">
             {hasMemory ? (
               <>
                 <span className="font-medium tabular-nums text-foreground">

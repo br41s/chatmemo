@@ -129,3 +129,15 @@ Scope agreed: daily-driver audience · chat + memory reveal first · restyle + m
 - [x] QA in the browser pane on the signed-in account: rail, More group, empty state, thinking state, panel under the answer.
 
 Out of scope (follow-ups): theme toggle placement, /help page, landing/login redesign, timeline as a full page.
+
+## UI follow-ups after the memory-first slice (2026-09-30, branch fix/ui-follow-ups)
+
+- [x] PR #58 merged (squash `86969ff`).
+- [x] Composer and messages sized to the chat column, not the window (overflow with the sidebar open at mid widths).
+- [x] No button inside a button: `WithTooltip interactive`, `PopoverTrigger asChild` on chat settings.
+- [x] Allowance line says how far over the block ran instead of "115k of 100k (100%)". Component test.
+- [x] Empty state uses the full column width (tagline and counts no longer wrap at half width).
+- [x] Gate: type-check, jest (717), build.
+- [ ] Decision needed: name the matched conversations during the wait on hosted models (parallel preview request vs header-first routes vs leave).
+- [ ] Decision needed: memory layer shares add up to 116% of the allowance and lessons are unbudgeted (memory core, not UI).
+- [ ] Separate slices: theme toggle placement, /help page, landing/login, timeline as a page, Claude Code source label (needs a `source` value and a migration).

@@ -29,7 +29,10 @@ export default function ChatPage() {
     <>
       {chatMessages.length === 0 ? (
         <div className="relative flex h-full flex-col items-center justify-center">
-          <div className="absolute left-1/2 top-1/2 mb-20 -translate-x-1/2 -translate-y-1/2 px-4">
+          {/* Spanning the column rather than hanging off its midpoint: an absolute
+              box at left-1/2 can only grow to half the column, which wrapped the
+              tagline and the counts long before they ran out of room. */}
+          <div className="absolute inset-x-0 top-1/2 mb-20 flex -translate-y-1/2 justify-center px-4">
             <ChatEmptyState onSuggestion={setUserInput} />
           </div>
 
