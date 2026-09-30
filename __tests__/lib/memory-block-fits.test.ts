@@ -74,9 +74,9 @@ const MISS_SENTINEL =
 const budgetFor = (windowTokens: number) =>
   resolveContextBudget({ windowTokens, requestedHistoryTokens: 4_096 })
 
-// 4,100 sits just above the point where there is room for the block's own
+// 4,700 sits just above the point where there is room for the block's own
 // text and nothing else; the rest step up to a window at the ceiling.
-const WINDOWS = [4_100, 6_000, 8_192, 16_000, 32_000, 64_000, 128_000, 200_000]
+const WINDOWS = [4_700, 6_000, 8_192, 16_000, 32_000, 64_000, 128_000, 200_000]
 
 describe("the assembled memory block — every layer full", () => {
   it.each(WINDOWS)("fits its allowance: %d", w => {
@@ -210,7 +210,7 @@ describe("the assembled memory block — large windows are unchanged", () => {
   it("sends the lessons document whole, up to the longest a rewrite can write", () => {
     const summary = buildSummarySections(LESSONS, [], [], [], budget)!
     expect(summary).toContain(LESSONS)
-    expect(summary).not.toContain("left out to fit")
+    expect(summary).not.toContain("left out")
   })
 
   it("admits what the fixed 80k, 20k and 10k budgets admitted", () => {
@@ -256,7 +256,7 @@ describe("a layer whose first entry does not fit", () => {
   })
 
   it("leaves the layer out when what is left is too small to say anything", () => {
-    const budget = budgetFor(4_100)
+    const budget = budgetFor(4_700)
     expect(budget.personalChars).toBeLessThan(200)
     expect(buildSummarySections(null, [], PERSONAL_ROWS, [], budget)).toBeNull()
   })
@@ -363,8 +363,10 @@ describe("fitLessons", () => {
   })
 
   it("never exceeds the allowance, whatever the allowance", () => {
+    // Every allowance up to the document's own length: a sampled handful
+    // missed an overflow of one character per section join.
     for (const text of [sectioned, "- " + "word ".repeat(2_000)]) {
-      for (const max of [0, 1, 50, 80, 120, 200, 500, 900, 5_000]) {
+      for (let max = 0; max <= text.length + 10; max++) {
         const fitted = fitLessons(text, max)
         expect((fitted ?? "").length).toBeLessThanOrEqual(max)
       }

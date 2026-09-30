@@ -66,8 +66,8 @@ export const MEMORY_OVERHEAD_CHARS = 6_000
  * and the document can be long — on a small window it alone was twice the
  * whole allowance.
  *
- * Sized to the most a rewrite can produce: 8,000 output tokens, about 32k
- * chars. Not to the ~23.7k at which rewrites stop being attempted — that
+ * Sized to the most a rewrite can produce: 8,000 output tokens, about 28k
+ * chars at the ratio above, 32k at the rewrite's own estimate of 4. Not to the ~23.7k at which rewrites stop being attempted — that
  * limits the document going in, and the one coming out may be a little longer
  * and then stays that size. A window with room must still receive it whole.
  */
@@ -198,7 +198,7 @@ export function resolveContextBudget(
   )
 
   const memoryChars = Math.min(
-    Math.max(available - historyTokens, 0) * CHARS_PER_TOKEN,
+    Math.floor(Math.max(available - historyTokens, 0) * CHARS_PER_TOKEN),
     MAX_MEMORY_CHARS
   )
 

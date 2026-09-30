@@ -306,10 +306,12 @@ export function fitLessons(lessons: string, maxChars: number): string | null {
   if (room <= 0) return null
 
   const sections = splitSections(text)
-  // What the headings and the blank lines between sections cost regardless.
+  // What the headings and the joins between sections cost regardless. Each
+  // join is two characters, a blank line: counted as one, the result ran
+  // past the allowance by up to sections − 1.
   const fixed = sections.reduce(
     (sum, s) => sum + (s.heading ? s.heading.length + 1 : 0),
-    sections.length - 1
+    2 * (sections.length - 1)
   )
   const bodies = sections.map(s => s.lines.join("\n").trimEnd())
   const shares = shareOut(
