@@ -339,6 +339,52 @@ describe("resolveModelWindow with a live catalogue", () => {
     expect(hint.windowTokens).toBe(200000)
   })
 
+  it("assumes a provider window for a catalogue model that reports no limits", () => {
+    // Anthropic and OpenAI list their models without limits. A model newer
+    // than the frozen table used to fall to the 8k default, and once the
+    // memory block was held to its budget that meant a 200k model got ~8k
+    // chars of memory.
+    const anthropic = resolveModelWindow("claude-sonnet-4-5", [], null, [
+      liveModel({ modelId: "claude-sonnet-4-5", provider: "anthropic" })
+    ])
+    expect(anthropic.windowTokens).toBe(200_000)
+
+    const openai = resolveModelWindow("gpt-5-mini", [], null, [
+      liveModel({ modelId: "gpt-5-mini", provider: "openai" })
+    ])
+    expect(openai.windowTokens).toBe(128_000)
+  })
+
+  it("does not assume a window for a provider it has no figure for", () => {
+    const hint = resolveModelWindow("some-groq-model", [], null, [
+      liveModel({ modelId: "some-groq-model", provider: "groq" })
+    ])
+    expect(hint.windowTokens).toBeUndefined()
+  })
+
+  it("uses the context length stored with a custom endpoint", () => {
+    const hint = resolveModelWindow(
+      "my-local-model",
+      [],
+      4_096,
+      [],
+      [{ model_id: "my-local-model", context_length: 32_000 }]
+    )
+    expect(hint.windowTokens).toBe(32_000)
+    expect(hint.requestedHistoryTokens).toBe(4_096)
+
+    // A stored zero is no answer.
+    expect(
+      resolveModelWindow(
+        "other",
+        [],
+        null,
+        [],
+        [{ model_id: "other", context_length: 0 }]
+      ).windowTokens
+    ).toBeUndefined()
+  })
+
   it("still resolves a budget the memory layers can use", () => {
     const budget = resolveContextBudget(
       resolveModelWindow("llama-3.3-70b-versatile", [], null, [

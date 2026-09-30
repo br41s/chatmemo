@@ -74,7 +74,11 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
   (`lib/server/cut-to-fit.ts`) — an empty transcript layer is reported as "no
   matching conversation found". `__tests__/lib/memory-block-fits.test.ts`
   builds the real block at several window sizes; add to it when adding
-  anything to the block. A model whose window is unknown is budgeted at 8k.
+  anything to the block. A catalogue model whose provider reports no limits
+  is assumed to have 200k (Anthropic) or 128k (OpenAI) of window
+  (`lib/models/model-window.ts`); a custom endpoint uses the context length
+  stored with it (client hint and `chat/custom` route); anything else, Ollama
+  included, is budgeted at the 8k default.
 - `lib/server/streaming.ts`: local text-stream helpers used by all chat
   routes (replaced the legacy `ai@2.x` package — do not reintroduce it).
 - All LLM summarization goes through OpenRouter (`lib/server/openrouter.ts`),

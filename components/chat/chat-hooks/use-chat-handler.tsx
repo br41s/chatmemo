@@ -277,7 +277,8 @@ export const useChatHandler = () => {
         chatSettings!.model,
         availableOpenRouterModels,
         chatSettings!.contextLength,
-        availableHostedModels
+        availableHostedModels,
+        models
       )
       const budget = resolveContextBudget(budgetHint)
 

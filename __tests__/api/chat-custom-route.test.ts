@@ -279,7 +279,7 @@ describe("POST /api/chat/custom", () => {
     expect(response.status).toBe(200)
     expect(mockCreateClient).toHaveBeenCalledWith(await mockCookies())
     expect(query.select).toHaveBeenCalledWith(
-      "id, user_id, api_key, base_url, model_id"
+      "id, user_id, api_key, base_url, model_id, context_length"
     )
     expect(query.eq).toHaveBeenCalledWith("id", MODEL_ID)
     expect(mockCreateSafeModelTextStream).toHaveBeenCalledWith({
@@ -302,6 +302,36 @@ describe("POST /api/chat/custom", () => {
     expect(mockTextStreamResponse).toHaveBeenCalledWith(expect.anything(), {
       "x-chatmemo-memory": "report"
     })
+  })
+
+  it("sizes memory to the model's stored context length when the client sends no window", async () => {
+    // Nothing the client can consult reports a custom endpoint's window, so
+    // its hint carries none. The 8k default then starved memory on a 32k
+    // endpoint; the context length stored with the model is the answer.
+    mockSupabase({
+      userId: OWNER_ID,
+      model: {
+        id: MODEL_ID,
+        user_id: OWNER_ID,
+        api_key: "stored-secret",
+        base_url: "https://api.example.com/v1",
+        model_id: "stored-model",
+        context_length: 32_000
+      }
+    })
+
+    const response = await POST(
+      createRequest(
+        validBody({ contextBudget: { requestedHistoryTokens: 4_096 } })
+      )
+    )
+
+    expect(response.status).toBe(200)
+    expect(mockInjectMemory).toHaveBeenCalledWith(
+      [{ role: "user", content: "Hello" }],
+      OWNER_ID,
+      { requestedHistoryTokens: 4_096, windowTokens: 32_000 }
+    )
   })
 
   it("allows an authenticated user to execute a shared keyless model", async () => {
