@@ -52,6 +52,16 @@ describe("resolveContextBudget — the parts fit the whole", () => {
   })
 })
 
+describe("CHARS_PER_TOKEN", () => {
+  it("is at or below the smallest ratio measured on real memory", () => {
+    // 3.60 chars per token for the Perplexity rows, measured with
+    // gpt-tokenizer on 1,338 rows. Above it, a full block on a window below
+    // the ceiling is more tokens than the split reserved for it.
+    expect(CHARS_PER_TOKEN).toBeLessThanOrEqual(3.6)
+    expect(CHARS_PER_TOKEN).toBeGreaterThanOrEqual(3)
+  })
+})
+
 describe("resolveContextBudget — the layers fit the block", () => {
   // The first property above is about the numbers this function reports. This
   // one is about whether a block built to those numbers can honour them: the

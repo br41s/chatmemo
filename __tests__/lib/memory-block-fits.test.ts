@@ -281,11 +281,76 @@ describe("isFullConversationMiss", () => {
 describe("fitLessons", () => {
   const doc = "- First lesson\n- Second lesson\n- Third lesson that is longer"
 
+  // The shape the rewrite prompt keeps: a title, then four sections in a
+  // fixed order. The last one holds the hard requirements.
+  const bullets = (label: string, n: number) =>
+    Array.from({ length: n }, (_, i) => `- ${label} ${i}: ${"x".repeat(40)}`)
+  const sectioned = [
+    "# User Lessons",
+    "",
+    "## Preferences & Communication Style",
+    ...bullets("Preference", 30),
+    "",
+    "## Active Projects & Work Context",
+    ...bullets("Project", 30),
+    "",
+    "## Personal Context",
+    ...bullets("Personal", 3),
+    "",
+    "## Recurring Patterns & Constraints",
+    ...bullets("Rule", 12)
+  ].join("\n")
+
   it("returns the document untouched when it fits", () => {
     expect(fitLessons(doc, doc.length)).toBe(doc)
+    expect(fitLessons(sectioned, sectioned.length)).toBe(sectioned)
   })
 
-  it("cuts at a line break, from the end, and says so", () => {
+  it("keeps every section, with its heading and its first lines", () => {
+    // Cut from the end, this lost the constraints section whole while
+    // keeping every preference.
+    const fitted = fitLessons(sectioned, 1_200)!
+
+    expect(fitted.length).toBeLessThanOrEqual(1_200)
+    for (const heading of [
+      "## Preferences & Communication Style",
+      "## Active Projects & Work Context",
+      "## Personal Context",
+      "## Recurring Patterns & Constraints"
+    ]) {
+      expect(fitted).toContain(heading)
+    }
+    expect(fitted).toContain("- Preference 0:")
+    expect(fitted).toContain("- Project 0:")
+    expect(fitted).toContain("- Rule 0:")
+    expect(fitted).toContain("left out of each section")
+  })
+
+  it("keeps a short section whole and cuts the long ones alike", () => {
+    const fitted = fitLessons(sectioned, 1_200)!
+    // Three personal bullets fit within an even share, so all three stay.
+    expect(fitted).toContain("- Personal 2:")
+    const count = (label: string) =>
+      (fitted.match(new RegExp(`- ${label} \\d+:`, "g")) ?? []).length
+    // Equal shares in characters; the labels differ in length, so the line
+    // counts may differ by one.
+    expect(
+      Math.abs(count("Preference") - count("Project"))
+    ).toBeLessThanOrEqual(1)
+    expect(Math.abs(count("Project") - count("Rule"))).toBeLessThanOrEqual(1)
+    expect(count("Preference")).toBeLessThan(30)
+    expect(count("Rule")).toBeGreaterThan(0)
+  })
+
+  it("keeps only whole lines", () => {
+    const fitted = fitLessons(sectioned, 900)!
+    const source = new Set(sectioned.split("\n"))
+    for (const line of fitted.split("\n").slice(0, -1)) {
+      if (line) expect(source.has(line)).toBe(true)
+    }
+  })
+
+  it("cuts a document without sections at a line break, from the end", () => {
     const long = Array.from(
       { length: 40 },
       (_, i) => `- Lesson number ${i}`
@@ -294,22 +359,21 @@ describe("fitLessons", () => {
 
     expect(fitted.length).toBeLessThanOrEqual(300)
     expect(fitted.startsWith("- Lesson number 0\n")).toBe(true)
-    expect(fitted).toContain("left out to fit this model's context window")
-    // Every line kept is a whole line of the original.
-    const kept = fitted.split("\n").slice(0, -1)
-    expect(kept.every(line => long.split("\n").includes(line))).toBe(true)
+    expect(fitted).toContain("left out")
   })
 
   it("never exceeds the allowance, whatever the allowance", () => {
-    const long = "- " + "word ".repeat(2_000)
-    for (const max of [0, 1, 50, 80, 120, 500, 5_000]) {
-      const fitted = fitLessons(long, max)
-      expect((fitted ?? "").length).toBeLessThanOrEqual(max)
+    for (const text of [sectioned, "- " + "word ".repeat(2_000)]) {
+      for (const max of [0, 1, 50, 80, 120, 200, 500, 900, 5_000]) {
+        const fitted = fitLessons(text, max)
+        expect((fitted ?? "").length).toBeLessThanOrEqual(max)
+      }
     }
   })
 
-  it("leaves lessons out when not even the note would fit", () => {
+  it("leaves lessons out when not even a line would fit", () => {
     expect(fitLessons("- " + "x".repeat(500), 40)).toBeNull()
+    expect(fitLessons(sectioned, 120)).toBeNull()
     expect(fitLessons("   ", 1_000)).toBeNull()
   })
 })
