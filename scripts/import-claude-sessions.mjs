@@ -86,7 +86,7 @@ async function main() {
       // Do NOT save — retry on next run
       failed++
     } else {
-      const summaryText = `[source:claude]\n### [${date}] ${projectName}\n\n${factsText}`
+      const summaryText = `[source:claude_code]\n### [${date}] ${projectName}\n\n${factsText}`
       const { ok, id, error } = await insertSummary(
         supabaseUrl,
         serviceRoleKey,

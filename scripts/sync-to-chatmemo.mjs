@@ -105,7 +105,7 @@ async function work({ transcript_path, session_id, cwd = "", event }) {
     messages,
     mtime,
     title: `[Claude Code] ${projectName}`,
-    header: date => `[source:claude]\n### [${date}] ${projectName}`,
+    header: date => `[source:claude_code]\n### [${date}] ${projectName}`,
     final: event === "SessionEnd"
   })
 }

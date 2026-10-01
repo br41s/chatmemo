@@ -4,13 +4,16 @@
  * Accepts a backup file payload and re-inserts rows that don't already
  * exist in the database (content-based deduplication).
  *
- * Body: { rows: { content: string; created_at: string }[] }
+ * Body: { rows: { content: string; created_at: string }[]; source?: string }
+ *
+ * `source` is the backup file's own: a file of Claude Code sessions says so,
+ * and that is kept for rows whose content cannot (see `restoredSource`).
  *
  * Returns: { success: boolean; inserted: number; skipped: number }
  */
 
 import { requireUser } from "@/lib/server/require-user"
-import { summaryMetadataColumns } from "@/lib/summary-metadata"
+import { restoredSource, summaryMetadataColumns } from "@/lib/summary-metadata"
 import { NextRequest, NextResponse } from "next/server"
 import { ServerRuntime } from "next"
 
@@ -24,7 +27,7 @@ export async function POST(request: NextRequest) {
     if ("response" in auth) return auth.response
     const { supabase, userId } = auth
 
-    let body: { rows?: unknown }
+    let body: { rows?: unknown; source?: unknown }
     try {
       body = await request.json()
     } catch {
@@ -82,18 +85,22 @@ export async function POST(request: NextRequest) {
     let inserted = 0
 
     for (let i = 0; i < toInsert.length; i += BATCH) {
-      const batch = toInsert.slice(i, i + BATCH).map(r => ({
-        user_id: userId,
-        content: r.content,
+      const batch = toInsert.slice(i, i + BATCH).map(r => {
         // Derived here rather than left to the backfill: a restored row must
         // arrive already classified, or the memory queries — which filter on
         // these columns — would not see it.
-        ...summaryMetadataColumns(r.content),
-        // Preserve original timestamp if valid; fall back to now()
-        ...(r.created_at && !isNaN(Date.parse(r.created_at))
-          ? { created_at: r.created_at }
-          : {})
-      }))
+        const columns = summaryMetadataColumns(r.content)
+        return {
+          user_id: userId,
+          content: r.content,
+          ...columns,
+          source: restoredSource(columns.source, body.source),
+          // Preserve original timestamp if valid; fall back to now()
+          ...(r.created_at && !isNaN(Date.parse(r.created_at))
+            ? { created_at: r.created_at }
+            : {})
+        }
+      })
 
       const { error: insertErr } = await supabase
         .from("summaries")

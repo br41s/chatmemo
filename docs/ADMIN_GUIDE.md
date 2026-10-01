@@ -524,6 +524,10 @@ Perplexity exports use Unix timestamps (seconds), not ISO strings, and only at t
 
 Only rows imported after source tagging was introduced carry the `[source:perplexity]` prefix or the `Source: Perplexity /` line. Legacy rows from the very first import (stored via `buildRawRows` without any marker) cannot be selectively deleted — use **Clear all** and reimport all sources if a full reset is needed.
 
+### Claude Code sessions showing as "Claude"
+
+Claude Code sessions have their own source, `claude_code` (migration `20261001000000_summaries_claude_code_source.sql`). Sessions the laptop sync stored before that are indistinguishable from a Claude.ai import by content, so the migration cannot move them. `node scripts/backfill-claude-code-source.mjs` reports which rows it can identify — by the row ids in `~/.chatmemo/imported-sessions.json`, and by project-name titles — and changes nothing until run with `--apply` (add `--by-title` for the second group). It only sets the `source` column.
+
 ### Incremental import not picking up new conversations
 
 Each source stores a watermark row `[chatmemo:watermark:source=X ts=N]` in the summaries table. If the watermark gets corrupted or points to a future timestamp, new conversations will be skipped. Fix: run **✕ Source** (clear that source) then reimport — this deletes the watermark and starts fresh.

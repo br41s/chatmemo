@@ -123,7 +123,7 @@ async function poll(config) {
       label: slugToProjectName(f.projectSlug),
       parse: parseJSONL,
       title: name => `[Claude Code] ${name}`,
-      header: (date, name) => `[source:claude]\n### [${date}] ${name}`
+      header: (date, name) => `[source:claude_code]\n### [${date}] ${name}`
     })),
     ...findCopilotJSONLFiles().map(f => ({
       ...f,

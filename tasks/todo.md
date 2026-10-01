@@ -182,3 +182,14 @@ Out of scope (follow-ups): theme toggle placement, /help page, landing/login red
 - [x] `CHARS_PER_TOKEN` 4 → 3.5. Measured with gpt-tokenizer on the real memory (1,338 rows): Claude 3.81, Perplexity 3.60, in-app 4.32, lessons 3.78, overall 3.69. Large windows unaffected; a 32k window gets ~12% less.
 - [x] Lessons cut per section: each `## ` section keeps its heading and first lines, short sections whole, long ones cut alike. Cutting from the end lost the constraints section whole.
 - [x] Gate: type-check, jest, build.
+
+## Claude Code as its own memory source (2026-10-01, branch feat/claude-code-source)
+
+- [x] New `source` value `claude_code`; tag `[source:claude_code]` written by the three laptop scripts and by `/api/import/conversation` for cloud sessions. The route also puts back the date brackets the summariser drops, so a bookmarklet save never looks like an old Stop hook row.
+- [x] Migration `20261001000000`: constraint, trigger (tag, `claude-code:` external id, untagged bracketless header) and backfill of the rows those rules cover. SQL integration test, added to `test:rls`.
+- [x] Readers: baseline personal query includes `claude_code`; report, timeline and backup take the source from the column; empty-state chips and the timeline chart get a Claude Code series (chart tone validated in both modes).
+- [x] `scripts/backfill-claude-code-source.mjs` for sessions only identifiable by the sync's row ids (57) or project-name titles (67); report-only by default.
+- [x] Gate: type-check, jest (837), build; SQL tests on a disposable Postgres.
+- [ ] Apply the migration to production (`npm run db-push`) — needs Brais's OK. Migration before the deploy: old code with the new schema only misses backfilled rows for the minutes of the build; new code with the old schema would reject cloud session posts.
+- [ ] Run the backfill script with `--apply` (and `--by-title` if Brais agrees with the list).
+- [ ] Copilot sessions (`### [date] name [Copilot]`, about 60 rows) are still stored as `claude`. Not touched.

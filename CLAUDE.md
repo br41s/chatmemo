@@ -25,6 +25,14 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
   filters on the typed `kind` column; a trigger derives `kind`/`source`/
   `title`/`occurred_at` from `content` for writers that send content only
   (the Claude Code session scripts), so a row without them is never invisible.
+  `source` is one of `claude` (Claude.ai), `claude_code`, `chatgpt`,
+  `perplexity`, `other` (in-app), closed by a CHECK constraint. A new value
+  must be added to the classifier (`lib/summary-metadata.ts`), the trigger and
+  the personal-rows query in `get-latest-summary.ts`, or its rows never reach
+  the block. Claude Code sessions synced before they were tagged still say
+  `[source:claude]` in their content; for those the column is the truth, so
+  readers that name a source (report, timeline, backup) take it from the
+  column and not from the text.
   Claude Code **cloud** sessions never reach the laptop sync; a hook served
   from `public/hooks/chatmemo-cloud-sync.mjs` posts them from the container to
   `/api/import/conversation` with a `sessionKey`, and `external_id` lets each

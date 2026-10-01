@@ -10,10 +10,11 @@
  *   version: 1,
  *   exportedAt: string,
  *   sources: {
- *     claude:     { content, created_at }[]
- *     chatgpt:    { content, created_at }[]
- *     perplexity: { content, created_at }[]
- *     other:      { content, created_at }[]
+ *     claude:      { content, created_at }[]
+ *     claude_code: { content, created_at }[]
+ *     chatgpt:     { content, created_at }[]
+ *     perplexity:  { content, created_at }[]
+ *     other:       { content, created_at }[]
  *   },
  *   nextOffset: number | null
  * }
@@ -58,6 +59,7 @@ export async function GET(request: NextRequest) {
 
     const grouped: Record<string, Row[]> = {
       claude: [],
+      claude_code: [],
       chatgpt: [],
       perplexity: [],
       other: []

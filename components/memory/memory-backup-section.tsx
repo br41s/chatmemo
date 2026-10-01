@@ -129,7 +129,7 @@ export const MemoryBackupSection: FC<MemoryBackupSectionProps> = ({
       const res = await fetch("/api/import/restore", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows: parsed.rows })
+        body: JSON.stringify({ rows: parsed.rows, source: parsed.source })
       })
       const data = await res.json()
       if (!res.ok || !data.success) {

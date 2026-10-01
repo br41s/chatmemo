@@ -19,7 +19,15 @@
 // any row inserted without them — the Claude Code session scripts POST content
 // only. Change a rule here and change it there.
 
-export type SummarySource = "claude" | "chatgpt" | "perplexity" | "other"
+// `claude_code` is a Claude Code session — the laptop sync, the cloud hook or
+// the old Stop hook. `claude` is Claude.ai: the bulk import and the
+// bookmarklet. They were one value until 20261001000000.
+export type SummarySource =
+  | "claude"
+  | "claude_code"
+  | "chatgpt"
+  | "perplexity"
+  | "other"
 
 export type SummaryKind = "conversation" | "summary" | "index" | "watermark"
 
@@ -43,7 +51,12 @@ const HEADER_RE =
 
 const INDEX_MARKER = "Conversation Index"
 
-const KNOWN_SOURCES: readonly string[] = ["claude", "chatgpt", "perplexity"]
+const KNOWN_SOURCES: readonly string[] = [
+  "claude",
+  "claude_code",
+  "chatgpt",
+  "perplexity"
+]
 
 function normaliseSource(raw: string | undefined): SummarySource {
   const lower = (raw ?? "").toLowerCase()
@@ -103,8 +116,15 @@ export function classifySummaryContent(content: string): SummaryMetadata {
 
   // An untagged row carrying a `### [date]` header came from the Claude bulk
   // importer or the bookmarklet, both of which predate source tagging; one
-  // without the brackets, from the Claude Code Stop hook.
-  const source = tag ? normaliseSource(tag[1]) : header ? "claude" : "other"
+  // without the brackets, from the Claude Code Stop hook — nothing else ever
+  // wrote that form, and the import route now restores the brackets itself.
+  const source = tag
+    ? normaliseSource(tag[1])
+    : header
+      ? header[2]
+        ? "claude_code"
+        : "claude"
+      : "other"
 
   return {
     source,
@@ -112,6 +132,50 @@ export function classifySummaryContent(content: string): SummaryMetadata {
     title,
     occurredAt
   }
+}
+
+// The cloud hook's keys. Its rows are Claude Code sessions, and say so in a
+// tag, so the content alone classifies them — in a backup as in the table.
+const CLAUDE_CODE_KEY_PREFIX = "claude-code:"
+
+/**
+ * The summary as it is stored.
+ *
+ * The summariser is asked for `### [YYYY-MM-DD] Title` and sometimes drops
+ * the brackets. A bare date header is how the old Claude Code Stop hook's
+ * rows are recognised (classifySummaryContent), so a bookmarklet save must
+ * not arrive looking like one: the brackets are put back here.
+ */
+export function storedSummary(
+  summaryText: string,
+  sessionKey: string | null
+): string {
+  const text = summaryText.replace(
+    /^(\s*###\s+)(\d{4}-\d{2}-\d{2})\b/m,
+    "$1[$2]"
+  )
+  return sessionKey?.startsWith(CLAUDE_CODE_KEY_PREFIX)
+    ? `[source:claude_code]\n${text}`
+    : text
+}
+
+/**
+ * The source a restored row is stored with.
+ *
+ * A backup is one file per source, and the file names its source. Content
+ * decides, with one exception: Claude Code sessions synced before they were
+ * tagged read as `claude`, and were moved to `claude_code` by row id. Their
+ * content still says `claude`, so the file they were exported in is the only
+ * record of what they are. Nothing else is taken from the file — it is
+ * user-supplied, and a row that says ChatGPT is not a session.
+ */
+export function restoredSource(
+  derived: SummarySource,
+  fileSource: unknown
+): SummarySource {
+  return derived === "claude" && fileSource === "claude_code"
+    ? "claude_code"
+    : derived
 }
 
 /** Row shape the typed columns are written as. */

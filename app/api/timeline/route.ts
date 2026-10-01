@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
     // One row past the page, so hasMore needs no second query.
     const { data, error } = await supabase
       .from("summaries")
-      .select("id, content, created_at")
+      .select("id, content, created_at, source")
       .eq("user_id", userId)
       // The timeline displays entries by the date in their content, so paging
       // by insertion time meant a page boundary could fall anywhere in the

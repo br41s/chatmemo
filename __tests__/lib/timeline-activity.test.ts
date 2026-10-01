@@ -15,16 +15,18 @@ describe("activityByMonth", () => {
       { effective_at: "2026-09-30T10:00:00+00:00", source: "claude" },
       { effective_at: "2026-09-02T00:00:00+00:00", source: "chatgpt" },
       { effective_at: "2026-07-14T00:00:00+00:00", source: "perplexity" },
-      { effective_at: "2026-09-12T00:00:00+00:00", source: "claude" }
+      { effective_at: "2026-09-12T00:00:00+00:00", source: "claude" },
+      { effective_at: "2026-09-13T00:00:00+00:00", source: "claude_code" }
     ])
     expect(months.map(m => m.month)).toEqual(["2026-07", "2026-08", "2026-09"])
     expect(months[2].counts).toEqual({
       claude: 2,
+      claude_code: 1,
       chatgpt: 1,
       perplexity: 0,
       other: 0
     })
-    expect(months[2].total).toBe(3)
+    expect(months[2].total).toBe(4)
   })
 
   it("keeps a quiet month as a gap, not a missing bar", () => {
