@@ -49,7 +49,7 @@ async function fetchClaudeRows({ supabaseUrl, serviceRoleKey, userId }) {
   const rows = []
   for (let offset = 0; ; offset += PAGE) {
     const url =
-      `${supabaseUrl}/rest/v1/summaries?select=id,title,content` +
+      `${supabaseUrl}/rest/v1/summaries?select=id,title,content,external_id` +
       `&user_id=eq.${userId}&source=eq.claude` +
       `&kind=in.(conversation,summary)&order=id&limit=${PAGE}&offset=${offset}`
     const res = await fetch(url, { headers: headers(serviceRoleKey) })
@@ -101,9 +101,17 @@ async function main() {
 
   const rows = await fetchClaudeRows(config)
 
-  const byRecord = rows.filter(row => syncedRowIds.has(row.id))
+  // A cloud session posted while the old route was still deployed was stored
+  // as "claude" with its key; the migration's backfill ran before it existed.
+  const isCloudSession = row =>
+    (row.external_id ?? "").startsWith("claude-code:") &&
+    !(row.content ?? "").startsWith("[source:")
+
+  const byRecord = rows.filter(
+    row => syncedRowIds.has(row.id) || isCloudSession(row)
+  )
   const byTitle = rows.filter(row => {
-    if (syncedRowIds.has(row.id)) return false
+    if (syncedRowIds.has(row.id) || isCloudSession(row)) return false
     const content = row.content ?? ""
     return (
       !content.startsWith("[source:") &&
@@ -115,8 +123,8 @@ async function main() {
 
   console.log(`${rows.length} rows are stored as "claude".`)
   console.log(
-    `\n1. Named by the sync's own record: ${byRecord.length}` +
-      ` (of ${syncedRowIds.size} recorded)`
+    `\n1. Named by the sync's own record, or a cloud session's key: ` +
+      `${byRecord.length} (${syncedRowIds.size} recorded by the sync)`
   )
   console.log(
     `\n2. Untagged, one header, titled like a project: ${byTitle.length}`

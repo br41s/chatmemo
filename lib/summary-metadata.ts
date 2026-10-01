@@ -116,8 +116,9 @@ export function classifySummaryContent(content: string): SummaryMetadata {
 
   // An untagged row carrying a `### [date]` header came from the Claude bulk
   // importer or the bookmarklet, both of which predate source tagging; one
-  // without the brackets, from the Claude Code Stop hook — nothing else ever
-  // wrote that form, and the import route now restores the brackets itself.
+  // without the brackets, from the Claude Code Stop hook. The import route's
+  // summariser could drop them too; every such row checked when this rule
+  // was written was a session, and the route now restores the brackets.
   const source = tag
     ? normaliseSource(tag[1])
     : header
