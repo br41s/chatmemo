@@ -10,7 +10,11 @@
  * change here must be mirrored there.
  */
 import fixtures from "@/__tests__/fixtures/summary-metadata-fixtures.json"
-import { classifySummaryContent } from "@/lib/summary-metadata"
+import {
+  classifySummaryContent,
+  restoredSource,
+  storedSummary
+} from "@/lib/summary-metadata"
 
 const byKey = new Map<string, string>(
   (fixtures as { k: string; c: string }[]).map(f => [f.k, f.c])
@@ -194,7 +198,13 @@ describe("classifySummaryContent — totality", () => {
   it("returns a usable record for any string", () => {
     for (const raw of ["", "   ", "\n\n", "###", "[source:]", "[]"]) {
       const m = classifySummaryContent(raw)
-      expect(["claude", "chatgpt", "perplexity", "other"]).toContain(m.source)
+      expect([
+        "claude",
+        "claude_code",
+        "chatgpt",
+        "perplexity",
+        "other"
+      ]).toContain(m.source)
       expect(["conversation", "summary", "index", "watermark"]).toContain(
         m.kind
       )
@@ -211,14 +221,15 @@ describe("classifySummaryContent — bracketless date headers", () => {
   // The Claude Code Stop hook asked its summariser for `### [date] Title` and
   // mostly got `### date Title`. Mirrored by the trigger in
   // 20260929000000_summaries_bracketless_dates.sql and pinned there by
-  // `__tests__/migrations/summaries-bracketless-dates.integration.sql`.
+  // `__tests__/migrations/summaries-bracketless-dates.integration.sql`; the
+  // source became `claude_code` in 20261001000000_summaries_claude_code_source.sql.
   it("reads the date, title and source of an untagged session row", () => {
     expect(
       classifySummaryContent(
         "### 2026-09-23 FinView Audit\n\n- **Project:** FinView"
       )
     ).toEqual({
-      source: "claude",
+      source: "claude_code",
       kind: "conversation",
       title: "FinView Audit",
       occurredAt: "2026-09-23"
@@ -240,5 +251,83 @@ describe("classifySummaryContent — bracketless date headers", () => {
       source: "other",
       occurredAt: null
     })
+  })
+})
+
+describe("Claude Code as its own source", () => {
+  // Mirrored by the trigger in 20261001000000_summaries_claude_code_source.sql
+  // and pinned there by
+  // `__tests__/migrations/summaries-claude-code-source.integration.sql`.
+  it("reads the tag the session scripts write", () => {
+    expect(
+      classifySummaryContent(
+        "[source:claude_code]\n### [2026-10-01] chatmemo\n\n- shipped"
+      )
+    ).toEqual({
+      source: "claude_code",
+      kind: "conversation",
+      title: "chatmemo",
+      occurredAt: "2026-10-01"
+    })
+  })
+
+  it("leaves a Claude.ai row as claude", () => {
+    expect(
+      classifySummaryContent("[source:claude]\n### [2026-03-01] Qatar flight")
+        .source
+    ).toBe("claude")
+    expect(
+      classifySummaryContent("### [2024-12-24] Christmas planning").source
+    ).toBe("claude")
+  })
+
+  it("goes by the first header when a row has both forms", () => {
+    expect(
+      classifySummaryContent("### [2026-05-01] First\n\n### 2026-05-02 Second")
+        .source
+    ).toBe("claude")
+  })
+})
+
+describe("storedSummary", () => {
+  it("tags a cloud session's summary", () => {
+    expect(
+      storedSummary(
+        "### [2026-10-01] FlyWell redesign\n- done",
+        "claude-code:abc"
+      )
+    ).toBe("[source:claude_code]\n### [2026-10-01] FlyWell redesign\n- done")
+  })
+
+  it("leaves a bookmarklet save untagged", () => {
+    const text = "### [2026-10-01] Trip notes\n- flights"
+    expect(storedSummary(text, null)).toBe(text)
+    expect(storedSummary(text, "other-writer:1")).toBe(text)
+  })
+
+  it("puts back the brackets the summariser dropped", () => {
+    const stored = storedSummary("### 2026-10-01 Trip notes\n- flights", null)
+    expect(stored).toBe("### [2026-10-01] Trip notes\n- flights")
+    // So a Claude.ai save is never taken for an old Stop hook row.
+    expect(classifySummaryContent(stored).source).toBe("claude")
+  })
+
+  it("does not bracket a timestamp", () => {
+    const text = "### 2026-10-01T10:00 notes"
+    expect(storedSummary(text, null)).toBe(text)
+  })
+})
+
+describe("restoredSource", () => {
+  it("keeps the file's word for a session whose content says claude", () => {
+    expect(restoredSource("claude", "claude_code")).toBe("claude_code")
+  })
+
+  it("takes nothing else from the file", () => {
+    expect(restoredSource("chatgpt", "claude_code")).toBe("chatgpt")
+    expect(restoredSource("other", "claude_code")).toBe("other")
+    expect(restoredSource("claude", "perplexity")).toBe("claude")
+    expect(restoredSource("claude", undefined)).toBe("claude")
+    expect(restoredSource("claude", { evil: true })).toBe("claude")
   })
 })

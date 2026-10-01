@@ -8,13 +8,14 @@ import { MemorySourceChip } from "../memory/memory-source-chip"
 
 /**
  * The stack order, bottom to top. Chosen so that no two neighbours are the
- * green and the teal: they are the closest pair in the palette, and the
- * validator only clears them with something else in between.
+ * green and the teal, or the two Claude oranges: those are the closest pairs
+ * in the palette, and the validator only clears them with something else in
+ * between.
  */
 const STACK: Array<{
   source: MemoryDbSource
   label: string
-  chip: "claude-ai" | "chatgpt" | "chat" | "perplexity"
+  chip: "claude-ai" | "claude-code" | "chatgpt" | "chat" | "perplexity"
   fill: string
 }> = [
   {
@@ -28,6 +29,13 @@ const STACK: Array<{
     label: "ChatGPT",
     chip: "chatgpt",
     fill: "hsl(var(--source-chatgpt))"
+  },
+  // The chart's own rust in both modes: see the note in globals.css.
+  {
+    source: "claude_code",
+    label: "Claude Code",
+    chip: "claude-code",
+    fill: "hsl(var(--chart-claude-code))"
   },
   {
     source: "other",

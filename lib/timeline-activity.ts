@@ -23,6 +23,7 @@ export interface ActivityMonth {
 
 const emptyCounts = (): Record<MemoryDbSource, number> => ({
   claude: 0,
+  claude_code: 0,
   chatgpt: 0,
   perplexity: 0,
   other: 0

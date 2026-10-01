@@ -122,21 +122,23 @@ export async function getLatestSummaryForUser(
 
   const [personalResult, bulkResult, indexResult, lessons] = await Promise.all([
     // A. Personal: everything narrative except raw Perplexity/ChatGPT imports.
-    //    [source:claude] rows ARE included — they are Claude Code sessions, and
+    //    Claude rows ARE included — Claude.ai saves and Claude Code sessions
+    //    ([source:claude], [source:claude_code]) — and
     //    so are the import-time LLM summaries of bulk sources: the old
     //    `[source:chatgpt]%` predicate did not match `[source:chatgpt:summary]`,
     //    so those landed here, under the 1 500-char cap rather than the 400-char
     //    bulk one. Keeping them here preserves that.
     //
     //    The source list is positive rather than a negation because the CHECK
-    //    constraint added with these columns closes the set to exactly four
-    //    values, so (claude, other) is the complement of (perplexity, chatgpt).
+    //    constraint on the column closes the set, so (claude, claude_code,
+    //    other) is the complement of (perplexity, chatgpt). A new source value
+    //    has to be added here or its rows never reach the block.
     supabase
       .from("summaries")
       .select("id, content, effective_at")
       .eq("user_id", userId)
       .in("kind", ["conversation", "summary"])
-      .or("kind.eq.summary,source.in.(claude,other)")
+      .or("kind.eq.summary,source.in.(claude,claude_code,other)")
       .order(MEMORY_ORDER_COLUMN, { ascending: false })
       .limit(MAX_PERSONAL_ROWS),
 

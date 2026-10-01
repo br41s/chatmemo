@@ -229,6 +229,30 @@ describe("buildMemoryReport — remembered entries", () => {
     ])
   })
 
+  it("takes a row's stored source over what its content says", () => {
+    // Sessions synced before they were tagged: the content says Claude, the
+    // column says Claude Code.
+    const report = buildMemoryReport({
+      summary: null,
+      relevant: "x",
+      relevantEntries: [
+        "[source:claude]\n### [2026-09-29] biglobster\n- fix",
+        "[source:claude]\n### [2026-09-28] Viaje a Bangkok\n- plan",
+        "[source:claude_code]\n### [2026-10-01] chatmemo\n- fix"
+      ],
+      relevantSources: ["claude_code", "claude", null],
+      fullConversation: null,
+      fullConversationMissed: false,
+      totalChars: 100,
+      budgetChars: 1000
+    })
+    expect(report.relevant?.items?.map(item => item.source)).toEqual([
+      "claude-code",
+      "claude-ai",
+      "claude-code"
+    ])
+  })
+
   it("labels an untagged, undated row as in-app chat with its first line", () => {
     const report = build(["Talked about the garden plan\n- tomatoes"])
     expect(report.relevant?.items?.[0]).toEqual({

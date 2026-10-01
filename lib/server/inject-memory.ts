@@ -183,6 +183,7 @@ async function fetchMemoryBlock(
         summary: effectiveSummary,
         relevant: effectiveRelevant,
         relevantEntries: effectiveRelevant ? relevantMemory?.entries : null,
+        relevantSources: effectiveRelevant ? relevantMemory?.sources : null,
         fullConversation: fullConv,
         fullConversationMissed: !!fullConv && !fullConvFoundMatch,
         totalChars: block.length,
@@ -281,7 +282,9 @@ export async function recallPreviewFor(
       resolveContextBudget(budgetHint)
     )
     return {
-      items: relevant ? memoryEntryReports(relevant.entries) : [],
+      items: relevant
+        ? memoryEntryReports(relevant.entries, relevant.sources)
+        : [],
       transcript: false
     }
   } catch (error) {

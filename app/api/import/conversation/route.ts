@@ -27,6 +27,7 @@ import {
 } from "@/lib/server/openrouter"
 import { createClient as createServiceClient } from "@supabase/supabase-js"
 import { insertSummary, replaceSessionSummary } from "@/db/summaries"
+import { storedSummary } from "@/lib/summary-metadata"
 import { NextRequest, NextResponse } from "next/server"
 import { ServerRuntime } from "next"
 import { timingSafeEqual } from "crypto"
@@ -238,10 +239,11 @@ export async function POST(request: NextRequest) {
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
+    const content = storedSummary(summaryText, sessionKey)
     if (sessionKey) {
-      await replaceSessionSummary(supabase, userId, sessionKey, summaryText)
+      await replaceSessionSummary(supabase, userId, sessionKey, content)
     } else {
-      await insertSummary(supabase, userId, summaryText)
+      await insertSummary(supabase, userId, content)
     }
 
     return NextResponse.json(

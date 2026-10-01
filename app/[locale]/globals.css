@@ -117,6 +117,10 @@
        fails as text. Text keeps the source token; the bars take this. In
        dark mode the two agree. */
     --chart-perplexity: 184 100% 30%;
+    /* The chart's Claude Code bars. The text tone is a muted orange that
+       reads grey as a fill here too, and sits too near the Claude orange
+       two bars away. A rust far enough from both passes the validator. */
+    --chart-claude-code: 16 75% 30%;
     --radius: 0.5rem;
   }
 
@@ -177,6 +181,7 @@
     /* The same value as the Perplexity text tone. In the dark it is also a
        good fill, and every token here is stated as bare channels. */
     --chart-perplexity: 184 60% 42%;
+    --chart-claude-code: 16 65% 40%;
 
     --ring: 258 90% 74%;
   }

@@ -10,14 +10,22 @@ describe("memoryConstellation", () => {
   it("lists the sources that have rows, largest first, sized by share", () => {
     const chips = memoryConstellation({
       total: 200,
-      bySource: { claude: 50, chatgpt: 120, perplexity: 0, other: 30 },
+      bySource: {
+        claude: 40,
+        claude_code: 10,
+        chatgpt: 120,
+        perplexity: 0,
+        other: 30
+      },
       newest: "2026-09-29"
     })
     expect(chips.map(chip => [chip.label, chip.count])).toEqual([
       ["ChatGPT", 120],
-      ["Claude", 50],
-      ["Chat", 30]
+      ["Claude", 40],
+      ["Chat", 30],
+      ["Claude Code", 10]
     ])
+    expect(chips[3].key).toBe("claude-code")
     expect(chips[0].share).toBeCloseTo(0.6)
     expect(chips[0].key).toBe("chatgpt")
   })

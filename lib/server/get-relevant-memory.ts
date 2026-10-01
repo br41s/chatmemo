@@ -119,6 +119,8 @@ export interface RelevantMemory {
    * exactly like the separator between rows.
    */
   entries: string[]
+  /** Each entry's stored `source` column, in the same order. */
+  sources: Array<string | null>
 }
 
 export async function getRelevantMemoryForUser(
@@ -134,6 +136,7 @@ export async function getRelevantMemoryForUser(
   interface Candidate {
     content: string
     createdAt: string
+    source: string | null
   }
   const candidates = new Map<string, Candidate>()
 
@@ -143,7 +146,7 @@ export async function getRelevantMemoryForUser(
     terms.map(term =>
       supabase
         .from("summaries")
-        .select("id, content, created_at")
+        .select("id, content, created_at, source")
         .eq("user_id", userId)
         .ilike("content", `%${term}%`)
         .in("kind", ["conversation", "summary"])
@@ -157,7 +160,11 @@ export async function getRelevantMemoryForUser(
       if (candidates.has(r.id)) continue
       const content = (r.content ?? "").trim()
       if (content) {
-        candidates.set(r.id, { content, createdAt: r.created_at ?? "" })
+        candidates.set(r.id, {
+          content,
+          createdAt: r.created_at ?? "",
+          source: r.source
+        })
       }
     }
   }
@@ -181,5 +188,11 @@ export async function getRelevantMemoryForUser(
 
   if (blocks.length === 0) return null
 
-  return { block: formatRelevantMemory(blocks), entries: blocks }
+  return {
+    block: formatRelevantMemory(blocks),
+    entries: blocks,
+    // fillLayer admits the rows in rank order from the top, so the nth block
+    // is the nth ranked row.
+    sources: ranked.slice(0, blocks.length).map(row => row.source)
+  }
 }

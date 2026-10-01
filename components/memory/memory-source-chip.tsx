@@ -21,8 +21,8 @@ interface MemorySourceChipProps {
  * the text is a conversation title.
  */
 
-// A `[source:claude]` row may be a bookmarklet save, a bulk import or a
-// Claude Code session, so here it is just "Claude".
+// A `claude` row may be a bookmarklet save or a bulk import, so here it is
+// just "Claude". Claude Code sessions have a source, and a chip, of their own.
 const CHIP_LABELS: Partial<Record<MemoryEntryReport["source"], string>> = {
   "claude-ai": "Claude"
 }

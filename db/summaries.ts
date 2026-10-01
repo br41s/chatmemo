@@ -1,6 +1,6 @@
 import { SupabaseClient } from "@supabase/supabase-js"
 import { Database, TablesInsert } from "@/supabase/types"
-import { summaryMetadataColumns } from "@/lib/summary-metadata"
+import { SummarySource, summaryMetadataColumns } from "@/lib/summary-metadata"
 
 /**
  * A write rejected because the database does not have a column the code is
@@ -54,12 +54,16 @@ export async function insertSummary(
   userId: string,
   content: string,
   chatId?: string | null,
-  externalId?: string | null
+  externalId?: string | null,
+  /** For a row whose source its content cannot state — a copy of a Claude
+   *  Code session synced before those were tagged. Otherwise leave it out. */
+  source?: SummarySource
 ): Promise<string> {
   const row: TablesInsert<"summaries"> = {
     user_id: userId,
     content,
     ...summaryMetadataColumns(content),
+    ...(source ? { source } : {}),
     ...(chatId ? { chat_id: chatId } : {}),
     ...(externalId ? { external_id: externalId } : {})
   }

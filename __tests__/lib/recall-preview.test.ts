@@ -39,7 +39,8 @@ describe("recallPreviewFor", () => {
       entries: [
         "[source:chatgpt]\n### [2026-08-02] Qatar refund\n- QR832",
         "[source:claude]\n### [2026-09-01] Viaje a Bangkok\nPlan\n\n---\n\nmore"
-      ]
+      ],
+      sources: ["chatgpt", "claude"]
     })
 
     const preview = await recallPreviewFor("user-1", "Qatar refund status", {

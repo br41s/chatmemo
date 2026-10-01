@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     // Fetch the target row and verify ownership in a single query
     const { data: row, error: fetchError } = await supabase
       .from("summaries")
-      .select("id, content, user_id")
+      .select("id, content, user_id, source")
       .eq("id", id)
       .eq("user_id", userId) // ownership check — never trust the client
       .maybeSingle()
@@ -42,7 +42,17 @@ export async function POST(request: NextRequest) {
     }
 
     // Re-insert as a new row (original row stays immutable)
-    await insertSummary(supabase, userId, row.content)
+    // The copy keeps a Claude Code session's source: older sessions say
+    // `[source:claude]` in their content, and re-deriving it would file the
+    // copy under Claude.ai.
+    await insertSummary(
+      supabase,
+      userId,
+      row.content,
+      null,
+      null,
+      row.source === "claude_code" ? "claude_code" : undefined
+    )
 
     return NextResponse.json({ success: true, restored_from: id })
   } catch (error) {

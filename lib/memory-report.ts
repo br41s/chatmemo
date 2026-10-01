@@ -214,18 +214,22 @@ const CLAUDE_CODE_TAG_RE = /\[claude code(?: cloud)?\]\s*/i
  * The entries a layer names, one per matched row.
  *
  * Each entry is a row's content (or the head of it), so the same classifier
- * the database trigger mirrors gives its title, source and date. Untagged
- * rows with a date header came from Claude — the bookmarklet, the bulk
- * importer or the Claude Code hook — and the hook marks its titles, which
- * is how the two are told apart.
+ * the database trigger mirrors gives its title and date. The source is the
+ * row's stored one when the caller has it (`sources`, aligned with
+ * `entries`): a Claude Code session synced before those were tagged reads
+ * like a Claude.ai row, and only the column knows otherwise.
  */
-export function memoryEntryReports(entries: string[]): MemoryEntryReport[] {
+export function memoryEntryReports(
+  entries: string[],
+  sources?: Array<string | null> | null
+): MemoryEntryReport[] {
   return entries
-    .map(part => part.trim())
-    .filter(Boolean)
+    .map((part, index) => ({ entry: part.trim(), stored: sources?.[index] }))
+    .filter(({ entry }) => Boolean(entry))
     .slice(0, MAX_REPORT_ENTRIES)
-    .map(entry => {
+    .map(({ entry, stored }) => {
       const meta = classifySummaryContent(entry)
+      const dbSource = stored ?? meta.source
       const rawTitle = meta.title ?? "Conversation"
       const isClaudeCode = CLAUDE_CODE_TAG_RE.test(rawTitle)
       // A row with no header takes its first line as the title, and that
@@ -246,13 +250,13 @@ export function memoryEntryReports(entries: string[]): MemoryEntryReport[] {
               .trimEnd() + "…"
           : cleaned || "Conversation"
       const source: MemorySourceKey =
-        meta.source === "claude"
-          ? isClaudeCode
-            ? "claude-code"
-            : "claude-ai"
-          : meta.source === "other"
-            ? "chat"
-            : meta.source
+        dbSource === "claude_code" || (dbSource === "claude" && isClaudeCode)
+          ? "claude-code"
+          : dbSource === "claude"
+            ? "claude-ai"
+            : dbSource === "chatgpt" || dbSource === "perplexity"
+              ? dbSource
+              : "chat"
       const item: MemoryEntryReport = { title, source }
       if (meta.occurredAt) item.date = meta.occurredAt
       const conversations = entry.match(ENTRY_DATE_RE)?.length ?? 0
@@ -278,6 +282,8 @@ export function buildMemoryReport(input: {
    * entries titled with whatever line followed.
    */
   relevantEntries?: string[] | null
+  /** Each of those rows' stored `source`, in the same order. */
+  relevantSources?: Array<string | null> | null
   fullConversation: string | null
   fullConversationMissed: boolean
   totalChars: number
@@ -314,7 +320,10 @@ export function buildMemoryReport(input: {
       span: dateSpan(input.relevant)
     }
     if (input.relevantEntries?.length) {
-      report.relevant.items = memoryEntryReports(input.relevantEntries)
+      report.relevant.items = memoryEntryReports(
+        input.relevantEntries,
+        input.relevantSources
+      )
     }
   }
 

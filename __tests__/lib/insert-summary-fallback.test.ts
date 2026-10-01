@@ -68,6 +68,18 @@ describe("insertSummary", () => {
     expect(warn).not.toHaveBeenCalled()
   })
 
+  it("stores the source it is given over the one the content states", async () => {
+    // A copy of a Claude Code session synced before those were tagged.
+    const { client, writes } = mockSupabase([ok(), ok()])
+    const content = "[source:claude]\n### [2026-09-29] biglobster\n- fix"
+
+    await insertSummary(client, "user-1", content, null, null, "claude_code")
+    await insertSummary(client, "user-1", content)
+
+    expect(writes[0]).toMatchObject({ source: "claude_code" })
+    expect(writes[1]).toMatchObject({ source: "claude" })
+  })
+
   it("keeps the memory when the schema is behind the code", async () => {
     // PostgREST's own schema cache reports the miss.
     const { client, writes } = mockSupabase([

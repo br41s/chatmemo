@@ -206,7 +206,7 @@ The **Memory History** panel (the brain icon near the top of the left rail, righ
 - Click **Clear all** to wipe all memories (asks for confirmation).
 
 **Selective source clear:**
-At the bottom of the panel, under _Clear imported data by source_, there are three buttons — **✕ ChatGPT**, **✕ Claude**, **✕ Perplexity** — that delete only the data imported from that source and reset its watermark. Two-click confirmation required. Use this when you want to fix a bad import without losing data from other sources.
+At the bottom of the panel, under _Clear imported data by source_, there are three buttons — **✕ ChatGPT**, **✕ Claude**, **✕ Perplexity** — that delete only the data imported from that source and reset its watermark. **✕ Claude** removes Claude.ai conversations only; Claude Code sessions are a source of their own and are left alone. Two-click confirmation required. Use this when you want to fix a bad import without losing data from other sources.
 
 > Deleting a summary is permanent. The AI will stop referencing the deleted context in future chats.
 
@@ -220,10 +220,11 @@ At the bottom of the panel, under _Clear imported data by source_, there are thr
 2. Scroll to the bottom — **Backup & Restore** section.
 3. Click **Export all**.
 4. The browser downloads one JSON file per source that has data:
-   - `chatmemo-backup-claude-YYYY-MM-DD.json` — Claude Code sessions, bookmarklet imports, legacy bulk imports
+   - `chatmemo-backup-claude-YYYY-MM-DD.json` — Claude.ai: bookmarklet saves and bulk imports
+   - `chatmemo-backup-claude_code-YYYY-MM-DD.json` — Claude Code sessions (laptop, desktop app and cloud)
    - `chatmemo-backup-chatgpt-YYYY-MM-DD.json` — ChatGPT bulk imports
    - `chatmemo-backup-perplexity-YYYY-MM-DD.json` — Perplexity bulk imports
-   - `chatmemo-backup-other-YYYY-MM-DD.json` — VS Code sync-hook entries and in-app chat summaries
+   - `chatmemo-backup-other-YYYY-MM-DD.json` — in-app chat summaries
 
 Store these files somewhere safe (iCloud, external drive, etc.). **Repeat periodically** — monthly at minimum, weekly if you import frequently.
 

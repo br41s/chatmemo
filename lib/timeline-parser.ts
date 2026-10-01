@@ -12,7 +12,7 @@
 
 export type TimelineSource =
   | "claude-ai" // bookmarklet
-  | "claude-code" // VS Code Stop hook
+  | "claude-code" // Claude Code sessions: laptop sync, cloud hook, Stop hook
   | "chatgpt" // ChatGPT bulk import
   | "perplexity" // Perplexity bulk import
   | "import" // Claude bulk import
@@ -64,6 +64,8 @@ function tagToSource(tag: string): TimelineSource | null {
       return "chatgpt"
     case "claude":
       return "import"
+    case "claude_code":
+      return "claude-code"
     default:
       return null
   }
@@ -93,6 +95,8 @@ export interface SummaryRow {
   id: string
   content: string
   created_at: string
+  /** The stored `source` column, when the caller selected it. */
+  source?: string | null
 }
 
 export function parseSummariesToEntries(
@@ -109,9 +113,15 @@ export function parseSummariesToEntries(
 
     // Extract [source:X] tag if present, then work on the clean text
     const tagMatch = raw.match(SOURCE_TAG_RE)
-    const taggedSource: TimelineSource | null = tagMatch
-      ? tagToSource(tagMatch[1])
-      : null
+    // The column wins for Claude Code: sessions synced before they were
+    // tagged carry `[source:claude]` or no tag, and only the column says
+    // what they are.
+    const taggedSource: TimelineSource | null =
+      summary.source === "claude_code"
+        ? "claude-code"
+        : tagMatch
+          ? tagToSource(tagMatch[1])
+          : null
     const text = tagMatch ? raw.slice(tagMatch[0].length).trim() : raw
 
     if (!text) continue
