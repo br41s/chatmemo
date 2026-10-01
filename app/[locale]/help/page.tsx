@@ -84,6 +84,7 @@ export default function HelpPage() {
           <div className="my-3 flex flex-wrap gap-1.5">
             <MemorySourceChip source="claude-ai" />
             <MemorySourceChip source="claude-code" />
+            <MemorySourceChip source="copilot" />
             <MemorySourceChip source="chatgpt" />
             <MemorySourceChip source="perplexity" />
             <MemorySourceChip source="chat" />

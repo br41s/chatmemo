@@ -201,6 +201,7 @@ describe("classifySummaryContent — totality", () => {
       expect([
         "claude",
         "claude_code",
+        "copilot",
         "chatgpt",
         "perplexity",
         "other"
@@ -329,5 +330,46 @@ describe("restoredSource", () => {
     expect(restoredSource("claude", "perplexity")).toBe("claude")
     expect(restoredSource("claude", undefined)).toBe("claude")
     expect(restoredSource("claude", { evil: true })).toBe("claude")
+  })
+})
+
+describe("Copilot as its own source", () => {
+  // Mirrored by the trigger in 20261002000000_summaries_copilot_source.sql
+  // and pinned there by
+  // `__tests__/migrations/summaries-copilot-source.integration.sql`.
+  const source = (content: string) => classifySummaryContent(content).source
+
+  it("reads the tag the sync writes", () => {
+    expect(
+      source("[source:copilot]\n### [2026-10-01] VSCODE [Copilot]\n\n- shipped")
+    ).toBe("copilot")
+  })
+
+  it("reads the title marker of a row synced before the tag", () => {
+    expect(source("### [2026-09-12] OptionsAI [Copilot]\n\n- fix")).toBe(
+      "copilot"
+    )
+    // Over the bare-date rule that would make it a Claude Code session.
+    expect(source("### 2026-09-12 OptionsAI [Copilot]\n\n- fix")).toBe(
+      "copilot"
+    )
+  })
+
+  it("only goes by the end of the first header's title", () => {
+    expect(source("### [2026-05-22] [Copilot] importer and watcher")).toBe(
+      "claude"
+    )
+    expect(
+      source("### [2026-05-22] Session importer\n- handles [Copilot]")
+    ).toBe("claude")
+    expect(
+      source("### [2026-05-01] First\n\n### [2026-05-02] Second [Copilot]")
+    ).toBe("claude")
+  })
+
+  it("keeps a tag's source", () => {
+    expect(
+      source("[source:chatgpt]\n### [2025-11-05] Notes on [Copilot]")
+    ).toBe("chatgpt")
   })
 })

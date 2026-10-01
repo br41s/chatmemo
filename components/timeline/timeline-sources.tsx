@@ -2,6 +2,7 @@
 
 import type { TimelineSource } from "@/lib/timeline-parser"
 import {
+  IconBrandGithubCopilot,
   IconCalendar,
   IconCode,
   IconHistory,
@@ -19,6 +20,7 @@ import {
 export const SOURCE_LABELS: Record<TimelineSource, string> = {
   "claude-ai": "Claude.ai",
   "claude-code": "Claude Code",
+  copilot: "Copilot",
   chatgpt: "ChatGPT",
   perplexity: "Perplexity",
   import: "Import",
@@ -46,6 +48,11 @@ export const SOURCE_TONES: Record<
     badge:
       "bg-[hsl(var(--source-claude-code)/0.15)] text-[hsl(var(--source-claude-code))]",
     border: "border-l-[hsl(var(--source-claude-code))]"
+  },
+  copilot: {
+    badge:
+      "bg-[hsl(var(--source-copilot)/0.15)] text-[hsl(var(--source-copilot))]",
+    border: "border-l-[hsl(var(--source-copilot))]"
   },
   chatgpt: {
     badge:
@@ -84,6 +91,8 @@ export function SourceIcon({ source }: { source: TimelineSource }) {
       return <IconMessage className={cls} />
     case "claude-code":
       return <IconCode className={cls} />
+    case "copilot":
+      return <IconBrandGithubCopilot className={cls} />
     case "chatgpt":
       return <IconRobot className={cls} />
     case "perplexity":
@@ -102,6 +111,7 @@ export function SourceIcon({ source }: { source: TimelineSource }) {
 export const ALL_SOURCES: TimelineSource[] = [
   "claude-ai",
   "claude-code",
+  "copilot",
   "chatgpt",
   "perplexity",
   "import",

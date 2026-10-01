@@ -25,8 +25,8 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
   filters on the typed `kind` column; a trigger derives `kind`/`source`/
   `title`/`occurred_at` from `content` for writers that send content only
   (the Claude Code session scripts), so a row without them is never invisible.
-  `source` is one of `claude` (Claude.ai), `claude_code`, `chatgpt`,
-  `perplexity`, `other` (in-app), closed by a CHECK constraint. A new value
+  `source` is one of `claude` (Claude.ai), `claude_code`, `copilot`,
+  `chatgpt`, `perplexity`, `other` (in-app), closed by a CHECK constraint. A new value
   must be added to the classifier (`lib/summary-metadata.ts`), the trigger and
   the personal-rows query in `get-latest-summary.ts`, or its rows never reach
   the block. Claude Code sessions synced before they were tagged still say

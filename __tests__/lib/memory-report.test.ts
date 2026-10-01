@@ -253,6 +253,26 @@ describe("buildMemoryReport — remembered entries", () => {
     ])
   })
 
+  it("names a Copilot session and drops the marker from its title", () => {
+    const report = buildMemoryReport({
+      summary: null,
+      relevant: "x",
+      relevantEntries: [
+        "### [2026-09-12] OptionsAI [Copilot]\n- fix",
+        "[source:copilot]\n### [2026-10-01] VSCODE [Copilot]\n- fix"
+      ],
+      relevantSources: ["copilot", null],
+      fullConversation: null,
+      fullConversationMissed: false,
+      totalChars: 100,
+      budgetChars: 1000
+    })
+    expect(report.relevant?.items).toEqual([
+      { title: "OptionsAI", source: "copilot", date: "2026-09-12" },
+      { title: "VSCODE", source: "copilot", date: "2026-10-01" }
+    ])
+  })
+
   it("labels an untagged, undated row as in-app chat with its first line", () => {
     const report = build(["Talked about the garden plan\n- tomatoes"])
     expect(report.relevant?.items?.[0]).toEqual({

@@ -193,3 +193,11 @@ Out of scope (follow-ups): theme toggle placement, /help page, landing/login red
 - [x] Migration applied to production by Brais, then PR #66 merged (`8de7822`) and deployed: 166 rows moved. Migration before the deploy: old code with the new schema only misses backfilled rows for the minutes of the build; new code with the old schema would reject cloud session posts.
 - [x] Backfill run by Brais with `--apply --by-title`: 123 rows moved. Production now has 289 Claude Code, 456 Claude, 554 Perplexity, 40 Chat rows (1,339 total, unchanged).
 - [ ] Copilot sessions (`### [date] name [Copilot]`, about 60 rows) are still stored as `claude`. Not touched.
+
+## Copilot as its own memory source (2026-10-01, branch feat/copilot-source)
+
+- [x] New `source` value `copilot`; the two Copilot sync scripts write `[source:copilot]`. Untagged rows are recognised by the `[Copilot]` that ends their first header's title, so content alone classifies every row and no backfill script is needed.
+- [x] Migration `20261002000000`: constraint, trigger, backfill (64 rows on Brais's data). SQL integration test, added to `test:rls`.
+- [x] Readers: baseline personal query, report (the marker is dropped from the title), timeline (label, tone, icon, filter), stats chips, chart series, backup bucket. Chart blue validated in both modes at its stack position.
+- [x] Gate: type-check, jest (845), build; SQL tests on a disposable Postgres.
+- [ ] Apply the migration to production (`npm run db-push`), then merge.

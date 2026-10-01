@@ -21,10 +21,12 @@
 
 // `claude_code` is a Claude Code session — the laptop sync, the cloud hook or
 // the old Stop hook. `claude` is Claude.ai: the bulk import and the
-// bookmarklet. They were one value until 20261001000000.
+// bookmarklet. They were one value until 20261001000000. `copilot` is a
+// GitHub Copilot session from the same laptop sync (20261002000000).
 export type SummarySource =
   | "claude"
   | "claude_code"
+  | "copilot"
   | "chatgpt"
   | "perplexity"
   | "other"
@@ -51,9 +53,13 @@ const HEADER_RE =
 
 const INDEX_MARKER = "Conversation Index"
 
+/** How the Copilot session sync ends a row's title. */
+const COPILOT_TITLE_RE = /\[Copilot\]$/
+
 const KNOWN_SOURCES: readonly string[] = [
   "claude",
   "claude_code",
+  "copilot",
   "chatgpt",
   "perplexity"
 ]
@@ -119,12 +125,16 @@ export function classifySummaryContent(content: string): SummaryMetadata {
   // without the brackets, from the Claude Code Stop hook. The import route's
   // summariser could drop them too; every such row checked when this rule
   // was written was a session, and the route now restores the brackets.
+  // The Copilot sync marks its titles — `### [date] project [Copilot]` — and
+  // wrote no tag until 20261002000000.
   const source = tag
     ? normaliseSource(tag[1])
     : header
-      ? header[2]
-        ? "claude_code"
-        : "claude"
+      ? COPILOT_TITLE_RE.test(headerTitle)
+        ? "copilot"
+        : header[2]
+          ? "claude_code"
+          : "claude"
       : "other"
 
   return {

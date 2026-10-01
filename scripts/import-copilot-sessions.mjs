@@ -25,7 +25,10 @@ import {
   summarize,
   insertSummary
 } from "./claude-sessions-shared.mjs"
-import { findCopilotJSONLFiles, parseCopilotJSONL } from "./copilot-sessions-shared.mjs"
+import {
+  findCopilotJSONLFiles,
+  parseCopilotJSONL
+} from "./copilot-sessions-shared.mjs"
 
 /** Delay between API calls to avoid rate-limiting (ms). */
 const DELAY_BETWEEN_CALLS_MS = 8_000
@@ -35,7 +38,9 @@ async function main() {
   const sessions = loadSessions()
 
   const allFiles = findCopilotJSONLFiles()
-  console.log(`Found ${allFiles.length} Copilot session files in VS Code workspaceStorage`)
+  console.log(
+    `Found ${allFiles.length} Copilot session files in VS Code workspaceStorage`
+  )
 
   const toProcess = allFiles.filter(f => !sessions[`copilot:${f.sessionId}`])
   console.log(
@@ -82,7 +87,7 @@ async function main() {
       // Do NOT save — retry on next run
       failed++
     } else {
-      const summaryText = `### [${date}] ${projectName} [Copilot]\n\n${factsText}`
+      const summaryText = `[source:copilot]\n### [${date}] ${projectName} [Copilot]\n\n${factsText}`
       const { ok, id, error } = await insertSummary(
         supabaseUrl,
         serviceRoleKey,

@@ -12,6 +12,7 @@
  *   sources: {
  *     claude:      { content, created_at }[]
  *     claude_code: { content, created_at }[]
+ *     copilot:     { content, created_at }[]
  *     chatgpt:     { content, created_at }[]
  *     perplexity:  { content, created_at }[]
  *     other:       { content, created_at }[]
@@ -60,6 +61,7 @@ export async function GET(request: NextRequest) {
     const grouped: Record<string, Row[]> = {
       claude: [],
       claude_code: [],
+      copilot: [],
       chatgpt: [],
       perplexity: [],
       other: []
