@@ -13,6 +13,7 @@
 export type TimelineSource =
   | "claude-ai" // bookmarklet
   | "claude-code" // Claude Code sessions: laptop sync, cloud hook, Stop hook
+  | "copilot" // GitHub Copilot sessions, from the laptop sync
   | "chatgpt" // ChatGPT bulk import
   | "perplexity" // Perplexity bulk import
   | "import" // Claude bulk import
@@ -66,6 +67,8 @@ function tagToSource(tag: string): TimelineSource | null {
       return "import"
     case "claude_code":
       return "claude-code"
+    case "copilot":
+      return "copilot"
     default:
       return null
   }
@@ -76,6 +79,8 @@ function detectSource(title: string, content: string): TimelineSource {
   const c = content.toLowerCase()
   if (t.includes("[claude code]") || t.startsWith("[claude code]"))
     return "claude-code"
+  // Synced before the Copilot rows were tagged.
+  if (t.endsWith("[copilot]")) return "copilot"
   if (t.startsWith("todo:") || t.includes("todo:")) return "todo"
   if (c.includes("source: perplexity")) return "perplexity"
   if (c.includes("chatgpt") || c.includes("openai")) return "chatgpt"

@@ -8,14 +8,20 @@ import { MemorySourceChip } from "../memory/memory-source-chip"
 
 /**
  * The stack order, bottom to top. Chosen so that no two neighbours are the
- * green and the teal, or the two Claude oranges: those are the closest pairs
- * in the palette, and the validator only clears them with something else in
- * between.
+ * green and the teal, the two Claude oranges, or the Copilot blue and the
+ * violet: those are the closest pairs in the palette, and the validator only
+ * clears them with something else in between.
  */
 const STACK: Array<{
   source: MemoryDbSource
   label: string
-  chip: "claude-ai" | "claude-code" | "chatgpt" | "chat" | "perplexity"
+  chip:
+    | "claude-ai"
+    | "claude-code"
+    | "copilot"
+    | "chatgpt"
+    | "chat"
+    | "perplexity"
   fill: string
 }> = [
   {
@@ -23,6 +29,12 @@ const STACK: Array<{
     label: "Claude",
     chip: "claude-ai",
     fill: "hsl(var(--source-claude-ai))"
+  },
+  {
+    source: "copilot",
+    label: "Copilot",
+    chip: "copilot",
+    fill: "hsl(var(--source-copilot))"
   },
   {
     source: "chatgpt",

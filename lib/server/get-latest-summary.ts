@@ -131,14 +131,14 @@ export async function getLatestSummaryForUser(
     //
     //    The source list is positive rather than a negation because the CHECK
     //    constraint on the column closes the set, so (claude, claude_code,
-    //    other) is the complement of (perplexity, chatgpt). A new source value
+    //    copilot, other) is the complement of (perplexity, chatgpt). A new source value
     //    has to be added here or its rows never reach the block.
     supabase
       .from("summaries")
       .select("id, content, effective_at")
       .eq("user_id", userId)
       .in("kind", ["conversation", "summary"])
-      .or("kind.eq.summary,source.in.(claude,claude_code,other)")
+      .or("kind.eq.summary,source.in.(claude,claude_code,copilot,other)")
       .order(MEMORY_ORDER_COLUMN, { ascending: false })
       .limit(MAX_PERSONAL_ROWS),
 

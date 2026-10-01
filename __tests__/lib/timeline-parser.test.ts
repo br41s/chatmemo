@@ -60,3 +60,23 @@ describe("parseSummariesToEntries — Claude Code sessions", () => {
     expect(entry.source).toBe("import")
   })
 })
+
+describe("parseSummariesToEntries — Copilot sessions", () => {
+  const parse = (content: string) =>
+    parseSummariesToEntries([
+      { id: "a", content, created_at: "2026-10-01T08:00:00Z" }
+    ])[0]
+
+  it("reads the sync's tag", () => {
+    expect(
+      parse("[source:copilot]\n### [2026-10-01] VSCODE [Copilot]\n- shipped")
+        .source
+    ).toBe("copilot")
+  })
+
+  it("reads the title marker of an untagged row", () => {
+    expect(parse("### [2026-09-12] OptionsAI [Copilot]\n- fix").source).toBe(
+      "copilot"
+    )
+  })
+})

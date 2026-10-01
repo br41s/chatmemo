@@ -22,6 +22,7 @@ describe("activityByMonth", () => {
     expect(months[2].counts).toEqual({
       claude: 2,
       claude_code: 1,
+      copilot: 0,
       chatgpt: 1,
       perplexity: 0,
       other: 0

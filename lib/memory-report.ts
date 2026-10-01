@@ -20,6 +20,7 @@ import { classifySummaryContent } from "@/lib/summary-metadata"
 export type MemorySourceKey =
   | "claude-ai"
   | "claude-code"
+  | "copilot"
   | "chatgpt"
   | "perplexity"
   | "chat"
@@ -236,6 +237,8 @@ export function memoryEntryReports(
       // line is often a bullet or bold text: the markers are not the title.
       const cleaned = rawTitle
         .replace(CLAUDE_CODE_TAG_RE, "")
+        // The Copilot sync's marker: the chip says it already.
+        .replace(/\s*\[Copilot\]$/, "")
         .replace(/^[-*•]\s+/, "")
         .replace(/\*\*/g, "")
         .trim()
@@ -254,7 +257,9 @@ export function memoryEntryReports(
           ? "claude-code"
           : dbSource === "claude"
             ? "claude-ai"
-            : dbSource === "chatgpt" || dbSource === "perplexity"
+            : dbSource === "chatgpt" ||
+                dbSource === "perplexity" ||
+                dbSource === "copilot"
               ? dbSource
               : "chat"
       const item: MemoryEntryReport = { title, source }

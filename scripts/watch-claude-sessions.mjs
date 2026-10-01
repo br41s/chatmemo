@@ -131,7 +131,8 @@ async function poll(config) {
       label: f.projectName,
       parse: parseCopilotJSONL,
       title: name => `[Copilot] ${name}`,
-      header: (date, name) => `### [${date}] ${name} [Copilot]`
+      header: (date, name) =>
+        `[source:copilot]\n### [${date}] ${name} [Copilot]`
     }))
   ].filter(
     f =>

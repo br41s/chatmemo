@@ -11,6 +11,7 @@ import type { MemorySourceKey } from "@/lib/memory-report"
 export type MemoryDbSource =
   | "claude"
   | "claude_code"
+  | "copilot"
   | "chatgpt"
   | "perplexity"
   | "other"
@@ -18,6 +19,7 @@ export type MemoryDbSource =
 export const MEMORY_DB_SOURCES: readonly MemoryDbSource[] = [
   "claude",
   "claude_code",
+  "copilot",
   "chatgpt",
   "perplexity",
   "other"
@@ -46,6 +48,7 @@ const CHIP_FOR: Record<
 > = {
   claude: { key: "claude-ai", label: "Claude" },
   claude_code: { key: "claude-code", label: "Claude Code" },
+  copilot: { key: "copilot", label: "Copilot" },
   chatgpt: { key: "chatgpt", label: "ChatGPT" },
   perplexity: { key: "perplexity", label: "Perplexity" },
   // Untagged rows are the in-app summariser's, so "Chat" is the honest label.
