@@ -26,10 +26,20 @@
 // 32k window was handed a block well past the share this function reported
 // for it. Every part of the block now has an allowance, and they sum to it.
 
-/** Rough bytes-per-token for English prose. Only used to turn a token
- *  allowance into a char budget for the memory layers, which measure in
- *  characters; deliberately conservative so the estimate over-reserves. */
-export const CHARS_PER_TOKEN = 4
+/**
+ * How many characters a token is taken to be, for turning a token allowance
+ * into the char budget the memory layers measure in.
+ *
+ * It was 4, described as conservative. It is the optimistic direction: below
+ * the ceiling the split has no slack, so every character past the estimate
+ * is a token past the window. Measured on a real memory of 1,338 rows with
+ * the tokenizer the app trims history with (gpt-tokenizer), 2026-10-01:
+ * Claude rows 3.81, Perplexity rows 3.60, in-app rows 4.32, the lessons
+ * document 3.78, all of it together 3.69 — mostly Spanish and markdown. 3.5
+ * clears every one of those with margin. Large windows reach the ceiling
+ * either way and are unaffected; a 32k window is sent about 12% less.
+ */
+export const CHARS_PER_TOKEN = 3.5
 
 /** Assumed window when the model is unknown — an OpenRouter model missing from
  *  the catalogue, a custom endpoint, an Ollama tag. Low enough to be safe. */
@@ -56,8 +66,8 @@ export const MEMORY_OVERHEAD_CHARS = 6_000
  * and the document can be long — on a small window it alone was twice the
  * whole allowance.
  *
- * Sized to the most a rewrite can produce: 8,000 output tokens, about 32k
- * chars. Not to the ~23.7k at which rewrites stop being attempted — that
+ * Sized to the most a rewrite can produce: 8,000 output tokens, about 28k
+ * chars at the ratio above, 32k at the rewrite's own estimate of 4. Not to the ~23.7k at which rewrites stop being attempted — that
  * limits the document going in, and the one coming out may be a little longer
  * and then stays that size. A window with room must still receive it whole.
  */
@@ -188,7 +198,7 @@ export function resolveContextBudget(
   )
 
   const memoryChars = Math.min(
-    Math.max(available - historyTokens, 0) * CHARS_PER_TOKEN,
+    Math.floor(Math.max(available - historyTokens, 0) * CHARS_PER_TOKEN),
     MAX_MEMORY_CHARS
   )
 

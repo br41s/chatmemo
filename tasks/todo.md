@@ -176,3 +176,9 @@ Out of scope (follow-ups): theme toggle placement, /help page, landing/login red
 - [x] Gate: type-check, jest (820), build. Checked at 1200px and 375px.
 - [ ] `components/timeline/timeline-sheet.tsx` is now unused; delete with Brais's OK.
 - [ ] The chart counts memory rows; the list counts conversations (a bulk row holds several). Both are labelled as such.
+
+## Budget review notes (2026-10-01, branch fix/budget-token-ratio-and-lessons)
+
+- [x] `CHARS_PER_TOKEN` 4 → 3.5. Measured with gpt-tokenizer on the real memory (1,338 rows): Claude 3.81, Perplexity 3.60, in-app 4.32, lessons 3.78, overall 3.69. Large windows unaffected; a 32k window gets ~12% less.
+- [x] Lessons cut per section: each `## ` section keeps its heading and first lines, short sections whole, long ones cut alike. Cutting from the end lost the constraints section whole.
+- [x] Gate: type-check, jest, build.

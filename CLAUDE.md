@@ -69,7 +69,10 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
   layers in fixed proportions. On a large window the layers reach their
   previous sizes (80k personal, 20k bulk, 10k index, 6k relevant; 120k for a
   recovered transcript) and the ceiling is 154k. A window too small for the
-  overhead gets no block. A layer whose first entry does not fit carries a
+  overhead gets no block. `CHARS_PER_TOKEN` is 3.5, measured on real memory
+  (3.6–3.8 for Spanish rows and lessons). Lessons that do not fit are cut
+  per section (`fitLessons`): every `## ` section keeps its heading and its
+  first lines, short sections stay whole. A layer whose first entry does not fit carries a
   cut version of it, marked as cut, rather than nothing
   (`lib/server/cut-to-fit.ts`) — an empty transcript layer is reported as "no
   matching conversation found". `__tests__/lib/memory-block-fits.test.ts`

@@ -213,16 +213,89 @@ export function withDateHeader(content: string, effectiveAt?: string | null) {
 }
 
 const LESSONS_CUT_NOTE =
-  "[…the rest of the lessons were left out to fit this model's context window]"
+  "[…some lessons were left out of each section to fit this model's context window]"
+
+/** A `## ` heading line, which is how the rewrite prompt structures the
+ *  document: Preferences, Active Projects, Personal Context, Recurring
+ *  Patterns & Constraints, in that order. */
+const SECTION_RE = /^## /m
+
+interface LessonsSection {
+  /** The heading line, or null for whatever precedes the first heading. */
+  heading: string | null
+  lines: string[]
+}
+
+function splitSections(text: string): LessonsSection[] {
+  const sections: LessonsSection[] = []
+  let current: LessonsSection = { heading: null, lines: [] }
+  for (const line of text.split("\n")) {
+    if (SECTION_RE.test(line)) {
+      sections.push(current)
+      current = { heading: line, lines: [] }
+    } else {
+      current.lines.push(line)
+    }
+  }
+  sections.push(current)
+  return sections.filter(
+    section => section.heading !== null || section.lines.some(l => l.trim())
+  )
+}
+
+/**
+ * Divide `total` among sections that each want `wants[i]`: every section
+ * gets what it wants until the money runs out, and the ones that want more
+ * than an even share split what is left evenly. A short section is kept
+ * whole; the long ones are cut alike.
+ */
+function shareOut(wants: number[], total: number): number[] {
+  const shares = wants.map(() => 0)
+  let remaining = Math.max(total, 0)
+  let open = wants.map((_, i) => i)
+  while (open.length > 0 && remaining > 0) {
+    const each = Math.floor(remaining / open.length)
+    const satisfied = open.filter(i => wants[i] <= each)
+    if (satisfied.length === 0) {
+      for (const i of open) shares[i] = each
+      break
+    }
+    for (const i of satisfied) {
+      shares[i] = wants[i]
+      remaining -= wants[i]
+    }
+    open = open.filter(i => !satisfied.includes(i))
+  }
+  return shares
+}
+
+/** The first whole lines of `lines` that fit in `room`, joined. */
+function headOf(lines: string[], room: number): string {
+  const kept: string[] = []
+  let used = 0
+  for (const line of lines) {
+    const cost = line.length + (kept.length > 0 ? 1 : 0)
+    if (used + cost > room) break
+    kept.push(line)
+    used += cost
+  }
+  return kept.join("\n").trimEnd()
+}
 
 /**
  * The lessons document, within its allowance.
  *
  * It used to go in whole whatever its size. On a window with room it still
  * does — the allowance there is above what the rewrite lets the document
- * reach. On a small one it is cut at a line break, from the end, and says so:
- * the model is told to read lessons first, so it should know when it has been
- * given only the first part. Null when not even a line would fit.
+ * reach. On a small one it is cut, and says so: the model is told to read
+ * lessons first, so it should know when it has not been given all of them.
+ *
+ * Cut by section, not from the end. The document is four sections in a
+ * fixed order, so cutting from the end lost "Recurring Patterns &
+ * Constraints" — the hard requirements — whole, while keeping every
+ * preference. Each section keeps its heading and its first lines; short
+ * sections stay whole and the long ones give up the same amount. Null when
+ * not even a line would fit.
  */
 export function fitLessons(lessons: string, maxChars: number): string | null {
   const text = lessons.trim()
@@ -231,12 +304,29 @@ export function fitLessons(lessons: string, maxChars: number): string | null {
 
   const room = maxChars - LESSONS_CUT_NOTE.length - 1
   if (room <= 0) return null
-  const head = text.slice(0, room)
-  const lastBreak = head.lastIndexOf("\n")
-  // A document with no line break inside the allowance is cut mid-line
-  // rather than dropped: part of the first lesson beats none of them.
-  const kept = (lastBreak > 0 ? head.slice(0, lastBreak) : head).trimEnd()
-  return kept ? `${kept}\n${LESSONS_CUT_NOTE}` : null
+
+  const sections = splitSections(text)
+  // What the headings and the joins between sections cost regardless. Each
+  // join is two characters, a blank line: counted as one, the result ran
+  // past the allowance by up to sections − 1.
+  const fixed = sections.reduce(
+    (sum, s) => sum + (s.heading ? s.heading.length + 1 : 0),
+    2 * (sections.length - 1)
+  )
+  const bodies = sections.map(s => s.lines.join("\n").trimEnd())
+  const shares = shareOut(
+    bodies.map(b => b.length),
+    room - fixed
+  )
+  const kept = sections.map((s, i) => {
+    const body = headOf(s.lines, shares[i])
+    return s.heading ? (body ? `${s.heading}\n${body}` : s.heading) : body
+  })
+  const anyBody = sections.some((s, i) => headOf(s.lines, shares[i]).length > 0)
+  if (!anyBody) return null
+
+  const out = kept.filter(Boolean).join("\n\n")
+  return `${out}\n${LESSONS_CUT_NOTE}`
 }
 
 /**
