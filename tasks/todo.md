@@ -174,7 +174,7 @@ Out of scope (follow-ups): theme toggle placement, /help page, landing/login red
 - [x] `/api/timeline/activity` pages through all rows (the first version returned exactly 1,000 of 1,338: PostgREST's default cap). `/api/timeline` gets a stable secondary order by id; the hook never appends a row twice.
 - [x] Palette validated in both modes (dataviz skill): dark Claude and ChatGPT a step darker, a chart-only teal in light mode.
 - [x] Gate: type-check, jest (820), build. Checked at 1200px and 375px.
-- [ ] `components/timeline/timeline-sheet.tsx` is now unused; delete with Brais's OK.
+- [x] `components/timeline/timeline-sheet.tsx` deleted with Brais's OK.
 - [ ] The chart counts memory rows; the list counts conversations (a bulk row holds several). Both are labelled as such.
 
 ## Budget review notes (2026-10-01, branch fix/budget-token-ratio-and-lessons)
@@ -190,6 +190,6 @@ Out of scope (follow-ups): theme toggle placement, /help page, landing/login red
 - [x] Readers: baseline personal query includes `claude_code`; report, timeline and backup take the source from the column; empty-state chips and the timeline chart get a Claude Code series (chart tone validated in both modes).
 - [x] `scripts/backfill-claude-code-source.mjs` for sessions only identifiable by the sync's row ids (57) or project-name titles (67); report-only by default.
 - [x] Gate: type-check, jest (837), build; SQL tests on a disposable Postgres.
-- [ ] Apply the migration to production (`npm run db-push`) — needs Brais's OK. Migration before the deploy: old code with the new schema only misses backfilled rows for the minutes of the build; new code with the old schema would reject cloud session posts.
-- [ ] Run the backfill script with `--apply` (and `--by-title` if Brais agrees with the list).
+- [x] Migration applied to production by Brais, then PR #66 merged (`8de7822`) and deployed: 166 rows moved. Migration before the deploy: old code with the new schema only misses backfilled rows for the minutes of the build; new code with the old schema would reject cloud session posts.
+- [x] Backfill run by Brais with `--apply --by-title`: 123 rows moved. Production now has 289 Claude Code, 456 Claude, 554 Perplexity, 40 Chat rows (1,339 total, unchanged).
 - [ ] Copilot sessions (`### [date] name [Copilot]`, about 60 rows) are still stored as `claude`. Not touched.
