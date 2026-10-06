@@ -6,19 +6,28 @@
  *
  * What it does:
  *  1. Reads credentials from .env.local
- *  2. Gets your Supabase user ID (first registered user via service role)
+ *  2. Finds your Supabase user: the one CHATMEMO_OWNER_EMAIL names, or the
+ *     only one there is
  *  3. Writes CHATMEMO_IMPORT_USER_ID to .env.local (used by the API endpoint)
- *  4. Writes ~/.chatmemo/config.json (used by the hook script)
- *  5. Registers the Stop hook in ~/.claude/settings.json
- *  6. Prints the bookmarklet URL — drag it to your bookmarks bar
+ *  4. Writes ~/.chatmemo/config.json (the import token and the deployment
+ *     URL — no database or OpenRouter key leaves .env.local)
+ *  5. Registers the Stop and SessionEnd hooks in ~/.claude/settings.json
+ *  6. Writes the bookmarklets to ~/.chatmemo/bookmarklets.txt
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs"
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync
+} from "fs"
 import { homedir } from "os"
 import { join, resolve } from "path"
 
 const CONFIG_DIR = join(homedir(), ".chatmemo")
 const CONFIG_FILE = join(CONFIG_DIR, "config.json")
+const BOOKMARKLETS_FILE = join(CONFIG_DIR, "bookmarklets.txt")
 const CLAUDE_SETTINGS = join(homedir(), ".claude", "settings.json")
 const HOOK_SCRIPT = resolve("scripts/sync-to-chatmemo.mjs")
 const ENV_PATH = resolve(".env.local")
@@ -28,7 +37,9 @@ const ENV_PATH = resolve(".env.local")
 // ---------------------------------------------------------------------------
 
 if (!existsSync(ENV_PATH)) {
-  console.error("✗ .env.local not found. Run this script from the chatmemo project root.")
+  console.error(
+    "✗ .env.local not found. Run this script from the chatmemo project root."
+  )
   process.exit(1)
 }
 
@@ -44,67 +55,102 @@ function readEnv(file) {
 const env = readEnv(ENV_PATH)
 const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL
 const serviceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY
-const openrouterKey = env.OPENROUTER_API_KEY
 const importToken = env.CHATMEMO_IMPORT_TOKEN
+const ownerEmail = (env.CHATMEMO_OWNER_EMAIL || "").toLowerCase()
 
-// Where the bookmarklet POSTs. ChatMemo runs on Vercel in production; override
-// with CHATMEMO_PUBLIC_URL in .env.local for a different deployment or local
-// dev (e.g. http://localhost:3000).
+// Where the scripts and the bookmarklets POST. ChatMemo runs on Vercel in
+// production; override with CHATMEMO_PUBLIC_URL in .env.local for a different
+// deployment. The token travels in a header, so only https is accepted.
 const CHATMEMO_URL =
   env.CHATMEMO_PUBLIC_URL || "https://chatmemo-one.vercel.app"
 
-if (!supabaseUrl || !serviceRoleKey || serviceRoleKey === "your-service-role-key") {
-  console.error("✗ Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env.local")
-  process.exit(1)
-}
-if (!openrouterKey) {
-  console.error("✗ Missing OPENROUTER_API_KEY in .env.local")
+if (
+  !supabaseUrl ||
+  !serviceRoleKey ||
+  serviceRoleKey === "your-service-role-key"
+) {
+  console.error(
+    "✗ Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env.local"
+  )
   process.exit(1)
 }
 if (!importToken) {
   console.error("✗ Missing CHATMEMO_IMPORT_TOKEN in .env.local")
-  console.error("  Add this line to .env.local:  CHATMEMO_IMPORT_TOKEN=<random-hex-token>")
-  console.error("  Generate one with: node -e \"require('crypto').randomBytes(32, (_,b)=>console.log(b.toString('hex')))\"")
+  console.error(
+    "  Add this line to .env.local:  CHATMEMO_IMPORT_TOKEN=<random-hex-token>"
+  )
+  console.error(
+    "  Generate one with: node -e \"require('crypto').randomBytes(32, (_,b)=>console.log(b.toString('hex')))\""
+  )
+  process.exit(1)
+}
+if (!CHATMEMO_URL.startsWith("https://")) {
+  console.error(`✗ CHATMEMO_PUBLIC_URL must be https — got ${CHATMEMO_URL}`)
   process.exit(1)
 }
 
 console.log("✓ Credentials read from .env.local")
 
 // ---------------------------------------------------------------------------
-// 2. Get Supabase user ID
+// 2. Find the owner
+//
+// Every token resolves to this one user, so it has to be the right one. With
+// several accounts in the project, "the first user the API lists" is whoever
+// signed up last; the email in .env.local is what decides.
 // ---------------------------------------------------------------------------
 
-console.log("  Fetching user ID from Supabase...")
+console.log("  Looking up your user in Supabase...")
+
+async function listUsers() {
+  const users = []
+  for (let page = 1; page <= 20; page++) {
+    const res = await fetch(
+      `${supabaseUrl}/auth/v1/admin/users?page=${page}&per_page=50`,
+      {
+        headers: {
+          apikey: serviceRoleKey,
+          Authorization: `Bearer ${serviceRoleKey}`
+        },
+        signal: AbortSignal.timeout(10_000)
+      }
+    )
+    if (!res.ok)
+      throw new Error(`Supabase auth request failed: HTTP ${res.status}`)
+    const data = await res.json()
+    const batch = Array.isArray(data) ? data : data.users ?? []
+    users.push(...batch)
+    if (batch.length < 50) break
+  }
+  return users
+}
 
 let userId
+let userEmail
 try {
-  const res = await fetch(`${supabaseUrl}/auth/v1/admin/users?page=1&per_page=1`, {
-    headers: {
-      apikey: serviceRoleKey,
-      Authorization: `Bearer ${serviceRoleKey}`
-    },
-    signal: AbortSignal.timeout(10_000)
-  })
-
-  if (!res.ok) {
-    console.error(`✗ Supabase auth request failed: HTTP ${res.status}`)
-    process.exit(1)
-  }
-
-  const data = await res.json()
-  const users = data.users ?? data // some versions return array directly
-  userId = Array.isArray(users) ? users[0]?.id : null
-
-  if (!userId) {
+  const users = await listUsers()
+  if (users.length === 0) {
     console.error("✗ No users found. Have you signed up in ChatMemo yet?")
     process.exit(1)
   }
+  const candidates = ownerEmail
+    ? users.filter(u => (u.email || "").toLowerCase() === ownerEmail)
+    : users
+  if (candidates.length !== 1) {
+    console.error(
+      ownerEmail
+        ? `✗ ${candidates.length} users match CHATMEMO_OWNER_EMAIL=${ownerEmail}`
+        : `✗ ${users.length} users in the project — set CHATMEMO_OWNER_EMAIL in .env.local to say which one is you`
+    )
+    process.exit(1)
+  }
+  userId = candidates[0].id
+  userEmail = candidates[0].email
 } catch (err) {
   console.error("✗ Failed to reach Supabase:", err.message)
   process.exit(1)
 }
 
-console.log(`✓ User ID: ${userId}`)
+console.log(`✓ User: ${userEmail} (${userId})`)
 
 // ---------------------------------------------------------------------------
 // 3. Write CHATMEMO_IMPORT_USER_ID to .env.local
@@ -126,26 +172,44 @@ if (envContent.includes("CHATMEMO_IMPORT_USER_ID=")) {
   )
 }
 
-writeFileSync(ENV_PATH, envContent)
-console.log("✓ Wrote CHATMEMO_IMPORT_USER_ID to .env.local")
+writeFileSync(ENV_PATH, envContent, { mode: 0o600 })
+chmodSync(ENV_PATH, 0o600)
+console.log("✓ Wrote CHATMEMO_IMPORT_USER_ID to .env.local (mode 600)")
 
 // ---------------------------------------------------------------------------
 // 4. Write ~/.chatmemo/config.json
+//
+// Only what the scripts need to post: the import token and where to. The
+// previous config carried the service-role key, which bypasses row security
+// for the whole database, in a world-readable file; `excludeProjects`, if
+// present, is kept.
 // ---------------------------------------------------------------------------
 
-if (!existsSync(CONFIG_DIR)) mkdirSync(CONFIG_DIR, { recursive: true })
+mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 })
+chmodSync(CONFIG_DIR, 0o700)
+
+let excludeProjects = []
+if (existsSync(CONFIG_FILE)) {
+  try {
+    const previous = JSON.parse(readFileSync(CONFIG_FILE, "utf8"))
+    if (Array.isArray(previous.excludeProjects)) {
+      excludeProjects = previous.excludeProjects
+    }
+  } catch {
+    // replaced below
+  }
+}
 
 const config = {
-  supabaseUrl,
-  serviceRoleKey,
-  openrouterKey,
-  userId,
   chatmemoUrl: CHATMEMO_URL,
+  importToken,
+  excludeProjects,
   projectDir: resolve(".")
 }
 
-writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2))
-console.log(`✓ Wrote ${CONFIG_FILE}`)
+writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), { mode: 0o600 })
+chmodSync(CONFIG_FILE, 0o600)
+console.log(`✓ Wrote ${CONFIG_FILE} (mode 600, no database key)`)
 
 // ---------------------------------------------------------------------------
 // 5. Register the sync hook in ~/.claude/settings.json
@@ -159,10 +223,14 @@ let claudeSettings = {}
 if (existsSync(CLAUDE_SETTINGS)) {
   try {
     claudeSettings = JSON.parse(readFileSync(CLAUDE_SETTINGS, "utf8"))
-  } catch {
-    console.warn(
-      "  Warning: could not parse ~/.claude/settings.json — will overwrite hooks section"
+  } catch (e) {
+    // Writing over a file that did not parse would drop everything else in
+    // it — permissions, other hooks — for a stray comma.
+    console.error(`✗ Could not parse ${CLAUDE_SETTINGS}: ${e.message}`)
+    console.error(
+      "  Fix the file and run setup:sync again; nothing was changed."
     )
+    process.exit(1)
   }
 }
 
@@ -194,7 +262,7 @@ if (settingsChanged) {
 }
 
 // ---------------------------------------------------------------------------
-// 6. Generate bookmarklet
+// 6. Generate bookmarklets
 // ---------------------------------------------------------------------------
 
 // claude.ai DOM selectors (updated 2026-05):
@@ -321,32 +389,49 @@ fetch(CHATMEMO+'/api/import/conversation',{
 const geminiBookmarkletUrl =
   "javascript:" + encodeURIComponent(geminiBookmarkletCode)
 
-function printBookmarklet(label, sites, url) {
-  console.log("\n" + "─".repeat(60))
-  console.log(`📌  BOOKMARKLET — ${label}`)
-  console.log(`    Use on: ${sites}`)
-  console.log("─".repeat(60))
-  console.log("1. Copy the URL below")
-  console.log("2. In your browser, show the bookmarks bar (⌘+Shift+B)")
-  console.log("3. Right-click the bar → Add page... → paste as URL")
-  console.log(`   Name it: ${label}`)
-  console.log("─".repeat(60))
-  console.log(url)
-  console.log("─".repeat(60))
-}
-
-printBookmarklet("Save to ChatMemo (Claude)", "claude.ai", bookmarkletUrl)
-printBookmarklet(
-  "Save to ChatMemo (Gemini)",
-  "gemini.google.com",
-  geminiBookmarkletUrl
-)
+// The bookmarklets carry the token. They go to a file only this user can
+// read, not to the terminal, where they would sit in the scrollback and in
+// any transcript of this session.
+const bookmarklets = [
+  "ChatMemo bookmarklets — each line below is one bookmark's URL.",
+  "They contain your import token: keep this file to yourself.",
+  "Browser: show the bookmarks bar (⌘+Shift+B), right-click it → Add page…,",
+  "paste the URL, and name it as given.",
+  "",
+  "Save to ChatMemo (Claude) — use on claude.ai:",
+  bookmarkletUrl,
+  "",
+  "Save to ChatMemo (Gemini) — use on gemini.google.com:",
+  geminiBookmarkletUrl,
+  ""
+].join("\n")
+writeFileSync(BOOKMARKLETS_FILE, bookmarklets, { mode: 0o600 })
+chmodSync(BOOKMARKLETS_FILE, 0o600)
+console.log(`✓ Wrote the two bookmarklets to ${BOOKMARKLETS_FILE} (mode 600)`)
 
 console.log("\n✅  Setup complete!")
 console.log("\nHow it works:")
-console.log("  • Claude Code sessions → synced automatically as they grow and when they end")
-console.log("    (from 3 turns, again every 5, and at session end; each replaces the last)")
-console.log("    Outcomes and failures: ~/.chatmemo/sync.log")
-console.log("  • Claude.ai browser → click the Claude bookmarklet on a conversation")
-console.log("  • Gemini browser → click the Gemini bookmarklet on a conversation")
+console.log(
+  "  • Claude Code sessions → posted to ChatMemo as they grow and when they end"
+)
+console.log(
+  "    (from 3 turns, again every 5, and at session end; each replaces the last)"
+)
+console.log(
+  "    Command output and system reminders are dropped and anything shaped"
+)
+console.log(
+  "    like a credential is replaced before the post. Outcomes: ~/.chatmemo/sync.log"
+)
+console.log(
+  "  • To keep a project out: a .chatmemo-nosync file in its directory, or"
+)
+console.log(`    its path in "excludeProjects" in ${CONFIG_FILE}`)
+console.log(
+  "  • Claude.ai / Gemini browser → the bookmarklets in " + BOOKMARKLETS_FILE
+)
 console.log("    (ChatMemo does NOT need to be open — uses Bearer token auth)")
+console.log(
+  "  • Claude Code cloud sessions → see docs/ADMIN_GUIDE.md; give the cloud"
+)
+console.log("    environment CHATMEMO_CLOUD_IMPORT_TOKEN, not this token")

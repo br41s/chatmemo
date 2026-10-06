@@ -24,7 +24,35 @@
  *   node scripts/backfill-claude-code-source.mjs --apply --by-title   # 1 and 2
  */
 
-import { loadConfig, loadSessions } from "./claude-sessions-shared.mjs"
+import { existsSync, readFileSync } from "fs"
+import { resolve } from "path"
+import { loadSessions } from "./claude-sessions-shared.mjs"
+
+// The service-role key is not kept on the laptop any more; this one-off reads
+// it from the project's .env.local, together with the owner's id, and holds
+// it only while it runs.
+function loadConfig() {
+  const envPath = resolve(".env.local")
+  if (!existsSync(envPath)) {
+    console.error("✗ .env.local not found. Run from the chatmemo project root.")
+    process.exit(1)
+  }
+  const env = {}
+  for (const line of readFileSync(envPath, "utf8").split("\n")) {
+    const match = line.match(/^([^#=\s]+)\s*=\s*(.*)$/)
+    if (match) env[match[1]] = match[2].trim()
+  }
+  const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY
+  const userId = env.CHATMEMO_IMPORT_USER_ID
+  if (!supabaseUrl || !serviceRoleKey || !userId) {
+    console.error(
+      "✗ .env.local needs NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY and CHATMEMO_IMPORT_USER_ID"
+    )
+    process.exit(1)
+  }
+  return { supabaseUrl, serviceRoleKey, userId }
+}
 
 const APPLY = process.argv.includes("--apply")
 const BY_TITLE = process.argv.includes("--by-title")

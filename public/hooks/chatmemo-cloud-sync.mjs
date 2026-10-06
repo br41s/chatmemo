@@ -8,13 +8,15 @@
  * import endpoint, which summarises it and stores it. The container needs no
  * database or OpenRouter credentials — only:
  *
- *   CHATMEMO_IMPORT_TOKEN  the Bearer token from ChatMemo's .env.local
+ *   CHATMEMO_IMPORT_TOKEN  the cloud import token (CHATMEMO_CLOUD_IMPORT_TOKEN
+ *                          in ChatMemo's .env.local; the general token works
+ *                          too, but a leak of it then reaches more)
  *   CHATMEMO_URL           optional, defaults to https://chatmemo-one.vercel.app
  *
  * Installed by the cloud environment's setup script (docs/ADMIN_GUIDE.md,
  * "Claude Code cloud sessions"), which downloads this file from the deployed
- * app — it is served from public/ for exactly that — and registers it for the
- * Stop and SessionEnd hooks.
+ * app — it is served from public/ for exactly that — checks its hash against
+ * the one in the guide, and registers it for the Stop and SessionEnd hooks.
  *
  * Behaviour mirrors the laptop sync: first post once the session has 3 user
  * messages, again every 5 more, and once more at SessionEnd. Each post carries
@@ -22,8 +24,16 @@
  * previous row. A container can be reclaimed without SessionEnd firing; the
  * Stop posts are what survive that.
  *
- * Zero dependencies. Never blocks Claude Code: the work runs in a detached
- * child, and every outcome is logged to ~/.chatmemo-cloud/sync.log.
+ * What leaves the container is user and assistant text only, after two
+ * passes: blocks Claude Code injects into user turns (command output, system
+ * reminders) are dropped, and anything shaped like a credential is replaced
+ * before the post. A `.chatmemo-nosync` file in the session's working
+ * directory keeps that session out altogether.
+ *
+ * Zero dependencies, and the laptop scripts import the pure helpers below so
+ * both paths clean a transcript the same way. Never blocks Claude Code: the
+ * work runs in a detached child, and every outcome is logged to
+ * ~/.chatmemo-cloud/sync.log.
  */
 
 import { spawn } from "child_process"
@@ -48,17 +58,79 @@ const LOG_FILE = join(STATE_DIR, "sync.log")
 export const MIN_USER_MESSAGES = 3
 export const RESYNC_GROWTH = 5
 
+/** A file with this name in the working directory opts the session out. */
+export const NOSYNC_MARKER = ".chatmemo-nosync"
+
 const MAX_MESSAGES = 200
 const MAX_MESSAGE_CHARS = 4_000
 // Most recent part only: the endpoint summarises within one function call.
 const MAX_TOTAL_CHARS = 80_000
 
 // ---------------------------------------------------------------------------
+// Cleaning a transcript (exported: the laptop scripts use the same passes)
+// ---------------------------------------------------------------------------
+
+// Claude Code puts things into a user turn that the person never typed: the
+// output of a `!` command, a local slash command's output, and the system
+// reminders that carry CLAUDE.md and hook context. None of it is the
+// conversation, and command output is where `cat .env` ends up.
+const INJECTED_BLOCK_RE =
+  /<(bash-stdout|bash-stderr|local-command-stdout|local-command-stderr|system-reminder)(?:\s[^>]*)?>[\s\S]*?<\/\1>/g
+const UNCLOSED_INJECTED_BLOCK_RE =
+  /<(bash-stdout|bash-stderr|local-command-stdout|local-command-stderr|system-reminder)(?:\s[^>]*)?>[\s\S]*$/
+
+/** `text` without the blocks Claude Code injected into it. */
+export function stripInjectedBlocks(text) {
+  return text
+    .replace(INJECTED_BLOCK_RE, "")
+    .replace(UNCLOSED_INJECTED_BLOCK_RE, "")
+}
+
+// Shapes of credentials, replaced wherever they appear. The summary this text
+// becomes is injected into every later chat and sent to every provider the
+// user picks; a key pasted once would travel for good.
+const REDACTIONS = [
+  [
+    /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+    "[redacted private key]"
+  ],
+  [/\beyJ[\w-]{8,}\.[\w-]{8,}\.[\w-]{8,}/g, "[redacted jwt]"],
+  // scheme://user:password@host
+  [/\b([a-z][a-z0-9+.-]*:\/\/)([^\s/:@]+):([^\s@]+)@/gi, "$1$2:[redacted]@"],
+  [/\bsk-[\w-]{20,}/g, "[redacted token]"],
+  [/\bAKIA[0-9A-Z]{16}\b/g, "[redacted aws key]"],
+  [/\bgh[pousr]_[A-Za-z0-9]{30,}\b/g, "[redacted github token]"],
+  [/\bxox[baprs]-[\w-]{10,}/g, "[redacted slack token]"],
+  [/\bAIza[\w-]{35}\b/g, "[redacted google key]"],
+  [/\bsb(?:p|_secret|_publishable)_[\w-]{20,}/g, "[redacted supabase key]"],
+  // NAME=value and name: value, for names that say what they hold. The name
+  // stays so the summary can still say which setting was discussed.
+  [
+    /\b([\w-]*(?:api[_-]?key|secret|token|password|passwd|pwd)[\w-]*)(\s*[=:]\s*["']?)([^\s"'`]{12,})/gi,
+    "$1$2[redacted]"
+  ]
+]
+
+/** `text` with anything shaped like a credential replaced. */
+export function redact(text) {
+  let out = text
+  for (const [pattern, replacement] of REDACTIONS) {
+    out = out.replace(pattern, replacement)
+  }
+  return out
+}
+
+/** Both passes, in the order they are meant to run. */
+export function cleanText(text) {
+  return redact(stripInjectedBlocks(text)).trim()
+}
+
+// ---------------------------------------------------------------------------
 // Pure helpers (exported for tests)
 // ---------------------------------------------------------------------------
 
 function textOf(content) {
-  if (typeof content === "string") return content.trim()
+  if (typeof content === "string") return content
   if (Array.isArray(content)) {
     return content
       .filter(b => b?.type === "text")
@@ -77,7 +149,7 @@ export function parseTranscript(jsonl) {
     try {
       const entry = JSON.parse(line)
       if (entry.type !== "user" && entry.type !== "assistant") continue
-      const text = textOf(entry.message?.content)
+      const text = cleanText(textOf(entry.message?.content))
       if (text.length < 15) continue
       messages.push({
         role: entry.type,
@@ -99,11 +171,11 @@ export function shouldSync(syncedUserMessages, userMessages, final) {
   return final ? grown > 0 : grown >= RESYNC_GROWTH
 }
 
-/** The request body for /api/import/conversation. */
-export function buildPayload({ sessionId, cwd, messages }) {
-  const project = basename(cwd || "") || "Claude Code"
-
-  // Newest first until the budget runs out, then back into order.
+/**
+ * The most recent messages that fit one post: newest first until the budget
+ * runs out, then back into order. Each message is cut to its own cap.
+ */
+export function capMessages(messages) {
   const kept = []
   let total = 0
   for (const m of messages.slice(-MAX_MESSAGES).reverse()) {
@@ -115,22 +187,26 @@ export function buildPayload({ sessionId, cwd, messages }) {
     kept.push({ role: m.role, text })
     total += text.length
   }
-  kept.reverse()
+  return kept.reverse()
+}
 
-  // Dated by the last message, like the laptop sync: the day the work happened.
-  let date = new Date().toISOString().slice(0, 10)
+/** The UTC date of the last message that carries a time, else today. */
+export function lastMessageDate(messages, fallback = new Date()) {
   for (let i = messages.length - 1; i >= 0; i--) {
     const at = Date.parse(messages[i].at ?? "")
-    if (!Number.isNaN(at)) {
-      date = new Date(at).toISOString().slice(0, 10)
-      break
-    }
+    if (!Number.isNaN(at)) return new Date(at).toISOString().slice(0, 10)
   }
+  return fallback.toISOString().slice(0, 10)
+}
 
+/** The request body for /api/import/conversation. */
+export function buildPayload({ sessionId, cwd, messages }) {
+  const project = basename(cwd || "") || "Claude Code"
   return {
     title: `[Claude Code cloud] ${project}`,
-    date,
-    messages: kept,
+    // Dated by the last message, like the laptop sync: the day the work happened.
+    date: lastMessageDate(messages),
+    messages: capMessages(messages),
     sessionKey: `claude-code:${sessionId}`
   }
 }
@@ -150,11 +226,15 @@ export function workerEnv(env) {
 // State and log
 // ---------------------------------------------------------------------------
 
+function ensureStateDir() {
+  mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
+}
+
 function log(message) {
   try {
-    mkdirSync(STATE_DIR, { recursive: true })
+    ensureStateDir()
     const ts = new Date().toISOString().slice(0, 19).replace("T", " ")
-    appendFileSync(LOG_FILE, `[${ts}] ${message}\n`)
+    appendFileSync(LOG_FILE, `[${ts}] ${message}\n`, { mode: 0o600 })
   } catch {
     // logging must never break the hook
   }
@@ -172,8 +252,8 @@ function loadState() {
 
 function saveState(state) {
   try {
-    mkdirSync(STATE_DIR, { recursive: true })
-    writeFileSync(STATE_FILE, JSON.stringify(state, null, 2))
+    ensureStateDir()
+    writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), { mode: 0o600 })
   } catch {
     // non-fatal: the next post replaces by sessionKey anyway
   }
@@ -192,7 +272,7 @@ function saveState(state) {
 const LOCK_STALE_MS = 5 * 60 * 1000
 
 async function withLock(sessionId, fn) {
-  mkdirSync(STATE_DIR, { recursive: true })
+  ensureStateDir()
   const lock = join(STATE_DIR, `${sessionId.replace(/[^\w.-]/g, "_")}.lock`)
   const deadline = Date.now() + 150_000
 
@@ -245,6 +325,16 @@ async function post({ transcript_path, session_id, cwd, event }) {
   const base = (
     process.env.CHATMEMO_URL || "https://chatmemo-one.vercel.app"
   ).replace(/\/+$/, "")
+  // The token travels in a header; never over plain HTTP.
+  if (!base.startsWith("https://")) {
+    log(`${session_id}: CHATMEMO_URL must be https — not posting`)
+    return
+  }
+
+  if (cwd && existsSync(join(cwd, NOSYNC_MARKER))) {
+    log(`${session_id}: ${NOSYNC_MARKER} present in ${cwd} — not synced`)
+    return
+  }
 
   let messages
   try {
@@ -274,14 +364,16 @@ async function post({ transcript_path, session_id, cwd, event }) {
     })
     const body = await res.text().catch(() => "")
     if (!res.ok) {
-      log(`${session_id}: HTTP ${res.status} ${body.slice(0, 300)}`)
+      log(`${session_id}: HTTP ${res.status} ${body.slice(0, 120)}`)
       return
     }
     // Recorded even when ChatMemo judged it not worth remembering, so a short
     // session is not re-posted every turn; growth still re-posts it.
     state[session_id] = userMessages
     saveState(state)
-    log(`${session_id}: posted ${userMessages} user msgs — ${body.slice(0, 200)}`)
+    log(
+      `${session_id}: posted ${userMessages} user msgs — ${body.slice(0, 120)}`
+    )
   } catch (e) {
     log(`${session_id}: post failed — ${e?.message || e}`)
   }
@@ -322,7 +414,8 @@ async function main() {
   ).unref()
 }
 
-// Run only as a script, so tests can import the helpers above.
+// Run only as a script, so tests and the laptop scripts can import the
+// helpers above.
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   main()
     .catch(e => log(`hook error: ${e?.message || e}`))

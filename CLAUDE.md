@@ -33,10 +33,18 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
   `[source:claude]` in their content; for those the column is the truth, so
   readers that name a source (report, timeline, backup) take it from the
   column and not from the text.
-  Claude Code **cloud** sessions never reach the laptop sync; a hook served
-  from `public/hooks/chatmemo-cloud-sync.mjs` posts them from the container to
-  `/api/import/conversation` with a `sessionKey`, and `external_id` lets each
-  post replace the session's previous row.
+  Every session writer — the laptop hook, watcher and importers, and the
+  Claude Code **cloud** hook served from `public/hooks/chatmemo-cloud-sync.mjs`
+  — posts to `/api/import/conversation` with an import token and a
+  `sessionKey`; `external_id` lets each post replace the session's previous
+  row. The laptop holds no database or OpenRouter key: `~/.chatmemo/config.json`
+  carries the token, the deployment URL and `excludeProjects`, mode 600. The
+  cloud hook exports the transcript-cleaning passes (`cleanText`: injected
+  blocks dropped, credentials redacted) and the laptop scripts import them, so
+  every path cleans the same way; a `.chatmemo-nosync` file opts a directory
+  out. Tokens are scoped in `lib/server/import-token.ts`: the cloud token may
+  only post `claude-code:` keys. The admin guide pins the served hook's sha256
+  and `__tests__/scripts/cloud-hook-pin.test.ts` fails when they drift.
 - `lib/server/inject-memory.ts`: shared injector — every provider chat route,
   the tools route included, prepends the user's memory block to the system
   prompt. `custom` injects only for the user's own models (a shared model is

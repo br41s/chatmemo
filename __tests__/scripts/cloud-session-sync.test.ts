@@ -2,6 +2,7 @@
  * @jest-environment node
  */
 import {
+  cleanText,
   buildPayload,
   parseTranscript,
   shouldSync,
@@ -120,5 +121,56 @@ describe("workerEnv", () => {
 
   it("leaves a machine without a proxy alone", () => {
     expect(workerEnv({ PATH: "/bin" })).toEqual({ PATH: "/bin" })
+  })
+})
+
+describe("cleanText", () => {
+  it("drops the blocks Claude Code injects into a user turn", () => {
+    const text =
+      "<system-reminder>\nCLAUDE.md contents\n</system-reminder>fix the build<local-command-stdout>secret output</local-command-stdout>"
+    expect(cleanText(text)).toBe("fix the build")
+    expect(cleanText("tail <bash-stdout>never closed")).toBe("tail")
+  })
+
+  it("replaces anything shaped like a credential, keeping the name", () => {
+    const text = [
+      "set OPENROUTER_API_KEY=sk-or-v1-abcdefghijklmnopqrstuvwxyz012345",
+      "aws AKIAIOSFODNN7EXAMPLE",
+      "gh ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+      "db postgres://me:pa55word@host/db",
+      'password: "correct-horse-battery-staple"',
+      "jwt eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
+      "-----BEGIN RSA PRIVATE KEY-----\nMIIE\n-----END RSA PRIVATE KEY-----"
+    ].join("\n")
+    const out = cleanText(text)
+    expect(out).toContain("OPENROUTER_API_KEY=[redacted")
+    expect(out).not.toContain("sk-or-v1")
+    expect(out).toContain("[redacted aws key]")
+    expect(out).toContain("[redacted github token]")
+    expect(out).toContain("postgres://me:[redacted]@host/db")
+    expect(out).toContain('password: "[redacted]')
+    expect(out).toContain("[redacted jwt]")
+    expect(out).toContain("[redacted private key]")
+    expect(out).not.toContain("MIIE")
+  })
+
+  it("leaves ordinary text alone", () => {
+    const text =
+      "max_tokens: 700 and the token budget is 8k; the password field is required"
+    expect(cleanText(text)).toBe(text)
+  })
+})
+
+describe("parseTranscript cleaning", () => {
+  it("cleans every message before it is kept", () => {
+    const jsonl = JSON.stringify({
+      type: "user",
+      message: {
+        content:
+          "<system-reminder>x</system-reminder>deploy with ANTHROPIC_API_KEY=sk-ant-api03-abcdefghijklmnopqrstuvwxyz"
+      }
+    })
+    const [m] = parseTranscript(jsonl)
+    expect(m.text).toBe("deploy with ANTHROPIC_API_KEY=[redacted token]")
   })
 })

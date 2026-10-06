@@ -121,6 +121,10 @@ export async function callSummarizerWithMeta(
         temperature: 0.3,
         max_tokens: maxTokens + REASONING_HEADROOM_TOKENS,
         reasoning: { effort: REASONING_EFFORT },
+        // What is summarised is the user's own conversations and sessions.
+        // Only providers that keep nothing may see them (OpenRouter's
+        // provider routing; the model has such providers, checked 2026-10-06).
+        provider: { data_collection: "deny" as const },
         stream: false as const
       }
       const completion = await client.chat.completions.create(params)

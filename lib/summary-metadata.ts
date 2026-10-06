@@ -145,9 +145,11 @@ export function classifySummaryContent(content: string): SummaryMetadata {
   }
 }
 
-// The cloud hook's keys. Its rows are Claude Code sessions, and say so in a
-// tag, so the content alone classifies them — in a backup as in the table.
+// The session writers' keys. Their rows are Claude Code or Copilot sessions,
+// and say so in a tag, so the content alone classifies them — in a backup as
+// in the table.
 const CLAUDE_CODE_KEY_PREFIX = "claude-code:"
+const COPILOT_KEY_PREFIX = "copilot:"
 
 /**
  * The summary as it is stored.
@@ -165,9 +167,13 @@ export function storedSummary(
     /^(\s*###\s+)(\d{4}-\d{2}-\d{2})\b/m,
     "$1[$2]"
   )
-  return sessionKey?.startsWith(CLAUDE_CODE_KEY_PREFIX)
-    ? `[source:claude_code]\n${text}`
-    : text
+  if (sessionKey?.startsWith(CLAUDE_CODE_KEY_PREFIX)) {
+    return `[source:claude_code]\n${text}`
+  }
+  if (sessionKey?.startsWith(COPILOT_KEY_PREFIX)) {
+    return `[source:copilot]\n${text}`
+  }
+  return text
 }
 
 /**

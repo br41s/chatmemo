@@ -4,7 +4,7 @@
  *
  * Scans all VS Code workspaceStorage/{hash}/chatSessions/*.jsonl files, skips
  * sessions already imported (tracked in ~/.chatmemo/imported-sessions.json),
- * summarises each one via OpenRouter, and inserts it into Supabase.
+ * and posts each one to ChatMemo, which summarises it and stores it.
  *
  * Usage:
  *   node scripts/import-copilot-sessions.mjs
@@ -15,26 +15,21 @@
  */
 
 import {
-  MIN_USER_MESSAGES,
-  MAX_MESSAGES,
   loadConfig,
   loadSessions,
-  saveSessionsFile,
-  activityDate,
   sleep,
-  summarize,
-  insertSummary
+  syncSession
 } from "./claude-sessions-shared.mjs"
 import {
   findCopilotJSONLFiles,
   parseCopilotJSONL
 } from "./copilot-sessions-shared.mjs"
 
-/** Delay between API calls to avoid rate-limiting (ms). */
+/** Delay between posts, so the server's summariser is not rate-limited (ms). */
 const DELAY_BETWEEN_CALLS_MS = 8_000
 
 async function main() {
-  const { supabaseUrl, serviceRoleKey, openrouterKey, userId } = loadConfig()
+  const config = loadConfig()
   const sessions = loadSessions()
 
   const allFiles = findCopilotJSONLFiles()
@@ -52,74 +47,39 @@ async function main() {
     return
   }
 
-  let imported = 0
-  let skipped = 0
-  let failed = 0
+  const counts = { synced: 0, skipped: 0, excluded: 0, failed: 0, busy: 0 }
 
   for (let i = 0; i < toProcess.length; i++) {
-    const { path: filePath, sessionId, projectName, mtime } = toProcess[i]
-    const num = `[${i + 1}/${toProcess.length}]`
-
-    const messages = parseCopilotJSONL(filePath)
-    const userMessages = messages.filter(m => m.role === "user")
-
-    if (userMessages.length < MIN_USER_MESSAGES) {
-      console.log(
-        `${num} SKIP  ${sessionId.slice(0, 8)}… (${userMessages.length} user msgs — too short)`
-      )
-      sessions[`copilot:${sessionId}`] = "skipped:" + new Date().toISOString()
-      saveSessionsFile(sessions)
-      skipped++
-      continue
-    }
-
-    const capped = messages.slice(-MAX_MESSAGES)
-    const date = activityDate(messages, mtime)
-    const title = `[Copilot] ${projectName} — ${date}`
-
+    const {
+      path: filePath,
+      sessionId,
+      projectName,
+      projectPath,
+      mtime
+    } = toProcess[i]
     process.stdout.write(
-      `${num} ${sessionId.slice(0, 8)}… "${projectName}" (${userMessages.length} msgs) → `
+      `[${i + 1}/${toProcess.length}] ${sessionId.slice(0, 8)}… "${projectName}" → `
     )
 
-    const factsText = await summarize(openrouterKey, title, date, capped)
-    if (!factsText) {
-      console.log("SKIP (LLM failed — will retry next run)")
-      // Do NOT save — retry on next run
-      failed++
-    } else {
-      const summaryText = `[source:copilot]\n### [${date}] ${projectName} [Copilot]\n\n${factsText}`
-      const { ok, id, error } = await insertSummary(
-        supabaseUrl,
-        serviceRoleKey,
-        userId,
-        summaryText
-      )
-      if (ok) {
-        console.log("✓ imported")
-        // With its row id, a later sync of this session replaces the row.
-        sessions[`copilot:${sessionId}`] = id
-          ? {
-              rowId: id,
-              userMessages: userMessages.length,
-              mtime,
-              syncedAt: new Date().toISOString()
-            }
-          : new Date().toISOString()
-        imported++
-      } else {
-        console.log(`✗ insert failed — ${error}`)
-        failed++
-      }
-      saveSessionsFile(sessions)
-    }
+    const outcome = await syncSession({
+      config,
+      key: `copilot:${sessionId}`,
+      messages: parseCopilotJSONL(filePath),
+      mtime,
+      title: `[Copilot] ${projectName}`,
+      project: { cwd: projectPath },
+      final: true,
+      log: message => console.log(message)
+    })
+    counts[outcome] = (counts[outcome] ?? 0) + 1
 
-    if (i < toProcess.length - 1) {
+    if (outcome === "synced" && i < toProcess.length - 1) {
       await sleep(DELAY_BETWEEN_CALLS_MS)
     }
   }
 
   console.log(
-    `\nDone. Imported: ${imported} | Skipped: ${skipped} | Failed: ${failed}`
+    `\nDone. Synced: ${counts.synced} | Too short: ${counts.skipped} | Excluded: ${counts.excluded} | Failed (will retry): ${counts.failed}`
   )
 }
 

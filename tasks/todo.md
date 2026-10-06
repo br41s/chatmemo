@@ -214,3 +214,17 @@ Findings H2, M2, M3, M4 and part of L18 of `tasks/security-audit-2026-10-06.md`.
 - [x] Tests: neutralise-memory-tags, safe-image-src, safe-next-path, tools route foreign-tool case. Gate: type-check, jest (858), build.
 - [x] `/review` found two bypasses in the first cut, both closed: `/_next/image?url=…` got past the renderer and the CSP (fixed with an exact `remotePatterns` host and a refusal of the optimizer path), and `/%09/evil` got past the prefix checks (both helpers now compare the resolved URL's origin). Also: no CSP wildcard fallback, looser tag matching, `sw-cleanup.js` drops stale caches, start URL not cached. Gate: jest (863), build.
 - [ ] Not in this slice: `*_api_key` columns still travel to the browser in `initialData` (needed by the profile form); the rest of the CSP (script/connect) stays unset until a nonce path exists.
+
+## Security audit slice 2: sync least privilege (2026-10-06, branch fix/sync-least-privilege)
+
+Findings H1, H3, M1, M6, M7 and L7/L8 of `tasks/security-audit-2026-10-06.md`.
+
+- [x] Laptop scripts post to `/api/import/conversation` with the import token; `~/.chatmemo/config.json` holds the token, the URL and `excludeProjects` (mode 600) and no database or OpenRouter key. A session the old path wrote sends its `rowId` once as `replaceRowId`, and the server retires the row.
+- [x] One cleaning pass for every path, exported by the cloud hook and imported by the laptop scripts: injected blocks dropped (`bash-stdout`, `local-command-stdout`, `system-reminder`), credentials redacted (keys, JWTs, `user:password@`, `KEY=value`, private keys). `.chatmemo-nosync` marker and `excludeProjects` keep projects out.
+- [x] Tokens scoped (`lib/server/import-token.ts`): `CHATMEMO_CLOUD_IMPORT_TOKEN` may only post `claude-code:` keys. Route body capped at 1 MB and the summariser input at 200k chars; credentialed CORS dropped.
+- [x] Setup resolves the owner by `CHATMEMO_OWNER_EMAIL` or the single user, stops when `~/.claude/settings.json` does not parse, writes bookmarklets to a 600 file instead of the terminal, and chmods `.env.local` to 600.
+- [x] Summariser calls carry `provider.data_collection: "deny"` (checked live: the model routes under it).
+- [x] Admin guide pins the served hook's sha256; `cloud-hook-pin.test.ts` fails when hook and guide drift. Cloud hook refuses a non-https `CHATMEMO_URL`, logs 120 chars of a response at most, and writes its state 600.
+- [x] Gate: type-check, jest (886), build.
+- [ ] After merge, on the laptop: `npm run setup:sync` (the old config no longer works: the hook logs "run npm run setup:sync" until then). In the cloud environment: set `CHATMEMO_IMPORT_TOKEN` to the new cloud token and replace the setup script with the pinned version from the guide. On Vercel: add `CHATMEMO_CLOUD_IMPORT_TOKEN`.
+- [ ] Not in this slice: the bookmarklet still carries the general token into claude.ai's and Gemini's page context (a per-site token would need a third env var); the backup script (I5) and the error-message cleanup (L1) wait for slices 3 and 5.

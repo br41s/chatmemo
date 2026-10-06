@@ -3,7 +3,10 @@
  * Claude Code Stop / SessionEnd hook — syncs the current session to ChatMemo.
  *
  * Registered in ~/.claude/settings.json by scripts/chatmemo-hook-setup.mjs.
- * Reads config from ~/.chatmemo/config.json (created by setup script).
+ * Reads config from ~/.chatmemo/config.json (created by setup script): the
+ * import token and the deployment URL. The session is posted to ChatMemo,
+ * which summarises and stores it; nothing on the laptop can reach the
+ * database.
  *
  * Behaviour:
  *  - Stop fires after every turn; SessionEnd once when the session closes
@@ -17,12 +20,12 @@
  */
 
 import { spawn } from "child_process"
-import { existsSync, readFileSync, statSync } from "fs"
+import { statSync } from "fs"
 import { fileURLToPath } from "url"
 import {
-  CONFIG_FILE,
   appendSyncLog,
   parseJSONL,
+  readConfig,
   syncSession
 } from "./claude-sessions-shared.mjs"
 
@@ -71,20 +74,9 @@ async function main() {
 async function work({ transcript_path, session_id, cwd = "", event }) {
   if (!transcript_path || !session_id) return
 
-  if (!existsSync(CONFIG_FILE)) {
-    appendSyncLog(`${session_id}: no ${CONFIG_FILE} — run npm run setup:sync`)
-    return
-  }
-  let config
-  try {
-    config = JSON.parse(readFileSync(CONFIG_FILE, "utf8"))
-  } catch (e) {
-    appendSyncLog(`${session_id}: unreadable config.json — ${e.message}`)
-    return
-  }
-  const { supabaseUrl, serviceRoleKey, openrouterKey, userId } = config
-  if (!supabaseUrl || !serviceRoleKey || !openrouterKey || !userId) {
-    appendSyncLog(`${session_id}: config.json is missing required fields`)
+  const { config, error } = readConfig()
+  if (!config) {
+    appendSyncLog(`${session_id}: ${error}`)
     return
   }
 
@@ -105,7 +97,7 @@ async function work({ transcript_path, session_id, cwd = "", event }) {
     messages,
     mtime,
     title: `[Claude Code] ${projectName}`,
-    header: date => `[source:claude_code]\n### [${date}] ${projectName}`,
+    project: { cwd },
     final: event === "SessionEnd"
   })
 }

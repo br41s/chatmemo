@@ -123,7 +123,7 @@ async function poll(config) {
       label: slugToProjectName(f.projectSlug),
       parse: parseJSONL,
       title: name => `[Claude Code] ${name}`,
-      header: (date, name) => `[source:claude_code]\n### [${date}] ${name}`
+      project: { projectSlug: f.projectSlug }
     })),
     ...findCopilotJSONLFiles().map(f => ({
       ...f,
@@ -131,8 +131,7 @@ async function poll(config) {
       label: f.projectName,
       parse: parseCopilotJSONL,
       title: name => `[Copilot] ${name}`,
-      header: (date, name) =>
-        `[source:copilot]\n### [${date}] ${name} [Copilot]`
+      project: { cwd: f.projectPath }
     }))
   ].filter(
     f =>
@@ -151,7 +150,7 @@ async function poll(config) {
       messages: f.parse(f.path),
       mtime: f.mtime,
       title: f.title(f.label),
-      header: date => f.header(date, f.label),
+      project: f.project,
       // Idle this long counts as finished; a later resume re-syncs it.
       final: true,
       log: message => {
@@ -160,7 +159,7 @@ async function poll(config) {
       }
     })
 
-    if (outcome === "inserted" || outcome === "replaced") await sleep(2_000)
+    if (outcome === "synced") await sleep(2_000)
   }
 }
 
