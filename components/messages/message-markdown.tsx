@@ -2,6 +2,7 @@ import dynamic from "next/dynamic"
 import React, { FC } from "react"
 import remarkGfm from "remark-gfm"
 import remarkMath from "remark-math"
+import { isAllowedImageSrc } from "@/lib/safe-image-src"
 import { MessageMarkdownMemoized } from "./message-markdown-memoized"
 
 // Lazy-load the syntax highlighter (~200KB Prism bundle) — only needed when a
@@ -26,6 +27,24 @@ export const MessageMarkdown: FC<MessageMarkdownProps> = ({ content }) => {
           return <p className="mb-2 last:mb-0">{children}</p>
         },
         img({ node, ...props }) {
+          // An image loads with no click, so one the model was talked into
+          // emitting would carry whatever is in its URL to that host. Only
+          // our own sources render; any other is shown as text.
+          const pageOrigin =
+            typeof window === "undefined" ? undefined : window.location.origin
+          if (
+            !isAllowedImageSrc(
+              props.src,
+              pageOrigin,
+              process.env.NEXT_PUBLIC_SUPABASE_URL
+            )
+          ) {
+            return (
+              <span className="break-all text-sm text-muted-foreground">
+                [image not loaded: {String(props.src ?? "")}]
+              </span>
+            )
+          }
           return <img className="max-w-[67%]" alt="" {...props} />
         },
         code({ node, className, children, ...props }) {

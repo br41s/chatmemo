@@ -487,6 +487,31 @@ describe("POST /api/chat/tools", () => {
     }
   })
 
+  it("withholds memory when a selected tool belongs to someone else", async () => {
+    mockStoredTools([
+      {
+        id: TOOL_ID,
+        user_id: OTHER_USER_ID,
+        schema: { source: "database" },
+        custom_headers: {}
+      }
+    ])
+
+    const response = await POST(
+      createRequest({
+        chatSettings: { model: "gpt-4o" },
+        messages: [{ role: "user", content: "hi" }],
+        selectedToolIds: [TOOL_ID]
+      })
+    )
+
+    expect(response.status).toBe(200)
+    expect(mockInjectMemory).not.toHaveBeenCalled()
+    const [params] = completionsCreate.mock.calls[0]
+    expect(params.messages[0]).toEqual({ role: "user", content: "hi" })
+    expect(params.messages.some((m: any) => m.role === "system")).toBe(false)
+  })
+
   it("uses the method and body mode of the exact selected operation", async () => {
     mockStoredTools([
       {

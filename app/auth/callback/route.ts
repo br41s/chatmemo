@@ -1,3 +1,4 @@
+import { safeNextPath } from "@/lib/safe-next-path"
 import { createClient } from "@/lib/supabase/server"
 import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
@@ -13,9 +14,9 @@ export async function GET(request: Request) {
     await supabase.auth.exchangeCodeForSession(code)
   }
 
-  if (next) {
-    return NextResponse.redirect(requestUrl.origin + next)
-  } else {
-    return NextResponse.redirect(requestUrl.origin)
-  }
+  // `next` is only ever a path on this site. Concatenating it unchecked let
+  // `?next=@evil.example/login` produce a URL whose host is evil.example.
+  return NextResponse.redirect(
+    new URL(safeNextPath(next, requestUrl.origin), requestUrl.origin)
+  )
 }

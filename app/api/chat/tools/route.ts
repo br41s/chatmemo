@@ -202,13 +202,18 @@ export async function POST(request: Request) {
 
     // The same memory block every other chat route prepends. A retrieval
     // failure degrades to no memory inside the injector, never to a failed
-    // tool call.
-    const { messages: conversation, report } = await injectMemoryOpenAIFormat(
-      messages,
-      profile.user_id,
-      contextBudget
+    // tool call. Only when every selected tool is the caller's own: a shared
+    // tool is someone else's server, and its schema can tell the model what
+    // to send there — with memory in the context, that would be this user's
+    // private history (the custom route withholds it for the same reason).
+    const ownTools = selectedTools.every(
+      tool => tool.user_id === profile.user_id
     )
-    const memoryHeaders = memoryReportHeaders(report)
+    const memory = ownTools
+      ? await injectMemoryOpenAIFormat(messages, profile.user_id, contextBudget)
+      : null
+    const conversation = memory?.messages ?? messages
+    const memoryHeaders = memory ? memoryReportHeaders(memory.report) : {}
 
     const firstResponse = await openai.chat.completions.create(
       {
