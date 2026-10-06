@@ -29,12 +29,13 @@ import {
   appendSyncLog,
   findAllJSONLFiles,
   hasChangedSince,
-  loadConfig,
   loadSessions,
   parseJSONL,
+  readConfig,
   slugToProjectName,
   sleep,
-  syncSession
+  syncSession,
+  transcriptCwd
 } from "./claude-sessions-shared.mjs"
 import {
   findCopilotJSONLFiles,
@@ -86,15 +87,13 @@ async function main() {
     return
   }
 
-  const config = loadConfig()
-
   log("ChatMemo session watcher started")
   log(
     `Polling every ${POLL_INTERVAL_MS / 60000} min | Idle threshold: ${IDLE_THRESHOLD_MS / 60000} min`
   )
 
-  await poll(config)
-  setInterval(() => poll(config), POLL_INTERVAL_MS)
+  await poll()
+  setInterval(poll, POLL_INTERVAL_MS)
 
   process.on("SIGINT", () => {
     log("Watcher stopped (SIGINT)")
@@ -110,7 +109,16 @@ async function main() {
 // Poll cycle
 // ---------------------------------------------------------------------------
 
-async function poll(config) {
+async function poll() {
+  // Read every poll rather than once: a config from before the token-only
+  // sync, or one being rewritten by setup:sync, is a reason to wait, not to
+  // exit and have launchd restart the watcher every minute.
+  const { config, error } = readConfig()
+  if (!config) {
+    log(`Not syncing: ${error}`)
+    return
+  }
+
   const now = Date.now()
   const sessions = loadSessions()
 
@@ -123,7 +131,7 @@ async function poll(config) {
       label: slugToProjectName(f.projectSlug),
       parse: parseJSONL,
       title: name => `[Claude Code] ${name}`,
-      project: { projectSlug: f.projectSlug }
+      project: { cwd: transcriptCwd(f.path), projectSlug: f.projectSlug }
     })),
     ...findCopilotJSONLFiles().map(f => ({
       ...f,

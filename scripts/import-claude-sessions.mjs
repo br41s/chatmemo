@@ -22,7 +22,8 @@ import {
   parseJSONL,
   slugToProjectName,
   sleep,
-  syncSession
+  syncSession,
+  transcriptCwd
 } from "./claude-sessions-shared.mjs"
 
 /** Delay between posts, so the server's summariser is not rate-limited (ms). */
@@ -60,7 +61,7 @@ async function main() {
       messages: parseJSONL(filePath),
       mtime,
       title: `[Claude Code] ${projectName}`,
-      project: { projectSlug },
+      project: { cwd: transcriptCwd(filePath), projectSlug },
       final: true,
       log: message => console.log(message)
     })

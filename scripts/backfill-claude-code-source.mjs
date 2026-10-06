@@ -40,7 +40,7 @@ function loadConfig() {
   const env = {}
   for (const line of readFileSync(envPath, "utf8").split("\n")) {
     const match = line.match(/^([^#=\s]+)\s*=\s*(.*)$/)
-    if (match) env[match[1]] = match[2].trim()
+    if (match) env[match[1]] = match[2].trim().replace(/^(["'])(.*)\1$/, "$2")
   }
   const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL
   const serviceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY

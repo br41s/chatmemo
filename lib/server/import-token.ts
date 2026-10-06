@@ -54,6 +54,15 @@ export function resolveImportToken(
   return "invalid"
 }
 
+/**
+ * Whether a grant may name a row to retire. Only the general token: the
+ * cloud token lives where any command can read it, and must not be able to
+ * delete anything by id.
+ */
+export function grantAllowsRetire(grant: ImportTokenGrant): boolean {
+  return grant.keyPrefix === null
+}
+
 /** Whether a grant allows a post with this sessionKey. */
 export function grantAllows(
   grant: ImportTokenGrant,

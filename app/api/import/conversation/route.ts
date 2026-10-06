@@ -39,6 +39,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { ServerRuntime } from "next"
 import {
   grantAllows,
+  grantAllowsRetire,
   ImportTokenGrant,
   resolveImportToken
 } from "@/lib/server/import-token"
@@ -199,7 +200,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { title = "Untitled conversation", date, messages = [] } = body
+    const { title = "Untitled conversation", date } = body
+    const messages = Array.isArray(body.messages) ? body.messages : []
 
     const sessionKey =
       body.sessionKey === undefined ? null : String(body.sessionKey)
@@ -224,9 +226,17 @@ export async function POST(request: NextRequest) {
         { status: 400, headers }
       )
     }
+    if (replaceRowId !== null && !grantAllowsRetire(grant)) {
+      return NextResponse.json(
+        { success: false, reason: "This token may not retire rows" },
+        { status: 403, headers }
+      )
+    }
 
     const validMessages = messages.filter(
       m =>
+        m &&
+        typeof m === "object" &&
         (m.role === "user" || m.role === "assistant") &&
         typeof m.text === "string" &&
         m.text.trim().length > 0
@@ -287,12 +297,16 @@ export async function POST(request: NextRequest) {
       await insertSummary(supabase, userId, content)
     }
     if (replaceRowId) {
-      // The caller's own row only: scoped to the user the token resolved to.
+      // The caller's own row only, and only one the old laptop sync wrote: a
+      // session row that carries no key. Lessons, watermarks and keyed rows
+      // are out of reach however the id was learned.
       const { error } = await supabase
         .from("summaries")
         .delete()
         .eq("user_id", userId)
         .eq("id", replaceRowId)
+        .is("external_id", null)
+        .in("source", ["claude", "claude_code", "copilot"])
       if (error) {
         console.warn(
           `[import/conversation] could not retire row ${replaceRowId}: ${error.message}`

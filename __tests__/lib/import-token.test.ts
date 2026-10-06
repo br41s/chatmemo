@@ -4,6 +4,7 @@
 import {
   CLOUD_KEY_PREFIX,
   grantAllows,
+  grantAllowsRetire,
   resolveImportToken
 } from "@/lib/server/import-token"
 
@@ -71,5 +72,14 @@ describe("grantAllows", () => {
     expect(grantAllows(grant, null)).toBe(false)
     expect(grantAllows(grant, "copilot:abc")).toBe(false)
     expect(grantAllows(grant, "xclaude-code:abc")).toBe(false)
+  })
+})
+
+describe("grantAllowsRetire", () => {
+  it("lets only the general token name a row to retire", () => {
+    expect(grantAllowsRetire({ userId: "u", keyPrefix: null })).toBe(true)
+    expect(
+      grantAllowsRetire({ userId: "u", keyPrefix: CLOUD_KEY_PREFIX })
+    ).toBe(false)
   })
 })

@@ -47,7 +47,8 @@ function readEnv(file) {
   const env = {}
   for (const line of readFileSync(file, "utf8").split("\n")) {
     const match = line.match(/^([^#=\s]+)\s*=\s*(.*)$/)
-    if (match) env[match[1]] = match[2].trim()
+    // A value written with quotes is the value inside them.
+    if (match) env[match[1]] = match[2].trim().replace(/^(["'])(.*)\1$/, "$2")
   }
   return env
 }
@@ -81,6 +82,18 @@ if (!importToken) {
   )
   console.error(
     "  Generate one with: node -e \"require('crypto').randomBytes(32, (_,b)=>console.log(b.toString('hex')))\""
+  )
+  process.exit(1)
+}
+if (
+  env.CHATMEMO_CLOUD_IMPORT_TOKEN &&
+  env.CHATMEMO_CLOUD_IMPORT_TOKEN === importToken
+) {
+  console.error(
+    "✗ CHATMEMO_CLOUD_IMPORT_TOKEN must differ from CHATMEMO_IMPORT_TOKEN"
+  )
+  console.error(
+    "  The same value would give the cloud token the general token's full scope."
   )
   process.exit(1)
 }

@@ -170,9 +170,52 @@ describe("exclusionReason", () => {
     expect(shared.exclusionReason(config, { cwd: "/Users/x/open" })).toBeNull()
   })
 
-  it("keeps out a directory carrying the marker file", () => {
+  it("keeps out a directory carrying the marker file, and everything below it", () => {
     writeFileSync(join(home, shared.NOSYNC_MARKER), "")
     expect(shared.exclusionReason(config, { cwd: home })).toMatch(/nosync/)
+    expect(
+      shared.exclusionReason(config, { cwd: join(home, "a", "b") })
+    ).toMatch(/nosync/)
+  })
+
+  it("maps a path to its slug the way Claude Code does", () => {
+    expect(shared.pathToSlug("/Users/x/my_secret.repo/")).toBe(
+      "-Users-x-my-secret-repo"
+    )
+    expect(
+      shared.exclusionReason(
+        { excludeProjects: ["/Users/x/my_secret.repo"] },
+        { projectSlug: "-Users-x-my-secret-repo" }
+      )
+    ).toMatch(/excluded/)
+  })
+
+  it("expands ~ in a configured path", () => {
+    expect(
+      shared.exclusionReason(
+        { excludeProjects: ["~/hidden"] },
+        { cwd: join(shared.HOME, "hidden", "x") }
+      )
+    ).toMatch(/excluded/)
+  })
+})
+
+describe("transcriptCwd", () => {
+  it("reads the working directory the transcript records", () => {
+    const file = join(home, "t.jsonl")
+    writeFileSync(
+      file,
+      [
+        JSON.stringify({ type: "summary", summary: "x" }),
+        JSON.stringify({
+          type: "user",
+          cwd: "/Users/x/repo",
+          message: { content: "hi" }
+        })
+      ].join("\n")
+    )
+    expect(shared.transcriptCwd(file)).toBe("/Users/x/repo")
+    expect(shared.transcriptCwd(join(home, "missing.jsonl"))).toBeUndefined()
   })
 })
 
@@ -280,6 +323,26 @@ describe("syncSession", () => {
 
     expect(await sync(13)).toBe("synced")
     expect(calls[1].body.replaceRowId).toBeUndefined()
+  })
+
+  it("keeps the old row id when the server stored nothing, so it is retired later", async () => {
+    writeFileSync(
+      join(home, "imported-sessions.json"),
+      JSON.stringify({
+        "session-a": { rowId: "row-old", userMessages: 3, mtime: 0 }
+      })
+    )
+    installFetch({ inserted: 0, reason: "Nothing worth remembering" })
+    expect(await sync(8)).toBe("synced")
+    expect(calls[0].body.replaceRowId).toBe("row-old")
+
+    installFetch()
+    expect(await sync(13)).toBe("synced")
+    expect(calls[0].body.replaceRowId).toBe("row-old")
+    const sessions = JSON.parse(
+      readFileSync(join(home, "imported-sessions.json"), "utf8")
+    )
+    expect(sessions["session-a"].rowId).toBeUndefined()
   })
 
   it("posts Copilot sessions under their own key", async () => {

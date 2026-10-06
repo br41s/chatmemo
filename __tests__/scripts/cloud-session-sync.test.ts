@@ -1,8 +1,14 @@
 /**
  * @jest-environment node
  */
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs"
+import { tmpdir } from "os"
+import { join } from "path"
 import {
   cleanText,
+  nosyncMarkerDir,
+  redact,
+  stripInjectedBlocks,
   buildPayload,
   parseTranscript,
   shouldSync,
@@ -127,9 +133,9 @@ describe("workerEnv", () => {
 describe("cleanText", () => {
   it("drops the blocks Claude Code injects into a user turn", () => {
     const text =
-      "<system-reminder>\nCLAUDE.md contents\n</system-reminder>fix the build<local-command-stdout>secret output</local-command-stdout>"
+      "<system-reminder>\nCLAUDE.md contents\n</system-reminder>\nfix the build\n<local-command-stdout>secret output</local-command-stdout>"
     expect(cleanText(text)).toBe("fix the build")
-    expect(cleanText("tail <bash-stdout>never closed")).toBe("tail")
+    expect(cleanText("tail\n<bash-stdout>never closed")).toBe("tail")
   })
 
   it("replaces anything shaped like a credential, keeping the name", () => {
@@ -148,6 +154,9 @@ describe("cleanText", () => {
     expect(out).toContain("[redacted aws key]")
     expect(out).toContain("[redacted github token]")
     expect(out).toContain("postgres://me:[redacted]@host/db")
+    expect(redact("postgres://u:p@ss@host/db x")).toBe(
+      "postgres://u:[redacted]@host/db x"
+    )
     expect(out).toContain('password: "[redacted]')
     expect(out).toContain("[redacted jwt]")
     expect(out).toContain("[redacted private key]")
@@ -172,5 +181,99 @@ describe("parseTranscript cleaning", () => {
     })
     const [m] = parseTranscript(jsonl)
     expect(m.text).toBe("deploy with ANTHROPIC_API_KEY=[redacted token]")
+  })
+})
+
+describe("stripInjectedBlocks", () => {
+  it("drops only blocks that start a line, so a tag named in prose stays", () => {
+    const prose =
+      "Why does the hook drop <system-reminder> blocks? The `<bash-stdout>` tag too."
+    expect(stripInjectedBlocks(prose)).toBe(prose)
+    expect(
+      stripInjectedBlocks(
+        "fix it\n<system-reminder>\ninjected\n</system-reminder>\nplease"
+      )
+    ).toBe("fix it\n\nplease")
+    expect(stripInjectedBlocks("tail\n<bash-stdout>never closed")).toBe(
+      "tail\n"
+    )
+    expect(
+      stripInjectedBlocks("<System-Reminder>x</System-Reminder>done")
+    ).toBe("done")
+  })
+})
+
+describe("redact: shapes and false positives", () => {
+  it("catches bearer headers, JSON keys, query strings and more token shapes", () => {
+    const text = [
+      'curl -H "Authorization: Bearer 0123456789abcdef0123456789abcdef"',
+      '{"openai_api_key": "abcdef0123456789abcdef"}',
+      "https://api.example/x?api_key=abcdef0123456789&y=1",
+      "stripe sk_live_abcdefghij0123456789",
+      "hf hf_abcdefghijklmnopqrstuvwxyz0123",
+      "DB_PASS=s3cretpassw0rd123"
+    ].join("\n")
+    const out = redact(text)
+    expect(out).toContain("Bearer [redacted]")
+    expect(out).toContain('"openai_api_key": "[redacted]')
+    expect(out).toContain("?api_key=[redacted]&y=1")
+    expect(out).toContain("[redacted stripe key]")
+    expect(out).not.toContain("hf_abc")
+    expect(out).toContain("DB_PASS=[redacted]")
+  })
+
+  it("leaves code that merely names a token alone", () => {
+    for (const line of [
+      "const tokenBuf = Buffer.from(token)",
+      "maxTokens: computeMaxTokensForWindow",
+      "see tokens: /Users/x/lib/import-token.ts",
+      "--token-color: var(--primary-foreground)",
+      "the password field is required and validated"
+    ]) {
+      expect(redact(line)).toBe(line)
+    }
+  })
+
+  it("stays fast on a line built to make it backtrack", () => {
+    const hostile = "pwd-".repeat(12_500) + "\n" + "secret-".repeat(5_000)
+    const started = Date.now()
+    cleanText(hostile)
+    expect(Date.now() - started).toBeLessThan(500)
+  })
+})
+
+describe("parseTranscript: meta entries", () => {
+  it("skips what Claude Code put in the user's turn on its own", () => {
+    const jsonl = [
+      JSON.stringify({
+        type: "user",
+        isMeta: true,
+        message: { content: "Base directory for this skill: /x/y/z and more" }
+      }),
+      JSON.stringify({
+        type: "user",
+        message: { content: "please run the tests now" }
+      })
+    ].join("\n")
+    const messages = parseTranscript(jsonl)
+    expect(messages).toHaveLength(1)
+    expect(messages[0].text).toBe("please run the tests now")
+  })
+})
+
+describe("nosyncMarkerDir", () => {
+  it("finds the marker in the directory or any directory above it", () => {
+    const root = mkdtempSync(join(tmpdir(), "chatmemo-nosync-"))
+    try {
+      const repo = join(root, "repo")
+      const deep = join(repo, "packages", "web")
+      mkdirSync(deep, { recursive: true })
+      expect(nosyncMarkerDir(deep)).toBeNull()
+      writeFileSync(join(repo, ".chatmemo-nosync"), "")
+      expect(nosyncMarkerDir(deep)).toBe(repo)
+      expect(nosyncMarkerDir(repo)).toBe(repo)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })

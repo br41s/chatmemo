@@ -331,9 +331,10 @@ Sessions the Claude Code desktop app (or claude.ai/code) runs **in the cloud** n
 
 In the cloud environment's settings (the environment menu in a session's title bar → **Edit**):
 
-1. Add the environment variable `CHATMEMO_IMPORT_TOKEN` with the value of `CHATMEMO_CLOUD_IMPORT_TOKEN` from `.env.local` — the cloud token, which may only post Claude Code sessions. Every command the agent runs in the container can read its environment, so the general token does not belong there.
-2. Allow network access to `chatmemo-one.vercel.app`.
-3. Add to the **Setup script**:
+1. Give the deployed app the cloud token: `CHATMEMO_CLOUD_IMPORT_TOKEN` in Vercel's environment variables (and in `.env.local`), a different value from `CHATMEMO_IMPORT_TOKEN`. Without it the hook's posts are refused with 401, and the only log of that is inside the container.
+2. Add the environment variable `CHATMEMO_IMPORT_TOKEN` to the cloud environment with that cloud token as its value. It may only post Claude Code sessions. Every command the agent runs in the container can read its environment, so the general token does not belong there.
+3. Allow network access to `chatmemo-one.vercel.app`.
+4. Add to the **Setup script**:
 
 ```bash
 # ChatMemo: sync this environment's Claude Code sessions into memory.
@@ -342,7 +343,7 @@ In the cloud environment's settings (the environment menu in a session's title b
 # run code in every session container. The repo's tests keep this hash current
 # (__tests__/scripts/cloud-hook-pin.test.ts); after the hook changes, copy the
 # new value from the guide.
-expected_sha256="a313735b3b1a8a89223b383ed09b814f40c32dae992bfa74f11eca8bbee72cb3"
+expected_sha256="d9882fd3715b60d598dcad203a9e47bdb58bb942bee4b68d2a2c0b68329dede3"
 mkdir -p "$HOME/.claude/hooks"
 hook="$HOME/.claude/hooks/chatmemo-cloud-sync.mjs"
 tmp="$HOME/.claude/hooks/chatmemo-cloud-sync.download.mjs"
@@ -350,6 +351,7 @@ if curl -fsSL https://chatmemo-one.vercel.app/hooks/chatmemo-cloud-sync.mjs -o "
   && [ "$(sha256sum "$tmp" | cut -d' ' -f1)" = "$expected_sha256" ]; then
   mv "$tmp" "$hook"
 else
+  echo "ChatMemo: hook not installed (download failed or hash differs from the guide's)" >&2
   rm -f "$tmp"
 fi
 # Register it only if it is there, so a failed download adds no broken hook.
@@ -372,6 +374,14 @@ fs.writeFileSync(file, JSON.stringify(s, null, 2))
 The hook (`public/hooks/chatmemo-cloud-sync.mjs`, served by the deployed app) posts once a session has 3 user messages, again every 5 more, and at session end. Each post carries `sessionKey: "claude-code:<session id>"`, so the new summary replaces the session's previous row (`summaries.external_id`, migration `20260929010000`). It drops injected blocks and redacts credentials the same way the laptop sync does, and a `.chatmemo-nosync` file in the repository keeps the session out. It returns immediately and does the work in a detached process; outcomes go to `~/.chatmemo-cloud/sync.log` inside the container. Set `CHATMEMO_URL` (https only) to point it at a different deployment.
 
 Only sessions started after the setup script is in place are synced; earlier cloud sessions stay missing.
+
+### Upgrading from the key-based sync
+
+Before the token-only sync, `~/.chatmemo/config.json` held the service-role key, at the default file mode, and the general token was printed to the terminal. Scoping the cloud token protects nothing while those are still valid, so after `npm run setup:sync`:
+
+1. Rotate the service-role key in the Supabase dashboard and update `SUPABASE_SERVICE_ROLE_KEY` in `.env.local` and on Vercel.
+2. Generate a new `CHATMEMO_IMPORT_TOKEN`, update it in `.env.local` and on Vercel, run `npm run setup:sync` again, and replace the bookmarklets.
+3. If the watcher is installed, reload it so it runs the new code: `launchctl unload` then `launchctl load` on its plist. Until then the running process keeps the old key in memory.
 
 ### Claude Code Bulk Import
 

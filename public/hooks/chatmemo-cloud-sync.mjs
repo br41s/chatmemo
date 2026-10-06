@@ -28,7 +28,7 @@
  * passes: blocks Claude Code injects into user turns (command output, system
  * reminders) are dropped, and anything shaped like a credential is replaced
  * before the post. A `.chatmemo-nosync` file in the session's working
- * directory keeps that session out altogether.
+ * directory, or any directory above it, keeps that session out altogether.
  *
  * Zero dependencies, and the laptop scripts import the pure helpers below so
  * both paths clean a transcript the same way. Never blocks Claude Code: the
@@ -47,7 +47,7 @@ import {
   writeFileSync
 } from "fs"
 import { homedir } from "os"
-import { basename, join } from "path"
+import { basename, dirname, join, resolve } from "path"
 import { fileURLToPath } from "url"
 
 const STATE_DIR =
@@ -73,11 +73,19 @@ const MAX_TOTAL_CHARS = 80_000
 // Claude Code puts things into a user turn that the person never typed: the
 // output of a `!` command, a local slash command's output, and the system
 // reminders that carry CLAUDE.md and hook context. None of it is the
-// conversation, and command output is where `cat .env` ends up.
-const INJECTED_BLOCK_RE =
-  /<(bash-stdout|bash-stderr|local-command-stdout|local-command-stderr|system-reminder)(?:\s[^>]*)?>[\s\S]*?<\/\1>/g
-const UNCLOSED_INJECTED_BLOCK_RE =
-  /<(bash-stdout|bash-stderr|local-command-stdout|local-command-stderr|system-reminder)(?:\s[^>]*)?>[\s\S]*$/
+// conversation, and command output is where `cat .env` ends up. The blocks
+// start a line of their own, which is what is matched: a tag named in prose
+// ("why does the hook drop <system-reminder> blocks?") stays.
+const INJECTED_TAGS =
+  "bash-stdout|bash-stderr|local-command-stdout|local-command-stderr|system-reminder"
+const INJECTED_BLOCK_RE = new RegExp(
+  `^[ \\t]*<(${INJECTED_TAGS})(?:\\s[^>]*)?>[\\s\\S]*?<\\/\\1>[ \\t]*`,
+  "gim"
+)
+const UNCLOSED_INJECTED_BLOCK_RE = new RegExp(
+  `^[ \\t]*<(${INJECTED_TAGS})(?:\\s[^>]*)?>[\\s\\S]*$`,
+  "im"
+)
 
 /** `text` without the blocks Claude Code injected into it. */
 export function stripInjectedBlocks(text) {
@@ -89,27 +97,61 @@ export function stripInjectedBlocks(text) {
 // Shapes of credentials, replaced wherever they appear. The summary this text
 // becomes is injected into every later chat and sent to every provider the
 // user picks; a key pasted once would travel for good.
+//
+// Every quantifier that can run along a line is bounded: these patterns run
+// on every message of a transcript after every turn, and an unbounded one
+// turned a pasted `pwd-pwd-pwd-…` line into seconds of CPU per Stop.
 const REDACTIONS = [
   [
     /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
     "[redacted private key]"
   ],
   [/\beyJ[\w-]{8,}\.[\w-]{8,}\.[\w-]{8,}/g, "[redacted jwt]"],
-  // scheme://user:password@host
-  [/\b([a-z][a-z0-9+.-]*:\/\/)([^\s/:@]+):([^\s@]+)@/gi, "$1$2:[redacted]@"],
+  // scheme://user:password@host — the password runs to the last `@` before
+  // the host, so one containing `@` goes whole.
+  [
+    /\b([a-z][a-z0-9+.-]{0,20}:\/\/)([^\s/:@]{1,80}):([^\s]{1,200})@(?=[\w.-]{1,253}(?:[:/?#]|\s|$))/gi,
+    "$1$2:[redacted]@"
+  ],
+  [/\bBearer\s{1,4}[A-Za-z0-9._~+/-]{16,}=*/g, "Bearer [redacted]"],
   [/\bsk-[\w-]{20,}/g, "[redacted token]"],
+  [/\b[sr]k_(?:live|test)_[A-Za-z0-9]{10,}/g, "[redacted stripe key]"],
   [/\bAKIA[0-9A-Z]{16}\b/g, "[redacted aws key]"],
   [/\bgh[pousr]_[A-Za-z0-9]{30,}\b/g, "[redacted github token]"],
+  [/\bgithub_pat_[\w]{20,}/g, "[redacted github token]"],
+  [/\bglpat-[\w-]{20,}/g, "[redacted gitlab token]"],
   [/\bxox[baprs]-[\w-]{10,}/g, "[redacted slack token]"],
   [/\bAIza[\w-]{35}\b/g, "[redacted google key]"],
+  [/\b(?:hf|npm)_[A-Za-z0-9]{20,}/g, "[redacted token]"],
   [/\bsb(?:p|_secret|_publishable)_[\w-]{20,}/g, "[redacted supabase key]"],
-  // NAME=value and name: value, for names that say what they hold. The name
-  // stays so the summary can still say which setting was discussed.
+  // ?api_key=… in a URL
   [
-    /\b([\w-]*(?:api[_-]?key|secret|token|password|passwd|pwd)[\w-]*)(\s*[=:]\s*["']?)([^\s"'`]{12,})/gi,
-    "$1$2[redacted]"
+    /([?&](?:api_?key|access_?token|token|secret|password|key))=[^&\s"']{8,}/gi,
+    "$1=[redacted]"
+  ],
+  // NAME=value, name: value and "name": "value", for names that say what
+  // they hold. The name stays so the summary can still say which setting
+  // was discussed. Only a value that looks like a secret goes: quoted, or
+  // carrying a digit; `tokenBuf = Buffer.from(token)` and
+  // `maxTokens: computeMaxTokensForWindow` are code, not credentials.
+  [
+    /(?<![\w-])([\w-]{0,40}?(?:api[_-]?key|secret|token|password|passwd|pwd|pass(?![a-z]))[\w-]{0,40})(["']?\s{0,8}[=:]\s{0,8}["']?)([^\s"'`]{12,})/gi,
+    (match, name, separator, value) =>
+      looksLikeSecret(
+        value,
+        /["']\s{0,8}$/.test(separator) || /["']$/.test(separator)
+      )
+        ? `${name}${separator}[redacted]`
+        : match
   ]
 ]
+
+function looksLikeSecret(value, quoted) {
+  // Already handled by an earlier rule: not a second pass over its remainder.
+  if (value.startsWith("[redacted")) return false
+  if (/[(/]/.test(value)) return false
+  return quoted || /\d/.test(value)
+}
 
 /** `text` with anything shaped like a credential replaced. */
 export function redact(text) {
@@ -120,9 +162,33 @@ export function redact(text) {
   return out
 }
 
+// Only this much of a message is kept by `capMessages`, so only a little
+// more than that is worth cleaning: a bound on what the patterns run over.
+const MAX_CLEAN_CHARS = 12_000
+
 /** Both passes, in the order they are meant to run. */
 export function cleanText(text) {
-  return redact(stripInjectedBlocks(text)).trim()
+  const stripped = stripInjectedBlocks(text)
+  const bounded =
+    stripped.length > MAX_CLEAN_CHARS
+      ? stripped.slice(0, MAX_CLEAN_CHARS)
+      : stripped
+  return redact(bounded).trim()
+}
+
+/**
+ * The directory, from `dir` upwards, that carries the opt-out marker — or
+ * null. A marker at a repository's root covers every session started in a
+ * subdirectory of it.
+ */
+export function nosyncMarkerDir(dir) {
+  let current = resolve(dir)
+  for (;;) {
+    if (existsSync(join(current, NOSYNC_MARKER))) return current
+    const parent = dirname(current)
+    if (parent === current) return null
+    current = parent
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -149,6 +215,9 @@ export function parseTranscript(jsonl) {
     try {
       const entry = JSON.parse(line)
       if (entry.type !== "user" && entry.type !== "assistant") continue
+      // A meta entry is text Claude Code put in the user's turn — a skill's
+      // body, a message from another session — not something the user said.
+      if (entry.isMeta) continue
       const text = cleanText(textOf(entry.message?.content))
       if (text.length < 15) continue
       messages.push({
@@ -331,8 +400,9 @@ async function post({ transcript_path, session_id, cwd, event }) {
     return
   }
 
-  if (cwd && existsSync(join(cwd, NOSYNC_MARKER))) {
-    log(`${session_id}: ${NOSYNC_MARKER} present in ${cwd} — not synced`)
+  const optedOut = cwd ? nosyncMarkerDir(cwd) : null
+  if (optedOut) {
+    log(`${session_id}: ${NOSYNC_MARKER} present in ${optedOut} — not synced`)
     return
   }
 

@@ -26,7 +26,8 @@ import { join } from "path"
 import {
   capMessages,
   cleanText,
-  NOSYNC_MARKER
+  NOSYNC_MARKER,
+  nosyncMarkerDir
 } from "../public/hooks/chatmemo-cloud-sync.mjs"
 
 export { NOSYNC_MARKER }
@@ -174,6 +175,9 @@ export function parseJSONL(filePath) {
     try {
       const entry = JSON.parse(line)
       if (entry.type !== "user" && entry.type !== "assistant") continue
+      // A meta entry is text Claude Code put in the user's turn — a skill's
+      // body, a message from another session — not something the user said.
+      if (entry.isMeta) continue
       // Injected blocks dropped and credentials replaced, as the cloud hook
       // does: what is posted is what was said, and nothing that unlocks
       // anything.
@@ -192,6 +196,30 @@ export function parseJSONL(filePath) {
   }
 
   return messages
+}
+
+/**
+ * The working directory a transcript was recorded in: every entry carries
+ * it. The watcher and the importers only see ~/.claude/projects/<slug>, and
+ * the opt-out marker lives in the directory itself.
+ */
+export function transcriptCwd(filePath) {
+  let lines
+  try {
+    lines = readFileSync(filePath, "utf8").split("\n")
+  } catch {
+    return undefined
+  }
+  for (const line of lines.slice(0, 50)) {
+    if (!line.includes('"cwd"')) continue
+    try {
+      const cwd = JSON.parse(line).cwd
+      if (typeof cwd === "string" && cwd) return cwd
+    } catch {
+      // next line
+    }
+  }
+  return undefined
 }
 
 function extractText(content) {
@@ -221,10 +249,17 @@ export function slugToProjectName(slug) {
 
 /**
  * A Claude project slug for a path: the way ~/.claude/projects names the
- * directory for "/Users/x/VSCODE/foo" is "-Users-x-VSCODE-foo".
+ * directory for "/Users/x/VSCODE/foo" is "-Users-x-VSCODE-foo" — every
+ * character that is not a letter or a digit becomes a dash ("/Users/x/.buzz"
+ * is "-Users-x--buzz").
  */
 export function pathToSlug(path) {
-  return path.replace(/\/+$/, "").replace(/[^\w]/g, "-")
+  return path.replace(/\/+$/, "").replace(/[^A-Za-z0-9]/g, "-")
+}
+
+/** `~` at the start of a configured path is the home directory. */
+function expandHome(path) {
+  return path.replace(/^~(?=\/|$)/, HOME)
 }
 
 /** Get YYYY-MM-DD from a file's mtime. Falls back to today. */
@@ -270,11 +305,14 @@ export function sleep(ms) {
  * @param {{ cwd?: string, projectSlug?: string }} project
  */
 export function exclusionReason(config, { cwd, projectSlug } = {}) {
-  if (cwd && existsSync(join(cwd, NOSYNC_MARKER))) {
-    return `${NOSYNC_MARKER} present in ${cwd}`
+  const optedOut = cwd ? nosyncMarkerDir(cwd) : null
+  if (optedOut) {
+    return `${NOSYNC_MARKER} present in ${optedOut}`
   }
   const prefixes = Array.isArray(config?.excludeProjects)
-    ? config.excludeProjects.filter(p => typeof p === "string" && p)
+    ? config.excludeProjects
+        .filter(p => typeof p === "string" && p)
+        .map(expandHome)
     : []
   for (const prefix of prefixes) {
     if (
@@ -529,7 +567,11 @@ export async function syncSession({
       return "failed"
     }
 
+    // The old row is retired only when a new one was stored; a post the
+    // server judged not worth keeping leaves it, and its id, in place.
+    const retired = previousRowId && posted.inserted === 1
     sessions[key] = {
+      ...(previousRowId && !retired ? { rowId: previousRowId } : {}),
       userMessages,
       mtime,
       syncedAt: new Date().toISOString()
