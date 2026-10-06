@@ -5,6 +5,7 @@
  */
 
 import { readFileSync, readdirSync, statSync, existsSync } from "fs"
+import { cleanText } from "../public/hooks/chatmemo-cloud-sync.mjs"
 import { homedir } from "os"
 import { join, basename } from "path"
 
@@ -29,10 +30,12 @@ const VSCODE_WORKSPACE_STORAGE = join(
 /**
  * Scan all VS Code workspaceStorage/{hash}/chatSessions/*.jsonl files.
  *
- * @returns Array of { path, sessionId, projectName, mtime }
+ * @returns Array of { path, sessionId, projectName, projectPath, mtime }
  *   - sessionId:   filename without .jsonl
  *   - projectName: basename of the workspace folder from workspace.json;
  *                  falls back to the first 8 chars of the hash if unreadable
+ *   - projectPath: the workspace folder itself, for the exclusion list;
+ *                  undefined when workspace.json is unreadable
  *   - mtime:       file modification time in ms
  */
 export function findCopilotJSONLFiles() {
@@ -50,14 +53,22 @@ export function findCopilotJSONLFiles() {
 
     // Resolve project name from workspace.json
     let projectName = hash.slice(0, 8) // fallback: hash prefix
-    const workspaceJsonPath = join(VSCODE_WORKSPACE_STORAGE, hash, "workspace.json")
+    let projectPath
+    const workspaceJsonPath = join(
+      VSCODE_WORKSPACE_STORAGE,
+      hash,
+      "workspace.json"
+    )
     try {
       const wj = JSON.parse(readFileSync(workspaceJsonPath, "utf8"))
       // folder is a URI like "file:///Users/brais/VSCODE/chatmemo"
       if (wj.folder) {
         const decoded = decodeURIComponent(wj.folder.replace(/^file:\/\//, ""))
         const name = basename(decoded)
-        if (name) projectName = name
+        if (name) {
+          projectName = name
+          projectPath = decoded
+        }
       }
     } catch {
       // keep fallback
@@ -80,7 +91,13 @@ export function findCopilotJSONLFiles() {
       } catch {
         continue
       }
-      results.push({ path: filePath, sessionId, projectName, mtime })
+      results.push({
+        path: filePath,
+        sessionId,
+        projectName,
+        projectPath,
+        mtime
+      })
     }
   }
 
@@ -121,7 +138,7 @@ export function parseCopilotJSONL(filePath) {
     try {
       const d = JSON.parse(line)
       if (d.kind === 0) {
-        for (const req of (d.v?.requests ?? [])) {
+        for (const req of d.v?.requests ?? []) {
           if (req?.requestId) requestsMap.set(req.requestId, req)
         }
       } else if (
@@ -130,7 +147,7 @@ export function parseCopilotJSONL(filePath) {
         d.k.length === 1 &&
         d.k[0] === "requests"
       ) {
-        for (const req of (Array.isArray(d.v) ? d.v : [])) {
+        for (const req of Array.isArray(d.v) ? d.v : []) {
           if (req?.requestId) requestsMap.set(req.requestId, req)
         }
       }
@@ -143,20 +160,21 @@ export function parseCopilotJSONL(filePath) {
   const messages = []
 
   for (const req of requests) {
-    const userText = (req.message?.text ?? "").trim()
+    const userText = cleanText(req.message?.text ?? "")
 
     // Join non-thinking response parts
-    const responseText = (req.response ?? [])
-      .filter(
-        r =>
-          r !== null &&
-          typeof r === "object" &&
-          r.kind !== "thinking" &&
-          typeof r.value === "string"
-      )
-      .map(r => r.value)
-      .join("\n")
-      .trim()
+    const responseText = cleanText(
+      (req.response ?? [])
+        .filter(
+          r =>
+            r !== null &&
+            typeof r === "object" &&
+            r.kind !== "thinking" &&
+            typeof r.value === "string"
+        )
+        .map(r => r.value)
+        .join("\n")
+    )
 
     // Skip turns where both sides are empty/too short
     if (userText.length < 15 && responseText.length < 15) continue

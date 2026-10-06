@@ -141,10 +141,18 @@ SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
 # Get your key at https://openrouter.ai/keys
 OPENROUTER_API_KEY=sk-or-v1-...
 
-# ── Bookmarklet auth token ★ (set by setup:sync) ────
-# A random hex token embedded in the bookmarklet URL.
-# The API accepts it as a Bearer token to bypass SameSite cookies.
-CHATMEMO_IMPORT_TOKEN=<generate with: node -e "require('crypto').randomBytes(32,(_,b)=>console.log(b.toString('hex')))">
+# ── Import tokens ★ ─────────────────────────────────
+# Bearer tokens for /api/import/conversation. One per writer, so a leak is
+# revoked on its own: the general token is held by the laptop scripts and
+# embedded in the bookmarklets; the cloud token sits in the Claude Code cloud
+# environment, where any command can read it, and may only post Claude Code
+# sessions. Generate each with:
+#   node -e "require('crypto').randomBytes(32,(_,b)=>console.log(b.toString('hex')))"
+CHATMEMO_IMPORT_TOKEN=<general token>
+CHATMEMO_CLOUD_IMPORT_TOKEN=<cloud token, optional>
+# The account every token posts into. With one user in the project this is
+# found on its own; with several, say which one is you.
+CHATMEMO_OWNER_EMAIL=you@example.com
 CHATMEMO_IMPORT_USER_ID=<set automatically by npm run setup:sync>
 
 # ── File upload size limit (bytes) ──────────────────
@@ -231,7 +239,7 @@ All operations are scoped to `auth.uid() = user_id`:
 | INSERT    | `user_id = auth.uid()` |
 | DELETE    | `user_id = auth.uid()` |
 
-The **service role key** bypasses RLS — used by the bookmarklet import and the sync hook.
+The **service role key** bypasses RLS — used only by `/api/import/conversation` on the server, which scopes every write to the user a token resolved to. The laptop scripts and the cloud hook hold an import token, never this key.
 
 Additional sharing rules are enforced in the database:
 
@@ -264,7 +272,7 @@ The app runs at `http://localhost:3000` by default.
 
 ## 7. Sync Setup (Bookmarklet + Claude Code Hook)
 
-Run **once** after installation, and again if you change the `CHATMEMO_IMPORT_TOKEN` or sign up with a new account:
+Run **once** after installation, and again if you change `CHATMEMO_IMPORT_TOKEN` or sign up with a new account:
 
 ```bash
 npm run setup:sync
@@ -273,15 +281,15 @@ npm run setup:sync
 This script:
 
 1. Reads credentials from `.env.local`.
-2. Fetches your Supabase user ID via the admin API.
-3. Writes `CHATMEMO_IMPORT_USER_ID` to `.env.local`.
-4. Writes `~/.chatmemo/config.json` (used by the Claude Code hook).
-5. Registers the Stop hook in `~/.claude/settings.json`.
-6. Prints the bookmarklet URL to add to your browser.
+2. Finds your Supabase user through the admin API: the one `CHATMEMO_OWNER_EMAIL` names, or the only one there is. With several accounts and no email it stops, rather than binding every token to whoever signed up last.
+3. Writes `CHATMEMO_IMPORT_USER_ID` to `.env.local`, and sets the file to mode 600.
+4. Writes `~/.chatmemo/config.json` (mode 600) with the import token, the deployment URL and the `excludeProjects` list. No database or OpenRouter key leaves `.env.local`: the scripts post sessions to the server, which holds the keys.
+5. Registers the Stop and SessionEnd hooks in `~/.claude/settings.json`. It stops if that file does not parse, instead of writing over it.
+6. Writes the two bookmarklets to `~/.chatmemo/bookmarklets.txt` (mode 600) — they carry the token, so they are not printed.
 
 ### Bookmarklet
 
-Copy the printed URL and add it to your browser bookmarks bar (right-click → Add page → paste URL). Name it **Save to ChatMemo**.
+Open `~/.chatmemo/bookmarklets.txt`, copy a URL and add it to your browser bookmarks bar (right-click → Add page → paste URL). Name them **Save to ChatMemo (Claude)** and **Save to ChatMemo (Gemini)**.
 
 The bookmarklet uses three fallback strategies to detect messages on claude.ai:
 
@@ -299,10 +307,12 @@ The hook is registered for two events: `Stop`, which fires after every Claude Co
 
 - Reads the JSONL transcript from `~/.claude/projects/<slug>/<session-id>.jsonl`.
 - Summarises a session once it has 3 user messages, again every 5 user messages after that, and a last time at `SessionEnd`. Each new summary replaces the session's previous row, so memory holds the whole session, not just its opening.
-- Tracks each session's row and size in `~/.chatmemo/imported-sessions.json`. Sessions synced before this format are left as they are.
+- Tracks each session's size in `~/.chatmemo/imported-sessions.json`. A session the old laptop path wrote itself (its entry carries a `rowId`) sends that id along once, and the server retires the row; sessions synced before row ids were recorded are left as they are.
+- Posts to `/api/import/conversation` with the import token, like the cloud hook; the server summarises and stores the session. The laptop never calls OpenRouter or the database.
+- Before the post, drops the blocks Claude Code injects into user turns (`!` command output, local slash-command output, system reminders) and replaces anything shaped like a credential (API keys, JWTs, `user:password@` in URLs, `KEY=value` with a telling name, private keys). Both passes live in `public/hooks/chatmemo-cloud-sync.mjs`, which the laptop scripts import, so every path cleans a transcript the same way.
+- Keeps a project out when its directory holds a `.chatmemo-nosync` file, or when its path is in `excludeProjects` in `~/.chatmemo/config.json` (the watcher and the bulk importer match the path against the project slug under `~/.claude/projects/`).
 - Runs the work in a detached process, so Claude Code never waits on the summariser.
-- Logs every outcome, failures included, to `~/.chatmemo/sync.log`.
-- Calls OpenRouter and Supabase directly — no HTTP to the ChatMemo server.
+- Logs every outcome, failures included, to `~/.chatmemo/sync.log` — status and the server's one-line reason, never a response body.
 
 After updating ChatMemo, re-run `npm run setup:sync` to register `SessionEnd`.
 
@@ -321,19 +331,29 @@ Sessions the Claude Code desktop app (or claude.ai/code) runs **in the cloud** n
 
 In the cloud environment's settings (the environment menu in a session's title bar → **Edit**):
 
-1. Add the environment variable `CHATMEMO_IMPORT_TOKEN` with the same value as in `.env.local`.
-2. Allow network access to `chatmemo-one.vercel.app`.
-3. Add to the **Setup script**:
+1. Give the deployed app the cloud token: `CHATMEMO_CLOUD_IMPORT_TOKEN` in Vercel's environment variables (and in `.env.local`), a different value from `CHATMEMO_IMPORT_TOKEN`. Without it the hook's posts are refused with 401, and the only log of that is inside the container.
+2. Add the environment variable `CHATMEMO_IMPORT_TOKEN` to the cloud environment with that cloud token as its value. It may only post Claude Code sessions. Every command the agent runs in the container can read its environment, so the general token does not belong there.
+3. Allow network access to `chatmemo-one.vercel.app`.
+4. Add to the **Setup script**:
 
 ```bash
-# ChatMemo: sync this environment's Claude Code sessions into memory
-# Download, and install only if it parses as JavaScript: the app answers a
-# missing file with a 200 HTML page, which must not become the hook.
+# ChatMemo: sync this environment's Claude Code sessions into memory.
+# Download, and install only if it is exactly the hook this guide was written
+# for: the app serves it, so whoever controlled the deployment could otherwise
+# run code in every session container. The repo's tests keep this hash current
+# (__tests__/scripts/cloud-hook-pin.test.ts); after the hook changes, copy the
+# new value from the guide.
+expected_sha256="d9882fd3715b60d598dcad203a9e47bdb58bb942bee4b68d2a2c0b68329dede3"
 mkdir -p "$HOME/.claude/hooks"
 hook="$HOME/.claude/hooks/chatmemo-cloud-sync.mjs"
 tmp="$HOME/.claude/hooks/chatmemo-cloud-sync.download.mjs"
-curl -fsSL https://chatmemo-one.vercel.app/hooks/chatmemo-cloud-sync.mjs -o "$tmp" \
-  && node --check "$tmp" 2>/dev/null && mv "$tmp" "$hook" || rm -f "$tmp"
+if curl -fsSL https://chatmemo-one.vercel.app/hooks/chatmemo-cloud-sync.mjs -o "$tmp" \
+  && [ "$(sha256sum "$tmp" | cut -d' ' -f1)" = "$expected_sha256" ]; then
+  mv "$tmp" "$hook"
+else
+  echo "ChatMemo: hook not installed (download failed or hash differs from the guide's)" >&2
+  rm -f "$tmp"
+fi
 # Register it only if it is there, so a failed download adds no broken hook.
 [ -f "$hook" ] && node -e '
 const fs = require("fs"), os = require("os")
@@ -351,9 +371,17 @@ fs.writeFileSync(file, JSON.stringify(s, null, 2))
 ' || true
 ```
 
-The hook (`public/hooks/chatmemo-cloud-sync.mjs`, served by the deployed app) posts once a session has 3 user messages, again every 5 more, and at session end. Each post carries `sessionKey: "claude-code:<session id>"`, so the new summary replaces the session's previous row (`summaries.external_id`, migration `20260929010000`). It returns immediately and does the work in a detached process; outcomes go to `~/.chatmemo-cloud/sync.log` inside the container. Set `CHATMEMO_URL` to point it at a different deployment.
+The hook (`public/hooks/chatmemo-cloud-sync.mjs`, served by the deployed app) posts once a session has 3 user messages, again every 5 more, and at session end. Each post carries `sessionKey: "claude-code:<session id>"`, so the new summary replaces the session's previous row (`summaries.external_id`, migration `20260929010000`). It drops injected blocks and redacts credentials the same way the laptop sync does, and a `.chatmemo-nosync` file in the repository keeps the session out. It returns immediately and does the work in a detached process; outcomes go to `~/.chatmemo-cloud/sync.log` inside the container. Set `CHATMEMO_URL` (https only) to point it at a different deployment.
 
 Only sessions started after the setup script is in place are synced; earlier cloud sessions stay missing.
+
+### Upgrading from the key-based sync
+
+Before the token-only sync, `~/.chatmemo/config.json` held the service-role key, at the default file mode, and the general token was printed to the terminal. Scoping the cloud token protects nothing while those are still valid, so after `npm run setup:sync`:
+
+1. Rotate the service-role key in the Supabase dashboard and update `SUPABASE_SERVICE_ROLE_KEY` in `.env.local` and on Vercel.
+2. Generate a new `CHATMEMO_IMPORT_TOKEN`, update it in `.env.local` and on Vercel, run `npm run setup:sync` again, and replace the bookmarklets.
+3. If the watcher is installed, reload it so it runs the new code: `launchctl unload` then `launchctl load` on its plist. Until then the running process keeps the old key in memory.
 
 ### Claude Code Bulk Import
 
