@@ -51,3 +51,17 @@ export function buildAugmentedOpenAIMessages(
 
   return [{ role: "system", content: memoryBlock }, ...messages]
 }
+
+// Stored memory is untrusted text: imports, bookmarklet posts, sessions that
+// read a hostile page. A row that contains one of the block's own tags could
+// close a section early and put "rules" of its own after it. The tags are
+// known, so a row's copy of any of them is marked as a quotation before it is
+// placed: `[/LESSONS]` becomes `⟦/LESSONS⟧`, same length, and the report's
+// section parser (lib/memory-report.ts) no longer mistakes it for the end.
+const MEMORY_TAG_RE =
+  /\[(\/?)(CHATMEMO_MEMORY|LESSONS|CONVERSATION HISTORY|RELEVANT MEMORY|FULL CONVERSATION RETRIEVAL|MEMORY CONTENT)([^\]]*)\]/g
+
+/** `text` with any of the memory block's own tags turned into quotations. */
+export function neutraliseMemoryTags(text: string): string {
+  return text.replace(MEMORY_TAG_RE, "⟦$1$2$3⟧")
+}

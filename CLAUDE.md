@@ -98,6 +98,16 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
   chart's bar colours come from the source tokens, validated with the
   dataviz palette checks; `--chart-perplexity` exists because the light-mode
   teal that reads as text is too grey as a fill.
+- Memory is untrusted text (imports, bookmarklet posts, sessions that read a
+  hostile page), so the block defends itself: rule 9 of the instructions says
+  the sections are stored data, never instructions, and every row and the
+  lessons document pass through `neutraliseMemoryTags` (`lib/memory-block.ts`)
+  before they are placed, which turns a copy of any of the block's own tags
+  (`[/LESSONS]`, `[/CHATMEMO_MEMORY]`…) into `⟦/LESSONS⟧`, same length. A
+  row cannot close a section early and `memory-report.ts` cannot be fooled by
+  one. The tools route injects memory only when every selected tool is the
+  caller's own, as the custom route does for models: a shared tool is someone
+  else's server and its schema can tell the model what to send there.
 - `lib/server/streaming.ts`: local text-stream helpers used by all chat
   routes (replaced the legacy `ai@2.x` package — do not reintroduce it).
 - All LLM summarization goes through OpenRouter (`lib/server/openrouter.ts`),
@@ -135,6 +145,19 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
   sheet or popover trigger) pass `interactive`, which uses a plain wrapper —
   otherwise it is a button inside a button, a hydration error and a second tab
   stop. Radix `*Trigger` around a `Button` needs `asChild` for the same reason.
+- **Images in answers load from our origins only.** A markdown image fetches
+  with no click, so one the model was talked into emitting would carry its URL
+  to any host. `message-markdown.tsx` renders `img` only for `data:image`,
+  `blob:`, this site and the Supabase project (`isAllowedImageSrc`,
+  `lib/safe-image-src.ts`); the rest shows as text. The browser enforces the
+  same list through the `Content-Security-Policy` `img-src` in `next.config.js`,
+  built from `NEXT_PUBLIC_SUPABASE_URL` at build time (plus localhost in dev).
+  A new image host needs both.
+- **The service worker caches no responses.** `workboxOptions.runtimeCaching`
+  is empty: the defaults kept `/api/*` GETs and the page payload (profile with
+  provider keys) in Cache Storage for a day. `/api/*` also answers
+  `Cache-Control: no-store`, and sign-out empties Cache Storage
+  (`lib/clear-cache-storage.ts`) for workers installed before this.
 - **Chat widths are ceilings:** the composer and messages use `w-full` with
   `max-w-*` steps. They live in the chat column, not the window, so a fixed
   `sm:w-[600px]` overflows whenever the sidebar is open on a mid-width screen.

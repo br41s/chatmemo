@@ -3,10 +3,40 @@ const withBundleAnalyzer = require("@next/bundle-analyzer")({
 })
 
 const withPWA = require("@ducanh2912/next-pwa").default({
-  dest: "public"
+  dest: "public",
+  // No runtime caching. The default rules kept every same-origin GET under
+  // /api (memory exports, the timeline, the key flags) and the page payload
+  // (which carries the profile, provider keys included) in Cache Storage for
+  // a day, readable after sign-out on a shared device. Static assets are
+  // still precached; the app is online-only anyway.
+  workboxOptions: { runtimeCaching: [] }
 })
 
+// Image sources the browser may load, enforced by the browser itself: the
+// markdown renderer refuses other sources too, but a policy header holds for
+// every element on every page. Only the user's own storage project is allowed,
+// so a self-hosted Supabase works without a wildcard; the wildcards stand in
+// when the URL is not set at build time (tests).
+const storageOrigin = (() => {
+  try {
+    return new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).origin
+  } catch {
+    return "https://*.supabase.co https://*.supabase.in"
+  }
+})()
+const devImageOrigins =
+  process.env.NODE_ENV === "production"
+    ? ""
+    : " http://localhost:* http://127.0.0.1:*"
+const contentSecurityPolicy = [
+  `img-src 'self' data: blob: ${storageOrigin}${devImageOrigins}`,
+  "object-src 'none'",
+  "base-uri 'self'",
+  "frame-ancestors 'self'"
+].join("; ")
+
 const securityHeaders = [
+  { key: "Content-Security-Policy", value: contentSecurityPolicy },
   { key: "X-Frame-Options", value: "SAMEORIGIN" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-XSS-Protection", value: "1; mode=block" },
@@ -33,6 +63,12 @@ module.exports = withBundleAnalyzer(
         {
           source: "/(.*)",
           headers: securityHeaders
+        },
+        {
+          // Memory, exports and key flags are per-user and must not survive
+          // in any cache the browser or a proxy keeps.
+          source: "/api/(.*)",
+          headers: [{ key: "Cache-Control", value: "no-store" }]
         }
       ]
     },

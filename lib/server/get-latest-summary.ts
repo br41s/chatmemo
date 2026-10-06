@@ -4,6 +4,7 @@ import { getLessons } from "@/lib/db/lessons"
 import { fillLayer } from "@/lib/server/cut-to-fit"
 import { VersionedCache } from "@/lib/server/versioned-cache"
 import { ContextBudget, resolveContextBudget } from "@/lib/context-budget"
+import { neutraliseMemoryTags } from "@/lib/memory-block"
 import { cookies } from "next/headers"
 
 // ---------------------------------------------------------------------------
@@ -357,7 +358,10 @@ export function buildSummarySections(
 ): string | null {
   const present = (rows: SummaryRow[]) =>
     rows
-      .map(row => ({ row, content: (row.content ?? "").trim() }))
+      .map(row => ({
+        row,
+        content: neutraliseMemoryTags((row.content ?? "").trim())
+      }))
       .filter(({ content }) => content)
 
   const parts: string[] = [
@@ -390,7 +394,7 @@ export function buildSummarySections(
   const sections: string[] = []
 
   const fittedLessons = lessons
-    ? fitLessons(lessons, budget.lessonsChars)
+    ? fitLessons(neutraliseMemoryTags(lessons), budget.lessonsChars)
     : null
   if (fittedLessons) {
     sections.push(

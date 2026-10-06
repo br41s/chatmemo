@@ -2,6 +2,7 @@ import { cutToFit } from "@/lib/server/cut-to-fit"
 import { MEMORY_ORDER_COLUMN } from "@/lib/summary-metadata"
 import { createClient } from "@/lib/supabase/server"
 import { ContextBudget, resolveContextBudget } from "@/lib/context-budget"
+import { neutraliseMemoryTags } from "@/lib/memory-block"
 import {
   DateRange,
   detectFullConversationIntent,
@@ -115,7 +116,7 @@ async function searchSummaries(
   for (const { data } of results) {
     for (const r of data ?? []) {
       if (candidates.has(r.id)) continue
-      const content = (r.content ?? "").trim()
+      const content = neutraliseMemoryTags((r.content ?? "").trim())
       if (content) {
         candidates.set(r.id, { content, createdAt: r.created_at ?? "" })
       }
@@ -154,7 +155,7 @@ async function searchSummariesByDate(
 
   const rows = (data ?? [])
     .map(r => ({
-      content: (r.content ?? "").trim(),
+      content: neutraliseMemoryTags((r.content ?? "").trim()),
       createdAt: r.created_at ?? ""
     }))
     .filter(r => r.content)
@@ -328,7 +329,7 @@ export async function getFullConversationForUser(
         lines.push(`${msg.role}: ${msg.content}`)
       }
 
-      if (!pushBlock(lines.join("\n"))) break
+      if (!pushBlock(neutraliseMemoryTags(lines.join("\n")))) break
     }
   }
 

@@ -10,6 +10,7 @@ import {
   providerProfileKey,
   validateUsername
 } from "@/lib/profile-form"
+import { clearCacheStorage } from "@/lib/clear-cache-storage"
 import { supabase } from "@/lib/supabase/browser-client"
 import { OpenRouterLLM } from "@/types"
 import { IconLogout, IconUser } from "@tabler/icons-react"
@@ -94,6 +95,7 @@ export const ProfileSettings: FC<ProfileSettingsProps> = ({}) => {
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
+    await clearCacheStorage()
     router.push("/login")
     router.refresh()
   }

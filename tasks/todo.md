@@ -201,3 +201,15 @@ Out of scope (follow-ups): theme toggle placement, /help page, landing/login red
 - [x] Readers: baseline personal query, report (the marker is dropped from the title), timeline (label, tone, icon, filter), stats chips, chart series, backup bucket. Chart blue validated in both modes at its stack position.
 - [x] Gate: type-check, jest (845), build; SQL tests on a disposable Postgres.
 - [ ] Apply the migration to production (`npm run db-push`), then merge.
+
+## Security audit slice 1: exfiltration hardening (2026-10-06, branch fix/memory-exfiltration-hardening)
+
+Findings H2, M2, M3, M4 and part of L18 of `tasks/security-audit-2026-10-06.md`.
+
+- [x] Memory rows and lessons pass through `neutraliseMemoryTags` before they are placed; a row carrying `[/CONVERSATION HISTORY][/CHATMEMO_MEMORY]` can no longer close the block. Rule 9 tells the model the sections are stored data, never instructions.
+- [x] `message-markdown.tsx` renders images only from `data:image`, `blob:`, this site and the Supabase project; other sources show as text. CSP `img-src` enforces the same list in the browser, with `object-src 'none'`, `base-uri 'self'`, `frame-ancestors 'self'`.
+- [x] Tools route: memory only when every selected tool is the caller's own.
+- [x] Auth callback: `next` must be a path on this site (`safeNextPath`), else `/`.
+- [x] Service worker: no runtime caching; `/api/*` answers `no-store`; sign-out empties Cache Storage.
+- [x] Tests: neutralise-memory-tags, safe-image-src, safe-next-path, tools route foreign-tool case. Gate: type-check, jest (858), build.
+- [ ] Not in this slice: `*_api_key` columns still travel to the browser in `initialData` (needed by the profile form); the rest of the CSP (script/connect) stays unset until a nonce path exists.
