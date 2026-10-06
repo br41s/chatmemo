@@ -18,5 +18,10 @@ export function safeNextPath(
     return "/"
   }
   if (url.origin !== origin) return "/"
-  return `${url.pathname}${url.search}${url.hash}`
+  const path = `${url.pathname}${url.search}${url.hash}`
+  // The path is resolved once more by whoever redirects to it. A pathname
+  // that normalised to `//host` (`/a/..//host`) would then read as another
+  // host, so the result must itself resolve back to this origin.
+  if (new URL(path, origin).origin !== origin) return "/"
+  return path
 }

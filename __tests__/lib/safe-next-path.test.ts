@@ -15,7 +15,12 @@ describe("safeNextPath", () => {
       "/\t/evil.example",
       "/\n/evil.example",
       "https://evil.example",
-      "https://chatmemo.example@evil.example/"
+      "https://chatmemo.example@evil.example/",
+      // Normalise to a pathname starting with `//`, which re-resolves to
+      // another host when the redirect is built from the returned path.
+      "/foo/..//evil.example",
+      "/..//evil.example/x",
+      "https://chatmemo.example//evil.example"
     ]) {
       expect(safeNextPath(next, ORIGIN)).toBe("/")
     }
