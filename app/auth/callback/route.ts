@@ -16,5 +16,7 @@ export async function GET(request: Request) {
 
   // `next` is only ever a path on this site. Concatenating it unchecked let
   // `?next=@evil.example/login` produce a URL whose host is evil.example.
-  return NextResponse.redirect(new URL(safeNextPath(next), requestUrl.origin))
+  return NextResponse.redirect(
+    new URL(safeNextPath(next, requestUrl.origin), requestUrl.origin)
+  )
 }

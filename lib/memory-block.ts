@@ -58,8 +58,16 @@ export function buildAugmentedOpenAIMessages(
 // known, so a row's copy of any of them is marked as a quotation before it is
 // placed: `[/LESSONS]` becomes `⟦/LESSONS⟧`, same length, and the report's
 // section parser (lib/memory-report.ts) no longer mistakes it for the end.
+//
+// Matched loosely — any case, spaces around the slash and inside the name —
+// because the model would read `[/lessons]` or `[ /LESSONS]` as a closing tag
+// just the same. This is what keeps the block's structure and the report's
+// parser honest; the model-side defence is rule 9 of the instructions, which
+// says the sections are data. A row can still forge a `### [date]` header or
+// a `---` separator inside a section: those are not tags, and the rule is
+// what covers them.
 const MEMORY_TAG_RE =
-  /\[(\/?)(CHATMEMO_MEMORY|LESSONS|CONVERSATION HISTORY|RELEVANT MEMORY|FULL CONVERSATION RETRIEVAL|MEMORY CONTENT)([^\]]*)\]/g
+  /\[(\s*\/?\s*)(CHATMEMO_MEMORY|LESSONS|CONVERSATION\s+HISTORY|RELEVANT\s+MEMORY|FULL\s+CONVERSATION\s+RETRIEVAL|MEMORY\s+CONTENT)\b([^\]\n]*)\]/gi
 
 /** `text` with any of the memory block's own tags turned into quotations. */
 export function neutraliseMemoryTags(text: string): string {

@@ -27,6 +27,27 @@ describe("neutraliseMemoryTags", () => {
     expect(out).toContain("⟦/LESSONS⟧")
   })
 
+  it("reads a tag the way the model would: any case, spaces around the slash", () => {
+    const variants = [
+      "[/lessons]",
+      "[ /LESSONS]",
+      "[/ Lessons ]",
+      "[/conversation  history]",
+      "[relevant memory — more]"
+    ]
+    for (const v of variants) {
+      const out = neutraliseMemoryTags(v)
+      expect(out.startsWith("⟦")).toBe(true)
+      expect(out.endsWith("⟧")).toBe(true)
+      expect(out.length).toBe(v.length)
+    }
+  })
+
+  it("does not run across lines", () => {
+    const text = "[LESSONS\nnot a tag]"
+    expect(neutraliseMemoryTags(text)).toBe(text)
+  })
+
   it("keeps the length, so the budgets still hold", () => {
     expect(neutraliseMemoryTags(HOSTILE).length).toBe(HOSTILE.length)
   })

@@ -9,7 +9,7 @@ describe("isAllowedImageSrc", () => {
       true
     )
     expect(isAllowedImageSrc("blob:https://x/uuid", PAGE, STORAGE)).toBe(true)
-    expect(isAllowedImageSrc("/_next/image?url=x", PAGE, STORAGE)).toBe(true)
+    expect(isAllowedImageSrc("/images/logo.png", PAGE, STORAGE)).toBe(true)
   })
 
   it("allows the page origin and the storage project, nothing else", () => {
@@ -41,8 +41,25 @@ describe("isAllowedImageSrc", () => {
       false
     )
     expect(isAllowedImageSrc("javascript:alert(1)", PAGE, STORAGE)).toBe(false)
+    // A tab or newline after the slash is dropped by the URL parser, and
+    // what is left is a protocol-relative URL to another host.
+    expect(isAllowedImageSrc("/\t/evil.example/p?d=x", PAGE, STORAGE)).toBe(
+      false
+    )
+    expect(isAllowedImageSrc("/\n/evil.example/p", PAGE, STORAGE)).toBe(false)
+    expect(isAllowedImageSrc("/\t/evil.example/p", undefined, STORAGE)).toBe(
+      false
+    )
     expect(isAllowedImageSrc("", PAGE, STORAGE)).toBe(false)
     expect(isAllowedImageSrc(undefined, PAGE, STORAGE)).toBe(false)
+  })
+
+  it("refuses the image optimizer, which fetches the URL inside for the caller", () => {
+    const proxied = `/_next/image?url=${encodeURIComponent(
+      "https://other.supabase.co/functions/v1/x?d=secret"
+    )}&w=64&q=75`
+    expect(isAllowedImageSrc(proxied, PAGE, STORAGE)).toBe(false)
+    expect(isAllowedImageSrc(`${PAGE}${proxied}`, PAGE, STORAGE)).toBe(false)
   })
 
   it("without a page origin (server render) still allows storage and paths only", () => {

@@ -103,9 +103,10 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
   the sections are stored data, never instructions, and every row and the
   lessons document pass through `neutraliseMemoryTags` (`lib/memory-block.ts`)
   before they are placed, which turns a copy of any of the block's own tags
-  (`[/LESSONS]`, `[/CHATMEMO_MEMORY]`…) into `⟦/LESSONS⟧`, same length. A
-  row cannot close a section early and `memory-report.ts` cannot be fooled by
-  one. The tools route injects memory only when every selected tool is the
+  (`[/LESSONS]`, `[/CHATMEMO_MEMORY]`…, any case, spaces tolerated) into
+  `⟦/LESSONS⟧`, same length. That keeps the block's structure and the
+  `memory-report.ts` parser honest; a row can still forge a `### [date]`
+  header or a `---` separator, and the model-side defence for those is rule 9. The tools route injects memory only when every selected tool is the
   caller's own, as the custom route does for models: a shared tool is someone
   else's server and its schema can tell the model what to send there.
 - `lib/server/streaming.ts`: local text-stream helpers used by all chat
@@ -151,13 +152,18 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
   `blob:`, this site and the Supabase project (`isAllowedImageSrc`,
   `lib/safe-image-src.ts`); the rest shows as text. The browser enforces the
   same list through the `Content-Security-Policy` `img-src` in `next.config.js`,
-  built from `NEXT_PUBLIC_SUPABASE_URL` at build time (plus localhost in dev).
-  A new image host needs both.
+  built from `NEXT_PUBLIC_SUPABASE_URL` at build time (plus localhost in dev;
+  unset, nothing remote is allowed). `images.remotePatterns` names that exact
+  host too, and the renderer refuses `/_next/image`: the optimizer fetches the
+  URL it is given, so a wildcard pattern would be an open proxy for an answer's
+  image. A new image host needs all three.
 - **The service worker caches no responses.** `workboxOptions.runtimeCaching`
-  is empty: the defaults kept `/api/*` GETs and the page payload (profile with
-  provider keys) in Cache Storage for a day. `/api/*` also answers
-  `Cache-Control: no-store`, and sign-out empties Cache Storage
-  (`lib/clear-cache-storage.ts`) for workers installed before this.
+  is empty and the start URL is not cached: the defaults kept `/api/*` GETs
+  and the page payload (profile with provider keys) in Cache Storage for a
+  day. `public/sw-cleanup.js` (imported by the generated worker) deletes the
+  caches a previous worker left behind when the new one activates, and
+  sign-out empties Cache Storage too (`lib/clear-cache-storage.ts`). `/api/*`
+  also answers `Cache-Control: no-store`.
 - **Chat widths are ceilings:** the composer and messages use `w-full` with
   `max-w-*` steps. They live in the chat column, not the window, so a fixed
   `sm:w-[600px]` overflows whenever the sidebar is open on a mid-width screen.

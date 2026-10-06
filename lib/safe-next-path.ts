@@ -1,13 +1,22 @@
 /**
  * The `next` parameter of the auth callback as a path on this site, or `/`.
  *
- * Only an absolute path qualifies: `//host` and `/\host` are read by browsers
- * as another host, and a bare `@host` or `.host` appended to the origin
- * changes the host too. Anything that is not a plain path goes home.
+ * Decided on the resolved URL, not on string prefixes: `//host`, `/\host`,
+ * `@host` and `/\t/host` all read as another host once a browser parses
+ * them. Whatever `next` resolves to must keep the site's own origin; what
+ * comes back is that URL's path, query and fragment.
  */
-export function safeNextPath(next: string | null | undefined): string {
+export function safeNextPath(
+  next: string | null | undefined,
+  origin: string
+): string {
   if (!next) return "/"
-  if (!next.startsWith("/")) return "/"
-  if (next.startsWith("//") || next.startsWith("/\\")) return "/"
-  return next
+  let url: URL
+  try {
+    url = new URL(next, origin)
+  } catch {
+    return "/"
+  }
+  if (url.origin !== origin) return "/"
+  return `${url.pathname}${url.search}${url.hash}`
 }
