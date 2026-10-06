@@ -212,4 +212,5 @@ Findings H2, M2, M3, M4 and part of L18 of `tasks/security-audit-2026-10-06.md`.
 - [x] Auth callback: `next` must be a path on this site (`safeNextPath`), else `/`.
 - [x] Service worker: no runtime caching; `/api/*` answers `no-store`; sign-out empties Cache Storage.
 - [x] Tests: neutralise-memory-tags, safe-image-src, safe-next-path, tools route foreign-tool case. Gate: type-check, jest (858), build.
+- [x] `/review` found two bypasses in the first cut, both closed: `/_next/image?url=…` got past the renderer and the CSP (fixed with an exact `remotePatterns` host and a refusal of the optimizer path), and `/%09/evil` got past the prefix checks (both helpers now compare the resolved URL's origin). Also: no CSP wildcard fallback, looser tag matching, `sw-cleanup.js` drops stale caches, start URL not cached. Gate: jest (863), build.
 - [ ] Not in this slice: `*_api_key` columns still travel to the browser in `initialData` (needed by the profile form); the rest of the CSP (script/connect) stays unset until a nonce path exists.
