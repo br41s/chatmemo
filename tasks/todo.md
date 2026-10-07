@@ -259,3 +259,12 @@ The backup's own notification cannot fire when the job never runs (the May–Oct
 - [x] Secret gist `55d5ce71debc612036b60e95cfbe4e80`, file `chatmemo-backup-heartbeat.json`: `{job, ok_at, dump, bytes}` — no memory data; readable by id without auth.
 - [x] `scripts/backup-chatmemo.sh` updates it after each verified dump via `gh gist edit`; a failure is logged, the backup still exits 0. Tested: real run updated the gist; a bad id → "heartbeat not sent", exit 0.
 - [ ] Hermes side: `incidents/sweep.py` signal (hermes-sandbox PR), ships with the next batched deploy.
+
+## Storage cleanup key: new secret key in the apikey header — 2026-10-07
+
+After the M5 lockdown, the healthcheck (`delete_storage_object` on a missing path) answered `403 signature verification failed`: the Vault URL and the pasted key were right (ref `oemjzjahpqjrhyyqxylj`, role `service_role`, issued 2026-05-17), but the project no longer verifies legacy JWTs signed with that secret. Brais created a dedicated secret key `storagecleanup`.
+
+- [x] `supabase/migrations/20261007020000_storage_delete_apikey_header.sql`: the key goes in `apikey`; `Authorization: Bearer` only when it is a JWT (`eyJ…`, e.g. the local demo key). New keys are not JWTs (supabase.com/docs/guides/api/api-keys).
+- [x] Integration test: legacy key → both headers, `sb_secret_` → `apikey` only, missing secret → warning; jest guard.
+- [x] ADMIN_GUIDE: "Storage cleanup key" section (rotation, healthcheck); CLAUDE.md gotcha.
+- [ ] Brais: put `storagecleanup` into the Vault secret, run the healthcheck (expect "not found").

@@ -182,13 +182,15 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
 - Never commit `.env.local`; bearer-token import auth is configured by
   `npm run setup:sync`.
 - **Storage cleanup reads its key from Vault.** The `delete_old_*` triggers
-  call `delete_storage_object`, which takes the Storage URL and service-role
-  key from the Vault secrets `storage_delete_project_url` /
+  call `delete_storage_object`, which takes the Storage URL and key from the
+  Vault secrets `storage_delete_project_url` /
   `storage_delete_service_role_key`; anon and authenticated may not run it
-  (until 2026-10-07 they could, with the real key in the function body).
-  Rotating the service-role key means updating that secret too, or deletes
-  leave orphaned objects with only a warning (ADMIN_GUIDE, key-based sync
-  upgrade); a missing secret also only warns, never blocks the delete.
+  (until 2026-10-07 they could, with the real key in the function body). The
+  key is the dedicated `storagecleanup` secret key (`sb_secret_…`), sent in
+  the `apikey` header — new keys are not JWTs and fail as a Bearer token; the
+  legacy 2026-05 service_role JWT no longer verifies. A wrong or missing
+  secret only warns and leaves orphaned objects; ADMIN_GUIDE "Storage cleanup
+  key" has the rotation steps and a healthcheck query.
 
 ## Verification
 
