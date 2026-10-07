@@ -234,9 +234,10 @@ Findings H1, H3, M1, M6, M7 and L7/L8 of `tasks/security-audit-2026-10-06.md`.
 
 The LaunchAgent had run a script that does not exist every night since May; no dump was ever written.
 
-- [x] `supabase/migrations/20261007000000_backup_readonly_role.sql`: `chatmemo_backup` may only SELECT `summaries` and `user_lessons` (own read policies, no BYPASSRLS, 2 connections, no password in git).
+- [x] `supabase/migrations/20261007000000_backup_readonly_role.sql`: `chatmemo_backup` may only SELECT `summaries` and `user_lessons` (own read policies, no BYPASSRLS, 5 connections, no password in git).
 - [x] `scripts/backup-setup.mjs`: random password into `~/.pgpass` (600); prints an ALTER ROLE carrying only the SCRAM verifier.
 - [x] `scripts/backup-chatmemo.sh`: session pooler + TLS (direct host is IPv6-only), custom format, `pg_restore --list` check, copy to the dated name only once verified, notification on failure, folder 700.
 - [x] Tested on a TLS Postgres 15 container with Supabase-like `auth` schema and RLS: 100/100 rows from two users, `profiles` excluded, every write refused, wrong password → exit 1 + notification with the earlier dump untouched, restore into empty tables 100/2.
+- [x] `/review` (subagent): connection limit 2→5; retention `-maxdepth 1 -type f`; `.pgpass` locked before the write; docs say "no table writes" (PUBLIC-executable functions stay with audit M5); "pruned once older than 30 days". Its `auth.uid()` concern was already covered by the container test.
 - [x] ADMIN_GUIDE §12.2–12.3 rewritten; CLAUDE.md's "no database key" line now names the read-only role.
 - [ ] Brais: `npm run db-push`; `node scripts/backup-setup.mjs` and run its ALTER ROLE in the SQL editor; main checkout on `main`; `launchctl kickstart gui/$(id -u)/com.chatmemo.backup`.

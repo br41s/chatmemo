@@ -48,6 +48,6 @@ TABLES=$(pg_restore --list "$TMP" | grep -c "TABLE DATA public" || true)
 cp "$TMP" "$OUT"
 
 if [ "$KEEP_DAYS" -gt 0 ]; then
-  find "$DIR" -name 'chatmemo-*.dump' -mtime +"$KEEP_DAYS" -delete
+  find "$DIR" -maxdepth 1 -type f -name 'chatmemo-*.dump' -mtime +"$KEEP_DAYS" -delete
 fi
 echo "$(date '+%F %T') backup ok: $OUT ($(du -h "$OUT" | cut -f1))"

@@ -46,7 +46,11 @@ function scramVerifier(password, iterations = 4096) {
 // base64url has no ":" or "\", so the .pgpass line needs no escaping.
 const password = randomBytes(32).toString("base64url")
 const prefix = `${HOST}:${PORT}:postgres:${USER}:`
-const kept = existsSync(PGPASS)
+const exists = existsSync(PGPASS)
+// Lock an existing file before the new password goes in: `mode` below only
+// applies when the file is created.
+if (exists) chmodSync(PGPASS, 0o600)
+const kept = exists
   ? readFileSync(PGPASS, "utf8")
       .split("\n")
       .filter(line => line && !line.startsWith(prefix))
@@ -54,7 +58,6 @@ const kept = existsSync(PGPASS)
 writeFileSync(PGPASS, [...kept, prefix + password].join("\n") + "\n", {
   mode: 0o600
 })
-chmodSync(PGPASS, 0o600) // an existing file keeps its old mode otherwise
 
 console.log(`Stored the password for ${USER} in ${PGPASS}.`)
 console.log(

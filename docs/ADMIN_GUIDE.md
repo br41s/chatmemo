@@ -622,14 +622,15 @@ The Memory History panel has a built-in **Export all** button that downloads one
 
 A launchd job dumps every row of `summaries` and `user_lessons` at 03:00 into
 `~/backups/chatmemo/chatmemo-YYYY-MM-DD.dump` (pg_dump custom format: compressed, mode 600;
-30 days kept). The job runs `scripts/backup-chatmemo.sh` straight from the chatmemo checkout,
-like the session watcher.
+pruned once older than 30 days). The job runs `scripts/backup-chatmemo.sh` straight from the
+chatmemo checkout, like the session watcher.
 
 How it is locked down:
 
-- It logs in as **`chatmemo_backup`**, a role that can only `SELECT` those two tables
-  (`supabase/migrations/20261007000000_backup_readonly_role.sql`). The laptop holds no key
-  that can write or delete anything.
+- It logs in as **`chatmemo_backup`**, whose only table privilege is `SELECT` on those two
+  tables (`supabase/migrations/20261007000000_backup_readonly_role.sql`). The laptop holds no
+  key that can write to any table. (Like every role it can call functions granted to
+  `PUBLIC`; revoking those is audit item M5.)
 - The role's password lives only in `~/.pgpass` (mode 600). The database keeps a SCRAM hash.
 - It connects through the Supabase **session pooler** with TLS (`sslmode=require`). The
   direct `db.<ref>.supabase.co` host is IPv6-only and unreachable from the Mac.

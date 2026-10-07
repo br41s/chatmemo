@@ -40,8 +40,8 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
   row. The laptop holds no OpenRouter key and no database key that can write:
   `~/.chatmemo/config.json` carries the token, the deployment URL and
   `excludeProjects`, mode 600; the only database credential is the nightly
-  backup's read-only `chatmemo_backup` role in `~/.pgpass` (SELECT on
-  `summaries` and `user_lessons`, nothing else — ADMIN_GUIDE §12.2). The
+  backup's read-only `chatmemo_backup` role in `~/.pgpass` (its only table
+  privilege is SELECT on `summaries` and `user_lessons` — ADMIN_GUIDE §12.2). The
   cloud hook exports the transcript-cleaning passes (`cleanText`: injected
   blocks dropped, credentials redacted) and the laptop scripts import them, so
   every path cleans the same way; a `.chatmemo-nosync` file opts a directory

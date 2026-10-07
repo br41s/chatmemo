@@ -1,8 +1,9 @@
 -- Read-only role for the laptop's nightly backup (scripts/backup-chatmemo.sh).
 --
 -- The laptop holds no write-capable database key (PR #70). The backup needs to read every
--- memory row, so it gets its own login that can SELECT summaries and user_lessons and
--- nothing else: no writes, no other tables, no RLS bypass.
+-- memory row, so it gets its own login with SELECT on summaries and user_lessons and no
+-- other table privilege: no table writes, no other tables, no RLS bypass. (Like every role
+-- it can still call functions granted to PUBLIC; revoking those is audit item M5.)
 --
 -- No password here. `node scripts/backup-setup.mjs` generates one on the laptop, writes it
 -- to ~/.pgpass and prints an ALTER ROLE carrying only its SCRAM verifier, which is run once
@@ -13,7 +14,7 @@ BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'chatmemo_backup') THEN
     CREATE ROLE chatmemo_backup
       LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS
-      CONNECTION LIMIT 2;
+      CONNECTION LIMIT 5; -- one pg_dump, plus slack for pooler connections
   END IF;
 END
 $$;
