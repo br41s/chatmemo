@@ -251,3 +251,11 @@ Checked in production through the backup role (values never printed): `delete_st
 - [x] Guard test: no migration puts a key literal back into a function body.
 - [x] ADMIN_GUIDE (service-role key section, rotation step updates the Vault copy, restore note: prod is Postgres 17); CLAUDE.md gotcha.
 - [ ] Brais: rotating the service-role key (it sat in the function body); `supabase/config.toml` says Postgres 15, production is 17.6.
+
+## Backup heartbeat for the Hermes incident sweep — 2026-10-07
+
+The backup's own notification cannot fire when the job never runs (the May–October failure). An outside check needs a signal from the Mac: Brais chose a secret gist over Drive (the Mac's rclone copy of `hermesdrive` had expired and uses rclone's retiring shared client) and a Mac-only watchdog.
+
+- [x] Secret gist `55d5ce71debc612036b60e95cfbe4e80`, file `chatmemo-backup-heartbeat.json`: `{job, ok_at, dump, bytes}` — no memory data; readable by id without auth.
+- [x] `scripts/backup-chatmemo.sh` updates it after each verified dump via `gh gist edit`; a failure is logged, the backup still exits 0. Tested: real run updated the gist; a bad id → "heartbeat not sent", exit 0.
+- [ ] Hermes side: `incidents/sweep.py` signal (hermes-sandbox PR), ships with the next batched deploy.

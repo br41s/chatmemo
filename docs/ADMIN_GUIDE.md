@@ -637,6 +637,11 @@ How it is locked down:
 - A failed run posts a macOS notification and writes the reason to
   `~/backups/chatmemo/backup.err`. A dump that `pg_restore` cannot list counts as a failure,
   and a failed run never overwrites a good dump (it writes to `.in-progress.dump` first).
+- After each verified dump it updates a secret gist with the time and size (no memory data),
+  using the `gh` login. Hermes's incident sweep reads it hourly and posts to the Incidents
+  topic when it is ~50h old — the one alarm that also fires when the job never runs at all.
+  A failed update is logged to `backup.err` and does not fail the backup;
+  `CHATMEMO_BACKUP_HEARTBEAT_GIST=""` turns it off.
 
 #### Setup (once)
 

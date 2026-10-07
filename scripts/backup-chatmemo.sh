@@ -51,3 +51,15 @@ if [ "$KEEP_DAYS" -gt 0 ]; then
   find "$DIR" -maxdepth 1 -type f -name 'chatmemo-*.dump' -mtime +"$KEEP_DAYS" -delete
 fi
 echo "$(date '+%F %T') backup ok: $OUT ($(du -h "$OUT" | cut -f1))"
+
+# Heartbeat for the Hermes incident sweep, which alerts the Incidents topic after ~50h without
+# one — the only alarm that also fires when this job does not run at all. A secret gist,
+# written with the gh login; time and size only. Not sending it does not fail the backup: the
+# dump is safe, and the missing beat is what raises the alarm. "" turns it off.
+GIST="${CHATMEMO_BACKUP_HEARTBEAT_GIST-55d5ce71debc612036b60e95cfbe4e80}"
+if [ -n "$GIST" ]; then
+  printf '{"job":"chatmemo-backup","ok_at":"%s","dump":"%s","bytes":%s}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(basename "$OUT")" "$(stat -f %z "$OUT")" >"$DIR/.heartbeat.json"
+  gh gist edit "$GIST" --filename chatmemo-backup-heartbeat.json "$DIR/.heartbeat.json" >/dev/null ||
+    echo "$(date '+%F %T') heartbeat not sent (gh gist edit failed); Hermes alerts if it stays missing" >&2
+fi
