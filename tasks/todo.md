@@ -229,3 +229,14 @@ Findings H1, H3, M1, M6, M7 and L7/L8 of `tasks/security-audit-2026-10-06.md`.
 - [x] `/review` fixes: the watcher and the bulk importer read the session's `cwd` from the transcript and honour the marker, which is also found in any parent directory; the credential patterns are bounded (a `pwd-pwd-…` line went from seconds to 2 ms per Stop) and cover bearer headers, JSON keys, query strings, Stripe/HF/npm/GitLab shapes and `PASS`, while code that merely names a token is left alone; block stripping is line-anchored so a tag named in prose survives; `replaceRowId` is the general token's alone and retires only keyless session rows; the old row id is kept when the server stored nothing; the watcher re-reads its config each poll instead of exiting into launchd's restart loop; `isMeta` entries are skipped; setup refuses equal tokens and strips quotes from env values; the guide says Vercel needs the cloud token too, the pinned setup script says when it refused the hook, and an upgrade section covers rotating the old key and token. Gate: jest (897), build.
 - [ ] After merge, on the laptop: `npm run setup:sync` (the old config no longer works: the hook logs "run npm run setup:sync" until then). In the cloud environment: set `CHATMEMO_IMPORT_TOKEN` to the new cloud token and replace the setup script with the pinned version from the guide. On Vercel: add `CHATMEMO_CLOUD_IMPORT_TOKEN`.
 - [ ] Not in this slice: the bookmarklet still carries the general token into claude.ai's and Gemini's page context (a per-site token would need a third env var); the backup script (I5) and the error-message cleanup (L1) wait for slices 3 and 5.
+
+## Fix: the nightly backup (audit I5) — 2026-10-07
+
+The LaunchAgent had run a script that does not exist every night since May; no dump was ever written.
+
+- [x] `supabase/migrations/20261007000000_backup_readonly_role.sql`: `chatmemo_backup` may only SELECT `summaries` and `user_lessons` (own read policies, no BYPASSRLS, 2 connections, no password in git).
+- [x] `scripts/backup-setup.mjs`: random password into `~/.pgpass` (600); prints an ALTER ROLE carrying only the SCRAM verifier.
+- [x] `scripts/backup-chatmemo.sh`: session pooler + TLS (direct host is IPv6-only), custom format, `pg_restore --list` check, copy to the dated name only once verified, notification on failure, folder 700.
+- [x] Tested on a TLS Postgres 15 container with Supabase-like `auth` schema and RLS: 100/100 rows from two users, `profiles` excluded, every write refused, wrong password → exit 1 + notification with the earlier dump untouched, restore into empty tables 100/2.
+- [x] ADMIN_GUIDE §12.2–12.3 rewritten; CLAUDE.md's "no database key" line now names the read-only role.
+- [ ] Brais: `npm run db-push`; `node scripts/backup-setup.mjs` and run its ALTER ROLE in the SQL editor; main checkout on `main`; `launchctl kickstart gui/$(id -u)/com.chatmemo.backup`.
