@@ -181,6 +181,13 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
   `sm:w-[600px]` overflows whenever the sidebar is open on a mid-width screen.
 - Never commit `.env.local`; bearer-token import auth is configured by
   `npm run setup:sync`.
+- **Storage cleanup reads its key from Vault.** The `delete_old_*` triggers
+  call `delete_storage_object`, which takes the Storage URL and service-role
+  key from the Vault secrets `storage_delete_project_url` /
+  `storage_delete_service_role_key`; only its owner may run it (until
+  2026-10-07 anon could, with the real key in the function body). Rotating
+  the service-role key means updating that secret too, or deletes leave
+  orphaned objects with only a warning (ADMIN_GUIDE, key-based sync upgrade).
 
 ## Verification
 

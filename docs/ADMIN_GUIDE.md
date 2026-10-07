@@ -239,7 +239,7 @@ All operations are scoped to `auth.uid() = user_id`:
 | INSERT    | `user_id = auth.uid()` |
 | DELETE    | `user_id = auth.uid()` |
 
-The **service role key** bypasses RLS — used only by `/api/import/conversation` on the server, which scopes every write to the user a token resolved to. The laptop scripts and the cloud hook hold an import token, never this key.
+The **service role key** bypasses RLS — used only by `/api/import/conversation` on the server, which scopes every write to the user a token resolved to. The laptop scripts and the cloud hook hold an import token, never this key. A copy sits in Vault (`storage_delete_service_role_key`, with `storage_delete_project_url`) for `delete_storage_object`, which the `delete_old_*` triggers call to remove a deleted row's file from Storage; only its owner can run it or read the secrets.
 
 Additional sharing rules are enforced in the database:
 
@@ -379,7 +379,7 @@ Only sessions started after the setup script is in place are synced; earlier clo
 
 Before the token-only sync, `~/.chatmemo/config.json` held the service-role key, at the default file mode, and the general token was printed to the terminal. Scoping the cloud token protects nothing while those are still valid, so after `npm run setup:sync`:
 
-1. Rotate the service-role key in the Supabase dashboard and update `SUPABASE_SERVICE_ROLE_KEY` in `.env.local` and on Vercel.
+1. Rotate the service-role key in the Supabase dashboard and update `SUPABASE_SERVICE_ROLE_KEY` in `.env.local` and on Vercel. Update the Vault copy too, in the SQL editor: `select vault.update_secret((select id from vault.secrets where name = 'storage_delete_service_role_key'), '<new key>');` — with a stale key, deleting a file or image leaves the object in Storage and only logs a warning.
 2. Generate a new `CHATMEMO_IMPORT_TOKEN`, update it in `.env.local` and on Vercel, run `npm run setup:sync` again, and replace the bookmarklets.
 3. If the watcher is installed, reload it so it runs the new code: `launchctl unload` then `launchctl load` on its plist. Until then the running process keeps the old key in memory.
 
@@ -726,8 +726,9 @@ pg_restore --data-only --no-owner --no-privileges \
   ~/backups/chatmemo/chatmemo-YYYY-MM-DD.dump
 ```
 
-Add `--table=summaries` or `--table=user_lessons` to restore one table. `pg_restore` 18
-against Postgres 15 reports one ignorable error (`unrecognized configuration parameter
+Add `--table=summaries` or `--table=user_lessons` to restore one table. Production runs
+Postgres 17. Restoring into Postgres 15 (the local stack, `supabase/config.toml`) with
+`pg_restore` 18 reports one ignorable error (`unrecognized configuration parameter
 "transaction_timeout"`); the rows still load.
 
 > **Caution:** a pg_dump restore does not deduplicate (the in-app restore does). Into a table

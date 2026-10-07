@@ -241,3 +241,13 @@ The LaunchAgent had run a script that does not exist every night since May; no d
 - [x] `/review` (subagent): connection limit 2→5; retention `-maxdepth 1 -type f`; `.pgpass` locked before the write; docs say "no table writes" (PUBLIC-executable functions stay with audit M5); "pruned once older than 30 days". Its `auth.uid()` concern was already covered by the container test.
 - [x] ADMIN_GUIDE §12.2–12.3 rewritten; CLAUDE.md's "no database key" line now names the read-only role.
 - [ ] Brais: `npm run db-push`; `node scripts/backup-setup.mjs` and run its ALTER ROLE in the SQL editor; main checkout on `main`; `launchctl kickstart gui/$(id -u)/com.chatmemo.backup`.
+
+## Fix: storage-delete functions (audit M5) — 2026-10-07
+
+Checked in production through the backup role (values never printed): `delete_storage_object` held the real service-role key and project URL, and anon/authenticated could execute it — any holder of the public anon key could delete any stored object by path. The key was also readable in `pg_proc.prosrc` by every SQL login, the new read-only backup role included.
+
+- [x] `supabase/migrations/20261007010000_storage_delete_lockdown.sql`: URL + key copied from the deployed body into Vault (round trip verified before the swap, aborts otherwise); function reads Vault, `search_path = ''`; EXECUTE revoked from PUBLIC, anon, authenticated on both functions.
+- [x] Tested on Postgres 17 with Vault/http stand-ins: anon delete reproduced before; after: body clean, Vault holds both, anon/authenticated/backup refused, a signed-in user's delete still fires the trigger with the right URL and key, re-run idempotent, broken state aborts with nothing changed.
+- [x] Guard test: no migration puts a key literal back into a function body.
+- [x] ADMIN_GUIDE (service-role key section, rotation step updates the Vault copy, restore note: prod is Postgres 17); CLAUDE.md gotcha.
+- [ ] Brais: rotating the service-role key (it sat in the function body); `supabase/config.toml` says Postgres 15, production is 17.6.

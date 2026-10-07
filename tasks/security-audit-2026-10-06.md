@@ -141,6 +141,13 @@ Check: `select prosrc from pg_proc where proname='delete_storage_object'` and
 `select has_function_privilege('anon','public.delete_storage_object(text,text)','execute')`.
 Fix: `REVOKE EXECUTE … FROM PUBLIC, anon, authenticated` (triggers still work as definer); rotate the
 service key if it was ever stored there.
+**Checked and fixed 2026-10-07** (branch `fix/storage-delete-lockdown`): production's body held a real
+219-character key (not the repo's demo key) and the hosted project URL; anon, authenticated and every
+login role had EXECUTE; the `http` extension is installed — so the exposure was live. Migration
+`20261007010000_storage_delete_lockdown.sql` copies URL and key from the deployed body into Vault (values
+never in git), rewrites the function to read them there with `search_path = ''`, and revokes EXECUTE from
+PUBLIC, anon and authenticated. The key was readable in `pg_proc.prosrc` by any SQL login (never through
+PostgREST); rotating it stays Brais's call (dashboard + Vercel + the Vault secret).
 
 **M6. Import identity bound to `users[0]` of an unordered admin listing.**
 `scripts/chatmemo-hook-setup.mjs:81, 96`. With a second account in the project, re-running
