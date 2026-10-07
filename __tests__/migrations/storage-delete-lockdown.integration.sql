@@ -183,6 +183,30 @@ END
 $$;
 RESET ROLE;
 
+-- With the secrets gone (deleted, renamed), a user's delete still goes through: warning only.
+DO $$
+BEGIN
+    IF to_regclass('extensions.calls') IS NOT NULL THEN
+        DELETE FROM vault.secrets WHERE name LIKE 'storage_delete_%';
+        TRUNCATE extensions.calls;
+    END IF;
+END
+$$;
+INSERT INTO public.m5_files VALUES (2, 'user-a/notes.txt');
+SET ROLE authenticated;
+DELETE FROM public.m5_files WHERE id = 2;
+RESET ROLE;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM public.m5_files WHERE id = 2) THEN
+        RAISE EXCEPTION 'a missing Vault secret blocked the user''s delete';
+    END IF;
+    IF to_regclass('extensions.calls') IS NOT NULL AND EXISTS (SELECT 1 FROM extensions.calls) THEN
+        RAISE EXCEPTION 'a request went to Storage without a URL or key';
+    END IF;
+END
+$$;
+
 DROP TABLE public.m5_files;
 DROP FUNCTION public.m5_delete_old_file();
 

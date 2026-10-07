@@ -10,7 +10,7 @@
 --
 -- The key also sat in the function body, and every role that can log in reads
 -- pg_proc.prosrc — the read-only chatmemo_backup role included. URL and key move to Vault
--- (readable by the owner, not by that role), copied from whatever the deployed body holds,
+-- (not readable by that role, anon or authenticated), copied from whatever the deployed body holds,
 -- so their values appear neither in git nor in this file. Any step that fails aborts the
 -- migration and leaves the old function in place.
 
@@ -52,6 +52,10 @@ BEGIN
      (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'storage_delete_service_role_key') THEN
     RAISE EXCEPTION 'Vault holds a different storage_delete_service_role_key than the function';
   END IF;
+  IF found_url IS NOT NULL AND found_url IS DISTINCT FROM
+     (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'storage_delete_project_url') THEN
+    RAISE EXCEPTION 'Vault holds a different storage_delete_project_url than the function';
+  END IF;
 END
 $$;
 
@@ -68,6 +72,13 @@ DECLARE
                              WHERE name = 'storage_delete_service_role_key');
   url TEXT := project_url || '/storage/v1/object/' || bucket || '/' || object;
 BEGIN
+  -- A missing secret must not block the user's delete that fired the trigger: warn instead.
+  IF project_url IS NULL OR service_role_key IS NULL THEN
+    RAISE WARNING 'storage_delete Vault secrets missing; % % left in Storage', bucket, object;
+    status := 0;
+    content := 'vault secret missing';
+    RETURN;
+  END IF;
   SELECT
       INTO status, content
            result.status::INT, result.content::TEXT
@@ -84,3 +95,16 @@ ALTER FUNCTION public.delete_storage_object_from_bucket(text, text) SET search_p
 
 REVOKE ALL ON FUNCTION public.delete_storage_object(text, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.delete_storage_object_from_bucket(text, text) FROM PUBLIC, anon, authenticated;
+
+-- REVOKE only removes what the revoking role granted: prove the hole is closed.
+-- (service_role keeps EXECUTE through Supabase's default privileges; it holds this key anyway.)
+DO $$
+BEGIN
+  IF has_function_privilege('anon', 'public.delete_storage_object(text,text)', 'execute')
+     OR has_function_privilege('authenticated', 'public.delete_storage_object(text,text)', 'execute')
+     OR has_function_privilege('anon', 'public.delete_storage_object_from_bucket(text,text)', 'execute')
+     OR has_function_privilege('authenticated', 'public.delete_storage_object_from_bucket(text,text)', 'execute') THEN
+    RAISE EXCEPTION 'anon or authenticated can still execute a storage-delete function';
+  END IF;
+END
+$$;

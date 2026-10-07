@@ -20,7 +20,7 @@ describe("storage delete lockdown migration (audit M5)", () => {
     expect(migration).toContain("name = 'storage_delete_service_role_key'")
   })
 
-  it("leaves both functions to their owner", () => {
+  it("takes both functions away from PUBLIC, anon and authenticated", () => {
     for (const fn of [
       "public.delete_storage_object(text, text)",
       "public.delete_storage_object_from_bucket(text, text)"
@@ -29,6 +29,15 @@ describe("storage delete lockdown migration (audit M5)", () => {
         `REVOKE ALL ON FUNCTION ${fn} FROM PUBLIC, anon, authenticated`
       )
     }
+    expect(migration).toContain(
+      "anon or authenticated can still execute a storage-delete function"
+    )
+  })
+
+  it("never lets a missing Vault secret block the delete that fired it", () => {
+    expect(migration).toMatch(
+      /IF project_url IS NULL OR service_role_key IS NULL THEN\s+RAISE WARNING/
+    )
   })
 
   it("no later migration puts a key back into a function body", () => {
