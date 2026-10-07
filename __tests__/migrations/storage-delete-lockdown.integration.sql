@@ -7,9 +7,10 @@
 \endif
 
 -- Audit M5. Production's delete_storage_object held the real project URL and service-role
--- key, executable by anon. This rebuilds that state, applies the lockdown and checks that
--- the key leaves the function body, that only the owner can call it, and that the cleanup
--- trigger still reaches Storage with the right URL and key.
+-- key, executable by anon. This rebuilds that state, applies the lockdown and the apikey-header
+-- follow-up, and checks that the key leaves the function body, that only the owner can call
+-- it, and that the cleanup trigger reaches Storage with the right URL and headers: a legacy
+-- JWT in `apikey` and `Authorization: Bearer`, a new sb_secret_ key in `apikey` only.
 
 DO $$
 BEGIN
@@ -55,7 +56,7 @@ BEGIN
             content_type text, content text);
         CREATE TYPE extensions.http_response AS (
             status int, content_type text, headers extensions.http_header[], content text);
-        CREATE TABLE extensions.calls (method text, uri text, auth text);
+        CREATE TABLE extensions.calls (method text, uri text, apikey text, auth text);
         GRANT INSERT ON extensions.calls TO PUBLIC;
         CREATE FUNCTION extensions.http_header(field text, value text)
         RETURNS extensions.http_header LANGUAGE sql AS $f$
@@ -64,7 +65,9 @@ BEGIN
         CREATE FUNCTION extensions.http(req extensions.http_request)
         RETURNS extensions.http_response LANGUAGE plpgsql AS $f$
         BEGIN
-            INSERT INTO extensions.calls VALUES (req.method, req.uri, (req.headers[1]).value);
+            INSERT INTO extensions.calls VALUES (req.method, req.uri,
+                (SELECT h.value FROM unnest(req.headers) h WHERE lower(h.field) = 'apikey'),
+                (SELECT h.value FROM unnest(req.headers) h WHERE lower(h.field) = 'authorization'));
             RETURN ROW(200, 'text/plain', NULL, 'ok')::extensions.http_response;
         END
         $f$;
@@ -131,10 +134,11 @@ INSERT INTO public.m5_files VALUES (1, 'user-a/report.pdf') ON CONFLICT DO NOTHI
 \ir ../../supabase/migrations/20261007010000_storage_delete_lockdown.sql
 -- Applying it twice must change nothing.
 \ir ../../supabase/migrations/20261007010000_storage_delete_lockdown.sql
+\ir ../../supabase/migrations/20261007020000_storage_delete_apikey_header.sql
 
 DO $$
 BEGIN
-    IF (SELECT prosrc ~ 'eyJ|supabase\.co' FROM pg_proc
+    IF (SELECT prosrc ~ 'eyJ[A-Za-z0-9_-]{6,}|https?://[a-z0-9]+\.supabase\.co' FROM pg_proc
          WHERE oid = 'public.delete_storage_object(text,text)'::regprocedure) THEN
         RAISE EXCEPTION 'the URL or key is still in the function body';
     END IF;
@@ -165,8 +169,9 @@ BEGIN
         SELECT 1 FROM extensions.calls
          WHERE method = 'DELETE'
            AND uri = 'https://abcdefghijkl.supabase.co/storage/v1/object/files/user-a/report.pdf'
+           AND apikey = 'eyJtestHeader.eyJtestPayload.testSignature'
            AND auth = 'Bearer eyJtestHeader.eyJtestPayload.testSignature') THEN
-        RAISE EXCEPTION 'the cleanup trigger did not reach Storage with the Vault URL and key';
+        RAISE EXCEPTION 'the cleanup trigger did not reach Storage with the Vault URL and a legacy key in both headers';
     END IF;
 END
 $$;
@@ -182,6 +187,30 @@ EXCEPTION
 END
 $$;
 RESET ROLE;
+
+-- A new secret key (not a JWT) goes in `apikey` only, never as a Bearer token.
+DO $$
+BEGIN
+    IF to_regclass('extensions.calls') IS NOT NULL THEN
+        UPDATE vault.secrets SET secret = 'sb_secret_testkey' WHERE name = 'storage_delete_service_role_key';
+        TRUNCATE extensions.calls;
+    END IF;
+END
+$$;
+INSERT INTO public.m5_files VALUES (3, 'user-a/new-key.txt');
+SET ROLE authenticated;
+DELETE FROM public.m5_files WHERE id = 3;
+RESET ROLE;
+DO $$
+BEGIN
+    IF to_regclass('extensions.calls') IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM extensions.calls
+         WHERE uri = 'https://abcdefghijkl.supabase.co/storage/v1/object/files/user-a/new-key.txt'
+           AND apikey = 'sb_secret_testkey' AND auth IS NULL) THEN
+        RAISE EXCEPTION 'a secret key was not sent in apikey alone';
+    END IF;
+END
+$$;
 
 -- With the secrets gone (deleted, renamed), a user's delete still goes through: warning only.
 DO $$

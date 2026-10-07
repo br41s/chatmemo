@@ -239,7 +239,7 @@ All operations are scoped to `auth.uid() = user_id`:
 | INSERT    | `user_id = auth.uid()` |
 | DELETE    | `user_id = auth.uid()` |
 
-The **service role key** bypasses RLS — used only by `/api/import/conversation` on the server, which scopes every write to the user a token resolved to. The laptop scripts and the cloud hook hold an import token, never this key. A copy sits in Vault (`storage_delete_service_role_key`, with `storage_delete_project_url`) for `delete_storage_object`, which the `delete_old_*` triggers call to remove a deleted row's file from Storage; `anon`, `authenticated` and other `PUBLIC` roles can neither run it nor read the secrets (`service_role` can, and holds the same key).
+The **service role key** bypasses RLS — used only by `/api/import/conversation` on the server, which scopes every write to the user a token resolved to. The laptop scripts and the cloud hook hold an import token, never this key. Storage cleanup has its own key: `delete_storage_object`, which the `delete_old_*` triggers call to remove a deleted row's file from Storage, reads `storage_delete_project_url` and `storage_delete_service_role_key` from Vault. The latter holds a dedicated secret key (`sb_secret_…`, named `storagecleanup`), sent in the `apikey` header; a legacy `service_role` JWT also works (sent as `Authorization: Bearer` too). `anon`, `authenticated` and other `PUBLIC` roles can neither run the function nor read the secrets.
 
 Additional sharing rules are enforced in the database:
 
@@ -379,9 +379,25 @@ Only sessions started after the setup script is in place are synced; earlier clo
 
 Before the token-only sync, `~/.chatmemo/config.json` held the service-role key, at the default file mode, and the general token was printed to the terminal. Scoping the cloud token protects nothing while those are still valid, so after `npm run setup:sync`:
 
-1. Rotate the service-role key in the Supabase dashboard and update `SUPABASE_SERVICE_ROLE_KEY` in `.env.local` and on Vercel. Update the Vault copy too, in the SQL editor: `select vault.update_secret((select id from vault.secrets where name = 'storage_delete_service_role_key'), '<new key>');` — with a stale or missing secret, deleting a file or image leaves the object in Storage and only logs a warning.
+1. Rotate the service-role key in the Supabase dashboard and update `SUPABASE_SERVICE_ROLE_KEY` in `.env.local` and on Vercel. Storage cleanup does not use this key (see Storage cleanup key, below).
 2. Generate a new `CHATMEMO_IMPORT_TOKEN`, update it in `.env.local` and on Vercel, run `npm run setup:sync` again, and replace the bookmarklets.
 3. If the watcher is installed, reload it so it runs the new code: `launchctl unload` then `launchctl load` on its plist. Until then the running process keeps the old key in memory.
+
+### Storage cleanup key
+
+`storage_delete_service_role_key` in Vault holds the `storagecleanup` secret key. To rotate it: create a new secret key in **Project Settings → API Keys**, then in the SQL editor replace the text between the quotes, angle brackets included:
+
+```sql
+select vault.update_secret((select id from vault.secrets where name = 'storage_delete_service_role_key'), 'sb_secret_...');
+```
+
+Check it (deletes nothing — the object does not exist); a "not found" answer means the key works, `Unauthorized` means it does not:
+
+```sql
+select status, content from public.delete_storage_object('files', 'healthcheck/does-not-exist');
+```
+
+Then revoke the old key. With a wrong or missing secret, deleting a file or image leaves the object in Storage and only logs a warning.
 
 ### Claude Code Bulk Import
 
