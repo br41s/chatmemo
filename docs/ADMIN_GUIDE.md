@@ -618,192 +618,121 @@ The Memory History panel has a built-in **Export all** button that downloads one
 
 ---
 
-### 12.2 Automated pg_dump Backup (full database, free tier)
+### 12.2 Nightly pg_dump backup (summaries + lessons)
 
-For a complete database backup (all tables, all users) scheduled to run daily, use `pg_dump` via a macOS `launchd` job.
+A launchd job dumps every row of `summaries` and `user_lessons` at 03:00 into
+`~/backups/chatmemo/chatmemo-YYYY-MM-DD.dump` (pg_dump custom format: compressed, mode 600;
+pruned once older than 30 days). The job runs `scripts/backup-chatmemo.sh` straight from the
+chatmemo checkout, like the session watcher.
 
-#### Step 1 — Find your Supabase database password
+How it is locked down:
 
-> You do not create this password; Supabase sets it when you create the project.
+- It logs in as **`chatmemo_backup`**, whose only table privilege is `SELECT` on those two
+  tables (`supabase/migrations/20261007000000_backup_readonly_role.sql`). The laptop holds no
+  key that can write to any table. (Like every role it can call functions granted to
+  `PUBLIC`; revoking those is audit item M5.)
+- The role's password lives only in `~/.pgpass` (mode 600). The database keeps a SCRAM hash.
+- It connects through the Supabase **session pooler** with TLS (`sslmode=require`). The
+  direct `db.<ref>.supabase.co` host is IPv6-only and unreachable from the Mac.
+- A failed run posts a macOS notification and writes the reason to
+  `~/backups/chatmemo/backup.err`. A dump that `pg_restore` cannot list counts as a failure,
+  and a failed run never overwrites a good dump (it writes to `.in-progress.dump` first).
 
-1. Go to **Supabase dashboard → Project Settings → Database**.
-2. Scroll to **"Database password"** and copy it (or click **Reset** to generate a new one).
-3. Also copy the **"Host"** value from the Connection string section — it looks like `db.abcdefghijkl.supabase.co`.
+#### Setup (once)
 
-#### Step 2 — Store the password in `~/.pgpass` (never in the script)
+1. `brew install libpq` — `pg_dump`/`pg_restore`; the script puts
+   `/opt/homebrew/opt/libpq/bin` on its own `PATH`.
+2. Apply the migration: `npm run db-push`.
+3. From the chatmemo root: `node scripts/backup-setup.mjs`. It stores a fresh random password
+   in `~/.pgpass` and prints one statement,
+   `ALTER ROLE chatmemo_backup WITH PASSWORD 'SCRAM-SHA-256$4096:…';`. Run it in
+   **Supabase → SQL editor**. It carries only the hash, so the password never leaves the
+   laptop. Run both again to rotate the password.
+4. Create `~/Library/LaunchAgents/com.chatmemo.backup.plist` (absolute paths; `<checkout>` is
+   the chatmemo folder, `<home>` your home directory):
 
-`~/.pgpass` is a standard PostgreSQL file that `pg_dump` reads automatically. It must be readable only by your user.
+   ```xml
+   <?xml version="1.0" encoding="UTF-8"?>
+   <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+     "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+   <plist version="1.0">
+   <dict>
+     <key>Label</key>
+     <string>com.chatmemo.backup</string>
+     <key>ProgramArguments</key>
+     <array>
+       <string>/bin/bash</string>
+       <string><checkout>/scripts/backup-chatmemo.sh</string>
+     </array>
+     <key>StartCalendarInterval</key>
+     <dict>
+       <key>Hour</key>
+       <integer>3</integer>
+       <key>Minute</key>
+       <integer>0</integer>
+     </dict>
+     <key>StandardOutPath</key>
+     <string><home>/backups/chatmemo/backup.log</string>
+     <key>StandardErrorPath</key>
+     <string><home>/backups/chatmemo/backup.err</string>
+   </dict>
+   </plist>
+   ```
 
-```bash
-# Create or append to ~/.pgpass
-echo "db.YOUR-PROJECT-REF.supabase.co:5432:postgres:postgres:YOUR-DB-PASSWORD" >> ~/.pgpass
+   ```bash
+   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.chatmemo.backup.plist
+   ```
 
-# Lock permissions — pg_dump refuses to use the file if it's world-readable
-chmod 600 ~/.pgpass
+   After editing the plist: `launchctl bootout gui/$(id -u)/com.chatmemo.backup`, then
+   `bootstrap` again. A Mac asleep at 03:00 runs the job when it wakes.
+
+5. Run it now and read the result:
+
+   ```bash
+   launchctl kickstart gui/$(id -u)/com.chatmemo.backup
+   tail -1 ~/backups/chatmemo/backup.log   # … backup ok: …/chatmemo-YYYY-MM-DD.dump (…)
+   ```
+
+Check what the role can do (SQL editor) — expect `SELECT` on the two tables and nothing else:
+
+```sql
+select table_name, privilege_type
+from information_schema.role_table_grants
+where grantee = 'chatmemo_backup';
 ```
 
-Verify:
-
-```bash
-cat ~/.pgpass
-# Should print: db.YOUR-PROJECT-REF.supabase.co:5432:postgres:postgres:YOUR-DB-PASSWORD
-```
-
-The password is now stored securely. **The backup script never contains the password.**
-
-#### Step 3 — Install `pg_dump`
-
-```bash
-brew install libpq
-echo 'export PATH="/opt/homebrew/opt/libpq/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
-
-# Verify
-pg_dump --version
-```
-
-#### Step 4 — Create the backup script
-
-Create `~/scripts/backup-chatmemo.sh`:
-
-```bash
-#!/bin/bash
-set -euo pipefail
-
-DATE=$(date +%Y-%m-%d)
-BACKUP_DIR="$HOME/backups/chatmemo"
-mkdir -p "$BACKUP_DIR"
-
-# Connection string — NO password here; pg_dump reads it from ~/.pgpass
-DB_URL="postgresql://postgres@db.YOUR-PROJECT-REF.supabase.co:5432/postgres"
-
-echo "[$(date)] Starting backup..."
-
-# Back up only the summaries and user_lessons tables (the memory data)
-pg_dump "$DB_URL" \
-  --table=summaries \
-  --table=user_lessons \
-  --data-only \
-  --no-owner \
-  --no-privileges \
-  -f "$BACKUP_DIR/chatmemo-$DATE.sql"
-
-echo "[$(date)] Backup written to $BACKUP_DIR/chatmemo-$DATE.sql"
-
-# Keep only last 30 days
-find "$BACKUP_DIR" -name "chatmemo-*.sql" -mtime +30 -delete
-echo "[$(date)] Old backups pruned."
-```
-
-```bash
-chmod +x ~/scripts/backup-chatmemo.sh
-```
-
-Replace `YOUR-PROJECT-REF` with your actual Supabase project reference (the subdomain part of your Supabase URL).
-
-#### Step 5 — Test it manually
-
-```bash
-~/scripts/backup-chatmemo.sh
-```
-
-Expected output:
-
-```
-[2026-05-28 03:00:00] Starting backup...
-[2026-05-28 03:00:02] Backup written to /Users/brais/backups/chatmemo/chatmemo-2026-05-28.sql
-[2026-05-28 03:00:02] Old backups pruned.
-```
-
-Inspect the file:
-
-```bash
-head -20 ~/backups/chatmemo/chatmemo-2026-05-28.sql
-# Should show SQL INSERT statements for summaries rows
-```
-
-#### Step 6 — Schedule with launchd (runs at 3 AM daily)
-
-Create `~/Library/LaunchAgents/com.chatmemo.backup.plist`:
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>com.chatmemo.backup</string>
-
-  <key>ProgramArguments</key>
-  <array>
-    <string>/bin/bash</string>
-    <string>/Users/brais/scripts/backup-chatmemo.sh</string>
-  </array>
-
-  <!-- Run at 03:00 every day -->
-  <key>StartCalendarInterval</key>
-  <dict>
-    <key>Hour</key>
-    <integer>3</integer>
-    <key>Minute</key>
-    <integer>0</integer>
-  </dict>
-
-  <!-- Logs -->
-  <key>StandardOutPath</key>
-  <string>/Users/brais/backups/chatmemo/backup.log</string>
-  <key>StandardErrorPath</key>
-  <string>/Users/brais/backups/chatmemo/backup.err</string>
-
-  <!-- Start on login, respawn if it crashes -->
-  <key>RunAtLoad</key>
-  <false/>
-  <key>KeepAlive</key>
-  <false/>
-</dict>
-</plist>
-```
-
-Load it:
-
-```bash
-launchctl load ~/Library/LaunchAgents/com.chatmemo.backup.plist
-```
-
-Verify it is scheduled:
-
-```bash
-launchctl list | grep chatmemo
-# Should print a line with com.chatmemo.backup
-```
-
-#### Managing the launchd job
-
-```bash
-# Reload after editing the plist
-launchctl unload ~/Library/LaunchAgents/com.chatmemo.backup.plist
-launchctl load   ~/Library/LaunchAgents/com.chatmemo.backup.plist
-
-# Run it right now (for testing)
-launchctl start com.chatmemo.backup
-
-# Disable permanently
-launchctl unload ~/Library/LaunchAgents/com.chatmemo.backup.plist
-```
+Overrides (environment): `CHATMEMO_BACKUP_HOST`, `_PORT`, `_USER`, `_DIR`, and
+`CHATMEMO_BACKUP_KEEP_DAYS` (`0` keeps every dump). The pooler host is regional (this
+project: `aws-1-ap-northeast-2.pooler.supabase.com`); if the project moves region, change the
+default in both scripts.
 
 ---
 
 ### 12.3 Restoring from a pg_dump backup
 
+See what a dump holds:
+
 ```bash
-psql "postgresql://postgres@db.YOUR-PROJECT-REF.supabase.co:5432/postgres" \
-  -f ~/backups/chatmemo/chatmemo-2026-05-28.sql
+pg_restore --list ~/backups/chatmemo/chatmemo-YYYY-MM-DD.dump
 ```
 
-`psql` also reads `~/.pgpass` automatically — no password in the command.
+Restore into **empty** tables (a new project after `db-push`, or a cleared table) with an
+admin connection — **Supabase → Connect → Session pooler** gives the string; it asks for the
+database password:
 
-> **Caution:** restoring from a pg_dump `.sql` file inserts rows without checking for duplicates (unlike the in-app restore). If the table already has data, run the restore on a freshly-cleared table or filter the SQL file first.
+```bash
+pg_restore --data-only --no-owner --no-privileges \
+  --dbname="postgresql://postgres.<ref>@aws-1-ap-northeast-2.pooler.supabase.com:5432/postgres?sslmode=require" \
+  ~/backups/chatmemo/chatmemo-YYYY-MM-DD.dump
+```
+
+Add `--table=summaries` or `--table=user_lessons` to restore one table. `pg_restore` 18
+against Postgres 15 reports one ignorable error (`unrecognized configuration parameter
+"transaction_timeout"`); the rows still load.
+
+> **Caution:** a pg_dump restore does not deduplicate (the in-app restore does). Into a table
+> that already has rows it stops at the first duplicate id and loads nothing from that table.
+> To merge into live data, use the in-app restore (12.1).
 
 ---
 
@@ -813,7 +742,7 @@ psql "postgresql://postgres@db.YOUR-PROJECT-REF.supabase.co:5432/postgres" \
 | ------------------------------------------------ | ---------------------------------- |
 | Back up memory data, want to restore via UI      | In-app Export all (section 12.1)   |
 | Scheduled automated daily backup                 | pg_dump via launchd (section 12.2) |
-| Migrate to a new Supabase project                | pg_dump → psql restore             |
+| Migrate to a new Supabase project                | pg_dump → pg_restore (12.3)        |
 | Accidentally cleared a source, want to re-import | In-app Restore backup              |
 | Supabase Pro plan                                | Built-in PITR (no setup needed)    |
 

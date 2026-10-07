@@ -189,6 +189,11 @@ and repeat rows. Fix: add `.order("id")` as `/api/timeline` does.
 `set -euo pipefail`, no encryption; dumps `summaries` only (`user_lessons` missing; the admin guide's
 version differs). Fix: install at the path the plist expects or repoint the plist; `~/.pgpass`;
 `?sslmode=require`; `umask 077`; add `user_lessons`; optionally `age`/`gpg`.
+**Fixed 2026-10-07** (branch `fix/backup-readonly-role`): plist repointed to the repo script; the
+script logs in as a read-only `chatmemo_backup` role instead of `postgres` (the laptop keeps no
+write-capable key, as after PR #70), through the session pooler (the direct host is IPv6-only and
+unreachable from the Mac) with `sslmode=require`; `umask 077`, both tables, custom format checked
+with `pg_restore --list`, a macOS notification on failure. Not done: `age`/`gpg` encryption.
 
 ### Low
 
