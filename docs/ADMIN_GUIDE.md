@@ -100,13 +100,13 @@ Memory injection is centralised in **`lib/server/inject-memory.ts`** and shared 
 
 ## 2. Prerequisites
 
-| Tool               | Version              |
-| ------------------ | -------------------- |
-| Node.js            | 18 or later          |
-| npm                | 9 or later           |
-| Git                | any recent           |
-| Supabase account   | free tier sufficient |
-| OpenRouter account | free tier sufficient |
+| Tool               | Version                                                                                                   |
+| ------------------ | --------------------------------------------------------------------------------------------------------- |
+| Node.js            | 18 or later                                                                                               |
+| npm                | 9 or later                                                                                                |
+| Git                | any recent                                                                                                |
+| Supabase account   | free tier sufficient                                                                                      |
+| OpenRouter account | paid credit needed: summaries use `openai/gpt-oss-120b` (the free variant was withdrawn); set a key limit |
 
 ---
 
