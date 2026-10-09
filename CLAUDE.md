@@ -126,6 +126,13 @@ OpenRouter, Ollama, custom endpoints — one route each under `app/api/chat/`.
   `openai/gpt-oss-120b` (paid; the `:free` variant was withdrawn), asked for
   providers that keep nothing (`provider.data_collection: "deny"`). Nothing
   on the laptop calls OpenRouter: the scripts post to the import route.
+- **OpenRouter key resolution and rotation.** `getServerProfile()` takes the key from the
+  `OPENROUTER_API_KEY` environment variable when it is set, and only otherwise from the
+  signed-in user's saved profile, so a Vercel variable wins over everything in Supabase. The same
+  key serves the summaries and `/api/chat/openrouter` (any model the user picks), so size its limit
+  for both. Since 2026-10-09 it is a dedicated `chatmemo` key on Biglobster LLC's OpenRouter
+  account; Vercel applies a changed variable only to new deployments, so redeploy after editing it.
+  That account cannot call closed-weight Anthropic/Google/OpenAI models yet.
 
 ## Commands
 
